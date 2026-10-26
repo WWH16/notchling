@@ -143,6 +143,9 @@ component LinkButton inherits Rectangle {
 // What the user picked on a permission request.
 export enum Choice { allow, deny, ask-in-app }
 
+// Why the notch is asking for attention.
+export enum AlertKind { done, needs-input }
+
 export component Notch inherits Window {
     // Loads as fractions in 0..1; text values are formatted by Rust.
     in property <float> cpu;
@@ -160,6 +163,12 @@ export component Notch inherits Window {
     in property <string> request-detail;
     in property <int> request-more;
     callback decide(int, Choice);
+
+    // A short attention message; Rust sets and clears it.
+    in property <bool> alert-active;
+    in property <AlertKind> alert-kind;
+    in property <string> alert-text;
+    callback alert-clicked();
 
     // The clickable window region: the shape's current size or where it is heading,
     // whichever is larger. Rust clips the window to it, so clicks elsewhere pass through.
@@ -179,8 +188,10 @@ export component Notch inherits Window {
 
     private property <bool> expanded: hover.has-hover;
     private property <length> target-width: self.has-request ? request-width
+        : self.alert-active ? alert-width
         : self.expanded ? open-width : idle-width;
     private property <length> target-height: self.has-request ? request-height
+        : self.alert-active ? alert-height
         : self.expanded ? open-height : idle-height;
     private property <length> idle-width: 190px;
     private property <length> idle-height: 30px;
@@ -188,6 +199,8 @@ export component Notch inherits Window {
     private property <length> open-height: 64px;
     private property <length> request-width: 460px;
     private property <length> request-height: 196px;
+    private property <length> alert-width: 290px;
+    private property <length> alert-height: 34px;
 
     title: "ai-notch";
     no-frame: true;
@@ -354,6 +367,45 @@ export component Notch inherits Window {
             }
         }
 
+        alert-view := HorizontalLayout {
+            opacity: 0;
+            visible: self.opacity > 0;
+            alignment: center;
+            spacing: 9px;
+            padding-left: 18px;
+            padding-right: 18px;
+
+            Rectangle {
+                width: 8px;
+                // Only exists while an alert shows, so the pulse never runs in the background.
+                if root.alert-active: Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: root.alert-kind == AlertKind.done ? Theme.good : Theme.claude;
+                    opacity: 0.55 + 0.45 * Math.sin(animation-tick() / 1100ms * 360deg);
+                }
+            }
+            Text {
+                text: root.alert-text;
+                color: Theme.text;
+                font-family: Theme.font;
+                font-size: 12px;
+                font-weight: 600;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        // Above the hover area, so a click on an alert focuses its session.
+        TouchArea {
+            enabled: root.alert-active && !root.has-request;
+            clicked => {
+                root.alert-clicked();
+            }
+        }
+
         states [
             request when root.has-request: {
                 pill.width: root.request-width;
@@ -369,6 +421,23 @@ export component Notch inherits Window {
                 out {
                     animate pill.width, pill.height { duration: 200ms; easing: ease-out; }
                     animate request-view.opacity { duration: 80ms; }
+                    animate idle-row.opacity { duration: 140ms; delay: 120ms; }
+                }
+            }
+            alert when root.alert-active: {
+                pill.width: root.alert-width;
+                pill.height: root.alert-height;
+                idle-row.opacity: 0;
+                detail.opacity: 0;
+                alert-view.opacity: 1;
+                in {
+                    animate pill.width, pill.height { duration: 220ms; easing: ease-out; }
+                    animate idle-row.opacity, detail.opacity { duration: 80ms; }
+                    animate alert-view.opacity { duration: 140ms; delay: 140ms; }
+                }
+                out {
+                    animate pill.width, pill.height { duration: 200ms; easing: ease-out; }
+                    animate alert-view.opacity { duration: 80ms; }
                     animate idle-row.opacity { duration: 140ms; delay: 120ms; }
                 }
             }

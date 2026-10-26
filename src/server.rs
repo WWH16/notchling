@@ -23,7 +23,7 @@ pub enum Update {
     /// The request queue changed; redraw the request card.
     Requests,
     /// A session event other than a permission request.
-    Session(#[expect(dead_code, reason = "read by task alerts in step 2.5")] Event),
+    Session(Event),
 }
 
 /// Serves hook connections on background threads until the process exits.

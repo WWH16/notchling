@@ -17,18 +17,19 @@ mod ui {
 }
 
 use std::env;
+use std::mem;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use gpu::GpuLoad;
 use pipe::Listener;
-use protocol::Decision;
+use protocol::{Decision, Event, Origin};
 use requests::{RequestId, Requests};
 use server::Update;
 use slint::{ComponentHandle, Timer, TimerMode, Weak};
 use system::SystemLoad;
-use ui::{Choice, Notch};
+use ui::{AlertKind, Choice, Notch};
 use window::{MenuChoice, NotchWindow};
 
 /// One frame at 60 Hz; how often to check whether the native window exists yet.
@@ -39,6 +40,12 @@ const NATIVE_WINDOW_ATTEMPTS: u32 = 60;
 
 /// How often the CPU, GPU and RAM readings refresh, matching Task Manager's default.
 const STATS_INTERVAL: Duration = Duration::from_secs(1);
+
+/// How long "task done" stays on the notch.
+const DONE_ALERT: Duration = Duration::from_secs(5);
+
+/// How long "needs your input" stays; longer, since it waits on the user.
+const NEEDS_INPUT_ALERT: Duration = Duration::from_secs(15);
 
 fn main() -> anyhow::Result<()> {
     if env::args().nth(1).as_deref() == Some("--hook") {
@@ -132,18 +139,89 @@ fn serve_hooks(notch: &Notch, listener: Listener) {
         show_requests(&notch, &requests);
     });
 
+    let alert = Arc::new(Mutex::new(Alert::default()));
+    let clicked = Arc::clone(&alert);
+    let weak = notch.as_weak();
+    notch.on_alert_clicked(move || {
+        let ancestors = mem::take(&mut clicked.lock().expect("alert lock poisoned").ancestors);
+        if let Some(notch) = weak.upgrade() {
+            notch.set_alert_active(false);
+        }
+        process::focus_first_window(&ancestors);
+    });
+
     let weak = notch.as_weak();
     let shown = Arc::clone(&requests);
     server::spawn(listener, requests, move |update| {
         let requests = Arc::clone(&shown);
+        let alert = Arc::clone(&alert);
         // Fails only once the event loop has quit, when nothing needs drawing.
         let _ = weak.upgrade_in_event_loop(move |notch| match update {
             Update::Requests => {
                 show_requests(&notch, &requests.lock().expect("requests lock poisoned"));
             }
-            // Task alerts arrive in step 2.5, keep-awake in step 2.6.
-            Update::Session(_) => {}
+            Update::Session(Event::TaskDone { origin }) => {
+                show_alert(&notch, &alert, AlertKind::Done, origin, DONE_ALERT);
+            }
+            Update::Session(Event::NeedsInput { origin, .. }) => {
+                show_alert(
+                    &notch,
+                    &alert,
+                    AlertKind::NeedsInput,
+                    origin,
+                    NEEDS_INPUT_ALERT,
+                );
+            }
+            // Keep-awake arrives in step 2.6.
+            Update::Session(Event::PromptSubmitted { .. }) => {}
+            // The server turns these into `Update::Requests`.
+            Update::Session(Event::PermissionRequest { .. }) => {}
         });
+    });
+}
+
+/// The alert on screen: which one it is, and where its session runs.
+#[derive(Debug, Default)]
+struct Alert {
+    /// Bumped per alert, so an old alert's timer cannot hide a newer one.
+    serial: u64,
+    ancestors: Vec<u32>,
+}
+
+/// Shows an attention message for `duration`, or until it is clicked.
+fn show_alert(
+    notch: &Notch,
+    alert: &Arc<Mutex<Alert>>,
+    kind: AlertKind,
+    origin: Origin,
+    duration: Duration,
+) {
+    let serial = {
+        let mut current = alert.lock().expect("alert lock poisoned");
+        current.serial += 1;
+        current.ancestors = origin.ancestors;
+        current.serial
+    };
+    let label = match kind {
+        AlertKind::Done => "Done",
+        AlertKind::NeedsInput => "Needs your input",
+    };
+    let text = if origin.project.is_empty() {
+        label.to_owned()
+    } else {
+        format!("{label} · {}", origin.project)
+    };
+    notch.set_alert_kind(kind);
+    notch.set_alert_text(text.into());
+    notch.set_alert_active(true);
+
+    let weak = notch.as_weak();
+    let alert = Arc::clone(alert);
+    Timer::single_shot(duration, move || {
+        let still_current = alert.lock().expect("alert lock poisoned").serial == serial;
+        if let (true, Some(notch)) = (still_current, weak.upgrade()) {
+            notch.set_alert_active(false);
+        }
     });
 }
 

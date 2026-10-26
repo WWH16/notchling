@@ -5,10 +5,15 @@ use std::mem;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::process;
 
-use windows::Win32::Foundation::HANDLE;
+use windows::Win32::Foundation::{HANDLE, HWND, LPARAM};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GW_OWNER, GetWindow, GetWindowTextLengthW, GetWindowThreadProcessId, IsIconic,
+    IsWindowVisible, SW_RESTORE, SetForegroundWindow, ShowWindow,
+};
+use windows::core::BOOL;
 
 /// How far up the tree to walk. Claude Code sits a few levels above the hook, and
 /// the terminal or desktop app a few more.
@@ -35,6 +40,51 @@ fn ancestors_of(pid: u32, parents: &HashMap<u32, u32>) -> Vec<u32> {
         current = parent;
     }
     chain
+}
+
+/// Brings the window of the nearest process in `pids` to the front, e.g. the terminal
+/// or desktop app a Claude Code session runs in. Returns whether a window was found.
+pub fn focus_first_window(pids: &[u32]) -> bool {
+    let windows = app_windows();
+    let Some(&(hwnd, _)) = pids
+        .iter()
+        .find_map(|pid| windows.iter().find(|(_, owner)| owner == pid))
+    else {
+        return false;
+    };
+    // SAFETY: `hwnd` came from EnumWindows a moment ago; a window that closed since
+    // only makes these calls fail, which is harmless.
+    unsafe {
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        SetForegroundWindow(hwnd).as_bool()
+    }
+}
+
+/// Visible, titled, unowned top-level windows with their process ids, front to back.
+fn app_windows() -> Vec<(HWND, u32)> {
+    unsafe extern "system" fn collect(hwnd: HWND, found: LPARAM) -> BOOL {
+        // SAFETY: `found` is the Vec passed to EnumWindows below, alive for the call.
+        let found = unsafe { &mut *(found.0 as *mut Vec<(HWND, u32)>) };
+        // SAFETY: EnumWindows passes live top-level window handles.
+        unsafe {
+            let is_app_window = IsWindowVisible(hwnd).as_bool()
+                && GetWindowTextLengthW(hwnd) > 0
+                && GetWindow(hwnd, GW_OWNER).is_err();
+            if is_app_window {
+                let mut pid = 0;
+                GetWindowThreadProcessId(hwnd, Some(&mut pid));
+                found.push((hwnd, pid));
+            }
+        }
+        true.into()
+    }
+
+    let mut found: Vec<(HWND, u32)> = Vec::new();
+    // SAFETY: the callback only touches `found` through the pointer, during the call.
+    let _ = unsafe { EnumWindows(Some(collect), LPARAM(&raw mut found as isize)) };
+    found
 }
 
 /// Every running process's parent id, keyed by process id.

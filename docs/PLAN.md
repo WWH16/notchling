@@ -83,7 +83,7 @@ software renderer. The OpenGL renderer used 95 MB and 0.94% CPU for the same loo
   dialog appears. Commit `feat: hook mode`.
 - [x] **2.4** Request card: queue across sessions, full command with scrolling, Allow and
   Deny. Commit `feat: permission request card`.
-- [ ] **2.5** Done and needs-input pulses; click focuses the source window, found by walking
+- [x] **2.5** Done and needs-input pulses; click focuses the source window, found by walking
   the hook's parent processes. Commit `feat: task alerts with click-to-focus`.
 - [ ] **2.6** `awake.rs`: keep the PC awake from prompt submitted until stop, 30-minute
   safety release. Commit `feat: keep pc awake while claude works`.

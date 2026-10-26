@@ -1,22 +1,191 @@
+// Notch UI: one black shape hanging from the top edge that morphs between states.
+
+export global Theme {
+    out property <color> surface: #000000;
+    out property <color> text: #ffffff;
+    out property <color> muted: #8e8e93;
+    out property <color> track: #2c2c2e;
+    out property <color> claude: #d97757;
+    out property <color> chatgpt: #10a37f;
+    out property <color> gemini: #4c8df6;
+    out property <color> good: #30d158;
+    // Segoe UI digits are tabular by default, so numbers don't jitter.
+    out property <string> font: "Segoe UI Variable";
+}
+
+component Bar inherits Rectangle {
+    in property <float> fraction;
+    in property <color> fill: Theme.text;
+    height: 2px;
+    border-radius: 1px;
+    background: Theme.track;
+
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width * clamp(root.fraction, 0, 1);
+        height: parent.height;
+        border-radius: parent.border-radius;
+        background: root.fill;
+        animate width { duration: 300ms; easing: ease-out; }
+    }
+}
+
+component Stat inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <float> fraction;
+    spacing: 5px;
+
+    HorizontalLayout {
+        spacing: 6px;
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-family: Theme.font;
+            font-size: 10px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.value;
+            color: Theme.text;
+            font-family: Theme.font;
+            font-size: 12px;
+            font-weight: 600;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+
+    Bar {
+        fraction: root.fraction;
+    }
+}
+
+component Pair inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 5px;
+
+    Text {
+        text: root.label;
+        color: Theme.muted;
+        font-family: Theme.font;
+        font-size: 10px;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.value;
+        color: Theme.text;
+        font-family: Theme.font;
+        font-size: 12px;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+}
+
 export component Notch inherits Window {
+    // Loads as fractions in 0..1; text values are formatted by Rust.
+    in property <float> cpu;
+    in property <float> gpu;
+    in property <float> ram;
+    in property <float> vram;
+    in property <string> ram-text: "-";
+    in property <string> vram-text: "-";
+
+    // Rust reads these to keep the clickable window region around the visible shape.
+    out property <bool> expanded: hover.has-hover;
+    out property <length> pill-width: pill.width;
+    out property <length> pill-height: pill.height;
+    out property <length> target-width: self.expanded ? open-width : idle-width;
+    out property <length> target-height: self.expanded ? open-height : idle-height;
+
+    private property <length> idle-width: 190px;
+    private property <length> idle-height: 30px;
+    private property <length> open-width: 380px;
+    private property <length> open-height: 64px;
+
     title: "ai-notch";
     no-frame: true;
     always-on-top: true;
     background: transparent;
-    width: 480px;
-    height: 260px;
+    // Fixed size large enough for the biggest state; only the shape is drawn.
+    width: 520px;
+    height: 280px;
 
-    Rectangle {
+    pill := Rectangle {
         x: (parent.width - self.width) / 2;
         y: 0;
-        width: 200px;
-        height: 36px;
-        background: #000;
-        border-radius: 18px;
+        width: root.idle-width;
+        height: root.idle-height;
+        background: Theme.surface;
+        border-bottom-left-radius: min(self.height / 2, 22px);
+        border-bottom-right-radius: self.border-bottom-left-radius;
+        clip: true;
 
-        Text {
-            text: "ai-notch";
-            color: #fff;
+        hover := TouchArea { }
+
+        idle-row := HorizontalLayout {
+            alignment: center;
+            spacing: 18px;
+            Pair {
+                label: "CPU";
+                value: "\{round(root.cpu * 100)}%";
+            }
+            Pair {
+                label: "GPU";
+                value: "\{round(root.gpu * 100)}%";
+            }
         }
+
+        detail := HorizontalLayout {
+            opacity: 0;
+            padding-left: 20px;
+            padding-right: 20px;
+            padding-top: 14px;
+            padding-bottom: 18px;
+            spacing: 18px;
+            Stat {
+                label: "CPU";
+                value: "\{round(root.cpu * 100)}%";
+                fraction: root.cpu;
+            }
+            Stat {
+                label: "GPU";
+                value: "\{round(root.gpu * 100)}%";
+                fraction: root.gpu;
+            }
+            Stat {
+                label: "RAM";
+                value: root.ram-text;
+                fraction: root.ram;
+            }
+            Stat {
+                label: "VRAM";
+                value: root.vram-text;
+                fraction: root.vram;
+            }
+        }
+
+        states [
+            open when root.expanded: {
+                pill.width: root.open-width;
+                pill.height: root.open-height;
+                idle-row.opacity: 0;
+                detail.opacity: 1;
+                in {
+                    animate pill.width, pill.height { duration: 200ms; easing: ease-out; delay: 80ms; }
+                    animate idle-row.opacity { duration: 80ms; }
+                    animate detail.opacity { duration: 140ms; delay: 180ms; }
+                }
+                out {
+                    animate pill.width, pill.height { duration: 200ms; easing: ease-out; }
+                    animate detail.opacity { duration: 80ms; }
+                    animate idle-row.opacity { duration: 140ms; delay: 120ms; }
+                }
+            }
+        ]
     }
 }

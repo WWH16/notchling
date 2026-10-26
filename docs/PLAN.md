@@ -44,10 +44,11 @@ Record results in `docs/FINDINGS.md`. Commit
 
 - [x] **1.1** Slint, `build.rs`, lints table in `Cargo.toml`, release profile (LTO, strip).
   Commit `chore: add slint and build setup`.
-- [ ] **1.2** `config.rs`: TOML at `%APPDATA%\ai-notch\config.toml`, defaults when missing.
-  Commit `feat: config file`.
-- [ ] **1.3** `ui/notch.slint`: black pill with idle, hover, request and alert states,
-  ~200 ms ease-out morph, color tokens, embedded OFL monospace font for digits.
+- [ ] **1.2** Moved to Phase 2 (step 2.0): no Phase 1 feature has a setting yet. The
+  first setting is the hook timeout.
+- [x] **1.3** `ui/notch.slint`: black notch hanging from the top edge, idle and hover
+  states, ~200 ms ease-out morph, color tokens. Request and alert states are built in
+  2.4 and 2.5 with their data. No embedded font: Segoe UI digits are already tabular.
   Commit `feat: notch pill ui with morph states`.
 - [ ] **1.4** `window.rs`: no frame, transparent, topmost, hidden from taskbar and Alt+Tab,
   never steals focus, top-center placement, DPI-correct.
@@ -66,6 +67,8 @@ Phase check: release build uses about 40 MB RAM or less and under 1% CPU when id
 
 ## Phase 2: Claude Code hooks
 
+- [ ] **2.0** `config.rs`: TOML at `%APPDATA%\ai-notch\config.toml`, defaults when
+  missing; first field is the hook timeout. Commit `feat: config file`.
 - [ ] **2.1** `protocol.rs`: pipe messages (permission request, stop, notification, prompt
   submitted) as JSON lines, round-trip tests. Capture a real `Stop` payload first. Commit `feat: hook pipe protocol`.
 - [ ] **2.2** `pipe.rs`: named pipe restricted to the current Windows user, rejects remote

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod gpu;
 mod system;
 mod window;
 
@@ -10,6 +11,7 @@ mod ui {
 
 use std::time::Duration;
 
+use gpu::GpuLoad;
 use slint::{ComponentHandle, Timer, TimerMode, Weak};
 use system::SystemLoad;
 use ui::Notch;
@@ -49,6 +51,8 @@ fn main() -> anyhow::Result<()> {
 
     let stats_timer = Timer::default();
     let mut load = SystemLoad::new();
+    // Without GPU counters the GPU and VRAM stats stay at their placeholders.
+    let mut gpu = GpuLoad::open().ok();
     let weak = notch.as_weak();
     stats_timer.start(TimerMode::Repeated, STATS_INTERVAL, move || {
         let Some(notch) = weak.upgrade() else {
@@ -58,6 +62,16 @@ fn main() -> anyhow::Result<()> {
         notch.set_cpu(reading.cpu);
         notch.set_ram(reading.ram_fraction());
         notch.set_ram_text(system::gigabytes(reading.ram_used_bytes).into());
+
+        if let Some(gpu) = gpu.as_mut() {
+            let reading = gpu.sample();
+            notch.set_gpu(reading.utilization);
+            if let Some(used) = reading.vram_used_bytes {
+                let total = reading.vram_total_bytes.unwrap_or(0);
+                notch.set_vram(system::fraction(used, total));
+                notch.set_vram_text(system::gigabytes(used).into());
+            }
+        }
     });
 
     slint::run_event_loop()?;

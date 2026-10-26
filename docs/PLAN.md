@@ -58,7 +58,7 @@ Record results in `docs/FINDINGS.md`. Commit
   Commit `feat: hover detection and click-through`.
 - [x] **1.6** `system.rs`: CPU and RAM via `sysinfo`, every second.
   Commit `feat: cpu and ram stats`.
-- [ ] **1.7** `gpu.rs`: GPU % and VRAM via PDH, Task Manager aggregation rule, unit test.
+- [x] **1.7** `gpu.rs`: GPU % and VRAM via PDH, Task Manager aggregation rule, unit test.
   Commit `feat: gpu usage via pdh`.
 - [ ] **1.8** Wire stats into the UI: CPU and GPU when idle, RAM and VRAM on hover.
   Right-click menu with Quit. Commit `feat: show system stats in notch`.

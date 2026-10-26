@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod system;
 mod window;
 
 #[allow(missing_debug_implementations, reason = "slint-generated types")]
@@ -9,7 +10,8 @@ mod ui {
 
 use std::time::Duration;
 
-use slint::{ComponentHandle, Timer, Weak};
+use slint::{ComponentHandle, Timer, TimerMode, Weak};
+use system::SystemLoad;
 use ui::Notch;
 use window::NotchWindow;
 
@@ -18,6 +20,9 @@ const FRAME: Duration = Duration::from_millis(16);
 
 /// About one second of frames before giving up on the native window.
 const NATIVE_WINDOW_ATTEMPTS: u32 = 60;
+
+/// How often the CPU, GPU and RAM readings refresh, matching Task Manager's default.
+const STATS_INTERVAL: Duration = Duration::from_secs(1);
 
 fn main() -> anyhow::Result<()> {
     let notch = Notch::new()?;
@@ -40,6 +45,19 @@ fn main() -> anyhow::Result<()> {
         };
         clip();
         notch.on_shape_changed(clip);
+    });
+
+    let stats_timer = Timer::default();
+    let mut load = SystemLoad::new();
+    let weak = notch.as_weak();
+    stats_timer.start(TimerMode::Repeated, STATS_INTERVAL, move || {
+        let Some(notch) = weak.upgrade() else {
+            return;
+        };
+        let reading = load.sample();
+        notch.set_cpu(reading.cpu);
+        notch.set_ram(reading.ram_fraction());
+        notch.set_ram_text(system::gigabytes(reading.ram_used_bytes).into());
     });
 
     slint::run_event_loop()?;

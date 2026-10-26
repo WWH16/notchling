@@ -7,6 +7,7 @@ edition = "2024"
 anyhow = "1.0.104"
 raw-window-handle = "0.6"
 slint = { version = "1.18.1", features = ["raw-window-handle-06"] }
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }
 
 [build-dependencies]

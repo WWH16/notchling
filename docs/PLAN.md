@@ -56,7 +56,7 @@ Record results in `docs/FINDINGS.md`. Commit
 - [x] **1.5** Window region follows the shape (Slint `changed` handlers, no polling); hover
   comes from Slint; clicks outside the shape pass through to the windows below.
   Commit `feat: hover detection and click-through`.
-- [ ] **1.6** `system.rs`: CPU and RAM via `sysinfo`, every second.
+- [x] **1.6** `system.rs`: CPU and RAM via `sysinfo`, every second.
   Commit `feat: cpu and ram stats`.
 - [ ] **1.7** `gpu.rs`: GPU % and VRAM via PDH, Task Manager aggregation rule, unit test.
   Commit `feat: gpu usage via pdh`.

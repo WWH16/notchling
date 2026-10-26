@@ -85,8 +85,9 @@ software renderer. The OpenGL renderer used 95 MB and 0.94% CPU for the same loo
   Deny. Commit `feat: permission request card`.
 - [x] **2.5** Done and needs-input pulses; click focuses the source window, found by walking
   the hook's parent processes. Commit `feat: task alerts with click-to-focus`.
-- [ ] **2.6** `awake.rs`: keep the PC awake from prompt submitted until stop, 30-minute
-  safety release. Commit `feat: keep pc awake while claude works`.
+- [x] **2.6** `awake.rs`: keep the PC awake from prompt submitted until stop or "needs input",
+  2-hour safety release (tool calls without permission prompts send no events, so long
+  autonomous runs are silent). Commit `feat: keep pc awake while claude works`.
 - [ ] **2.7** `--install-hooks` / `--uninstall-hooks`: back up `settings.json`, merge or
   remove only our entries, idempotent, tests on the merge.
   Commit `feat: install and uninstall hooks`.

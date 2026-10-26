@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod awake;
 mod config;
 mod gpu;
 mod hook;
@@ -20,8 +21,9 @@ use std::env;
 use std::mem;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use awake::KeepAwake;
 use gpu::GpuLoad;
 use pipe::Listener;
 use protocol::{Decision, Event, Origin};
@@ -46,6 +48,9 @@ const DONE_ALERT: Duration = Duration::from_secs(5);
 
 /// How long "needs your input" stays; longer, since it waits on the user.
 const NEEDS_INPUT_ALERT: Duration = Duration::from_secs(15);
+
+/// How often silent sessions are checked against the keep-awake safety window.
+const AWAKE_CHECK: Duration = Duration::from_secs(60);
 
 fn main() -> anyhow::Result<()> {
     if env::args().nth(1).as_deref() == Some("--hook") {
@@ -89,7 +94,7 @@ fn main() -> anyhow::Result<()> {
     });
 
     let _stats = start_stats(&notch);
-    serve_hooks(&notch, listener);
+    let _awake_check = serve_hooks(&notch, listener);
 
     slint::run_event_loop()?;
     Ok(())
@@ -124,8 +129,9 @@ fn start_stats(notch: &Notch) -> Timer {
     timer
 }
 
-/// Accepts hook connections and shows their permission requests on the notch.
-fn serve_hooks(notch: &Notch, listener: Listener) {
+/// Accepts hook connections and reacts to their events on the notch. Returns the
+/// timer that releases keep-awake for silent sessions; it runs until dropped.
+fn serve_hooks(notch: &Notch, listener: Listener) -> Timer {
     let requests = Arc::new(Mutex::new(Requests::default()));
 
     let weak = notch.as_weak();
@@ -150,20 +156,34 @@ fn serve_hooks(notch: &Notch, listener: Listener) {
         process::focus_first_window(&ancestors);
     });
 
+    // Only ever locked on the UI thread, which owns the Windows power request.
+    let awake = Arc::new(Mutex::new(KeepAwake::default()));
+    let awake_check = Timer::default();
+    let expiring = Arc::clone(&awake);
+    awake_check.start(TimerMode::Repeated, AWAKE_CHECK, move || {
+        expiring
+            .lock()
+            .expect("keep-awake lock poisoned")
+            .expire(Instant::now());
+    });
+
     let weak = notch.as_weak();
     let shown = Arc::clone(&requests);
     server::spawn(listener, requests, move |update| {
         let requests = Arc::clone(&shown);
         let alert = Arc::clone(&alert);
+        let awake = Arc::clone(&awake);
         // Fails only once the event loop has quit, when nothing needs drawing.
         let _ = weak.upgrade_in_event_loop(move |notch| match update {
             Update::Requests => {
                 show_requests(&notch, &requests.lock().expect("requests lock poisoned"));
             }
             Update::Session(Event::TaskDone { origin }) => {
+                lock_awake(&awake).stopped(&origin.session_id);
                 show_alert(&notch, &alert, AlertKind::Done, origin, DONE_ALERT);
             }
             Update::Session(Event::NeedsInput { origin, .. }) => {
+                lock_awake(&awake).stopped(&origin.session_id);
                 show_alert(
                     &notch,
                     &alert,
@@ -172,12 +192,18 @@ fn serve_hooks(notch: &Notch, listener: Listener) {
                     NEEDS_INPUT_ALERT,
                 );
             }
-            // Keep-awake arrives in step 2.6.
-            Update::Session(Event::PromptSubmitted { .. }) => {}
+            Update::Session(Event::PromptSubmitted { origin }) => {
+                lock_awake(&awake).started(origin.session_id, Instant::now());
+            }
             // The server turns these into `Update::Requests`.
             Update::Session(Event::PermissionRequest { .. }) => {}
         });
     });
+    awake_check
+}
+
+fn lock_awake(awake: &Mutex<KeepAwake>) -> std::sync::MutexGuard<'_, KeepAwake> {
+    awake.lock().expect("keep-awake lock poisoned")
 }
 
 /// The alert on screen: which one it is, and where its session runs.

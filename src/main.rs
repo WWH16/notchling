@@ -4,6 +4,7 @@ mod awake;
 mod config;
 mod gpu;
 mod hook;
+mod install;
 mod pipe;
 mod process;
 mod protocol;
@@ -32,7 +33,7 @@ use server::Update;
 use slint::{ComponentHandle, Timer, TimerMode, Weak};
 use system::SystemLoad;
 use ui::{AlertKind, Choice, Notch};
-use window::{MenuChoice, NotchWindow};
+use window::{MenuChoice, MessageKind, NotchWindow};
 
 /// One frame at 60 Hz; how often to check whether the native window exists yet.
 const FRAME: Duration = Duration::from_millis(16);
@@ -53,9 +54,20 @@ const NEEDS_INPUT_ALERT: Duration = Duration::from_secs(15);
 const AWAKE_CHECK: Duration = Duration::from_secs(60);
 
 fn main() -> anyhow::Result<()> {
-    if env::args().nth(1).as_deref() == Some("--hook") {
-        hook::run();
-        return Ok(());
+    match env::args().nth(1).as_deref() {
+        Some("--hook") => {
+            hook::run();
+            return Ok(());
+        }
+        Some("--install-hooks") => {
+            report_settings_change("added to", install::install_hooks());
+            return Ok(());
+        }
+        Some("--uninstall-hooks") => {
+            report_settings_change("removed from", install::uninstall_hooks());
+            return Ok(());
+        }
+        _ => {}
     }
 
     // Claiming the pipe first also stops a second notch from starting.
@@ -98,6 +110,28 @@ fn main() -> anyhow::Result<()> {
 
     slint::run_event_loop()?;
     Ok(())
+}
+
+/// Tells the user what `--install-hooks` or `--uninstall-hooks` did. A message box,
+/// because the release exe has no console to print to.
+fn report_settings_change(verb: &str, outcome: anyhow::Result<install::Outcome>) {
+    match outcome {
+        Ok(outcome) => {
+            let backup = outcome.backup.map_or_else(
+                || "There was no settings file before, so nothing was backed up.".to_owned(),
+                |path| format!("The previous file was backed up to:\n{}", path.display()),
+            );
+            let text = format!(
+                "The ai-notch hooks were {verb}\n{}\n\n{backup}\n\nClaude Code picks up the change automatically.",
+                outcome.settings.display()
+            );
+            window::message_box("ai-notch", &text, MessageKind::Info);
+        }
+        Err(err) => {
+            let text = format!("Nothing was changed.\n\n{err:#}");
+            window::message_box("ai-notch", &text, MessageKind::Error);
+        }
+    }
 }
 
 /// Refreshes the CPU, GPU and RAM readings until the returned timer is dropped.

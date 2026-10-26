@@ -68,7 +68,7 @@ Phase check: release build uses about 40 MB RAM or less and under 1% CPU when id
 Result: 27 MB working set, 10.5 MB private, 0.12% CPU, 9.2 MB exe, with Slint's
 software renderer. The OpenGL renderer used 95 MB and 0.94% CPU for the same look.
 
-## Phase 2: Claude Code hooks
+## Phase 2: Claude Code hooks (built; live test pending)
 
 - [x] **2.0** `config.rs`: TOML at `%APPDATA%\ai-notch\config.toml`, defaults when
   missing; first field is the hook timeout. Commit `feat: config file`.
@@ -88,12 +88,16 @@ software renderer. The OpenGL renderer used 95 MB and 0.94% CPU for the same loo
 - [x] **2.6** `awake.rs`: keep the PC awake from prompt submitted until stop or "needs input",
   2-hour safety release (tool calls without permission prompts send no events, so long
   autonomous runs are silent). Commit `feat: keep pc awake while claude works`.
-- [ ] **2.7** `--install-hooks` / `--uninstall-hooks`: back up `settings.json`, merge or
+- [x] **2.7** `--install-hooks` / `--uninstall-hooks`: back up `settings.json`, merge or
   remove only our entries, idempotent, tests on the merge.
   Commit `feat: install and uninstall hooks`.
 
 Manual tests: notch closed, timeout, deny, two sessions at once. Every failure case
 must show the normal dialog.
+Done with the release exe and synthetic payloads: allow, deny, open in app, queue of
+two, hook killed mid-wait, 120 s timeout, alerts, click-to-focus, installer on a copy
+of settings.json. Still to do: install for real and try it in live Claude Code
+sessions (needs the user, since it changes the global settings).
 
 ## Phase 3: Claude usage, local source
 

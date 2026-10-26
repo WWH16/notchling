@@ -13,17 +13,41 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, DestroyMenu, GWL_EXSTYLE, GetCursorPos, GetWindowLongPtrW,
-    MF_STRING, SW_HIDE, SW_SHOWNOACTIVATE, SetForegroundWindow, SetWindowLongPtrW, ShowWindow,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW,
+    MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_STRING, MessageBoxW, SW_HIDE, SW_SHOWNOACTIVATE,
+    SetForegroundWindow, SetWindowLongPtrW, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TrackPopupMenu, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
-use windows::core::w;
+use windows::core::{HSTRING, w};
 
 /// DPI that Windows treats as 100% scaling.
 const BASE_DPI: f32 = 96.0;
 
 /// Menu command id for [`MenuChoice::Quit`]; 0 is reserved for "dismissed".
 const MENU_QUIT: usize = 1;
+
+/// The icon of a [`message_box`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageKind {
+    Info,
+    Error,
+}
+
+/// Shows a modal Windows message box and waits until it is closed.
+pub fn message_box(title: &str, text: &str, kind: MessageKind) {
+    let icon = match kind {
+        MessageKind::Info => MB_ICONINFORMATION,
+        MessageKind::Error => MB_ICONERROR,
+    };
+    // SAFETY: both strings are valid wide strings for the duration of the call.
+    unsafe {
+        MessageBoxW(
+            None,
+            &HSTRING::from(text),
+            &HSTRING::from(title),
+            MB_OK | icon,
+        )
+    };
+}
 
 /// An item picked from the notch's right-click menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

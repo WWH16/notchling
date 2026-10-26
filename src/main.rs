@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[expect(dead_code, reason = "read by hook mode from step 2.3")]
+mod config;
 mod gpu;
 mod system;
 mod window;

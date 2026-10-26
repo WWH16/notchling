@@ -160,9 +160,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "raw-window-handle",
+ "serde",
+ "serde_json",
  "slint",
  "slint-build",
  "sysinfo",
+ "toml",
  "windows",
 ]
 

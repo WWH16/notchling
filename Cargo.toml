@@ -6,9 +6,12 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.104"
 raw-window-handle = "0.6"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 # Software renderer: same look here, a third of the RAM of the OpenGL renderer.
 slint = { version = "1.18.1", default-features = false, features = ["std", "compat-1-2", "accessibility", "backend-winit", "renderer-software", "raw-window-handle-06"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+toml = "1.1.8"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dxgi", "Win32_Graphics_Gdi", "Win32_System_Performance", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }
 
 [build-dependencies]

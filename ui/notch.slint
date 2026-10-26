@@ -1,0 +1,22 @@
+export component Notch inherits Window {
+    title: "ai-notch";
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    width: 480px;
+    height: 260px;
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 0;
+        width: 200px;
+        height: 36px;
+        background: #000;
+        border-radius: 18px;
+
+        Text {
+            text: "ai-notch";
+            color: #fff;
+        }
+    }
+}

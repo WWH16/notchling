@@ -42,7 +42,7 @@ Record results in `docs/FINDINGS.md`. Commit
 
 ## Phase 1: Notch window and system stats
 
-- [ ] **1.1** Slint, `build.rs`, lints table in `Cargo.toml`, release profile (LTO, strip).
+- [x] **1.1** Slint, `build.rs`, lints table in `Cargo.toml`, release profile (LTO, strip).
   Commit `chore: add slint and build setup`.
 - [ ] **1.2** `config.rs`: TOML at `%APPDATA%\ai-notch\config.toml`, defaults when missing.
   Commit `feat: config file`.

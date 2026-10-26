@@ -3,7 +3,15 @@
 #[expect(dead_code, reason = "read by hook mode from step 2.3")]
 mod config;
 mod gpu;
-#[expect(dead_code, reason = "used by the pipe and hook mode from step 2.2")]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by hook mode and the notch from step 2.3")
+)]
+mod pipe;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by hook mode and the notch from step 2.3")
+)]
 mod protocol;
 mod system;
 mod window;

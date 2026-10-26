@@ -74,7 +74,7 @@ software renderer. The OpenGL renderer used 95 MB and 0.94% CPU for the same loo
   missing; first field is the hook timeout. Commit `feat: config file`.
 - [x] **2.1** `protocol.rs`: pipe messages (permission request, stop, notification, prompt
   submitted) as JSON lines, round-trip tests. Capture a real `Stop` payload first. Commit `feat: hook pipe protocol`.
-- [ ] **2.2** `pipe.rs`: named pipe restricted to the current Windows user, rejects remote
+- [x] **2.2** `pipe.rs`: named pipe restricted to the current Windows user, rejects remote
   clients, first-instance only. Integration test.
   Commit `feat: secure named pipe server and client`.
 - [ ] **2.3** `--hook` mode: read the event from stdin, send it to the notch, wait for a

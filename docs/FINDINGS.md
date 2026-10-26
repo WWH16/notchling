@@ -31,8 +31,8 @@ Common to every event: `session_id`, `transcript_path`, `cwd`, `hook_event_name`
   `idle_prompt`, `agent_needs_input`, ...), optional `title`.
 - `UserPromptSubmit`: `prompt`, `permission_mode`, `session_title`. It also fires
   for messages the user sends while Claude is mid-turn.
-- `Stop`: `last_assistant_message` per the docs. A real capture is taken in step 2.1,
-  because `Stop` only fires when a turn ends.
+- `Stop`: `stop_hook_active`, `last_assistant_message`, `permission_mode`, `effort`,
+  `background_tasks`, `session_crons` (captured in step 2.1).
 
 ### Output (from the hooks docs)
 

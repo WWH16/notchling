@@ -72,7 +72,7 @@ software renderer. The OpenGL renderer used 95 MB and 0.94% CPU for the same loo
 
 - [x] **2.0** `config.rs`: TOML at `%APPDATA%\ai-notch\config.toml`, defaults when
   missing; first field is the hook timeout. Commit `feat: config file`.
-- [ ] **2.1** `protocol.rs`: pipe messages (permission request, stop, notification, prompt
+- [x] **2.1** `protocol.rs`: pipe messages (permission request, stop, notification, prompt
   submitted) as JSON lines, round-trip tests. Capture a real `Stop` payload first. Commit `feat: hook pipe protocol`.
 - [ ] **2.2** `pipe.rs`: named pipe restricted to the current Windows user, rejects remote
   clients, first-instance only. Integration test.

@@ -1,0 +1,14 @@
+{
+  "session_id": "00000000-0000-0000-0000-000000000001",
+  "transcript_path": "C:\Users\example\.claude\projects\example\00000000-0000-0000-0000-000000000001.jsonl",
+  "cwd": "C:\work\example",
+  "scratchpad_dir": "C:\Users\example\AppData\Local\Temp\claude\example",
+  "prompt_id": "00000000-0000-0000-0000-000000000002",
+  "permission_mode": "default",
+  "effort": { "level": "high" },
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Done. All tests pass.",
+  "background_tasks": [],
+  "session_crons": []
+}

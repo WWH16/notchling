@@ -6,6 +6,8 @@ Status: `[x]` done, `[ ]` not done. Updated at the end of every step.
 
 ## Rules for every step
 
+- Load the `/beautiful-rust:rust-best-practices` skill before writing or changing any
+  Rust code, and follow it. Its final checklist must pass before each commit.
 - `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and `cargo test` pass before
   each commit.
 - One commit per step, Conventional Commits messages.

@@ -12,12 +12,24 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GWL_EXSTYLE, GetWindowLongPtrW, SW_HIDE, SW_SHOWNOACTIVATE, SetWindowLongPtrW, ShowWindow,
-    WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    AppendMenuW, CreatePopupMenu, DestroyMenu, GWL_EXSTYLE, GetCursorPos, GetWindowLongPtrW,
+    MF_STRING, SW_HIDE, SW_SHOWNOACTIVATE, SetForegroundWindow, SetWindowLongPtrW, ShowWindow,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW,
 };
+use windows::core::w;
 
 /// DPI that Windows treats as 100% scaling.
 const BASE_DPI: f32 = 96.0;
+
+/// Menu command id for [`MenuChoice::Quit`]; 0 is reserved for "dismissed".
+const MENU_QUIT: usize = 1;
+
+/// An item picked from the notch's right-click menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuChoice {
+    Quit,
+}
 
 /// Moves a not-yet-shown window to the top center of the primary monitor.
 ///
@@ -100,6 +112,33 @@ impl NotchWindow {
             let _ = ShowWindow(self.hwnd, SW_HIDE);
             SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, style);
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+        }
+    }
+
+    /// Shows the right-click menu at the cursor and waits for a pick.
+    ///
+    /// Returns `None` when the menu is dismissed or cannot be shown.
+    pub fn show_menu(&self) -> Option<MenuChoice> {
+        // SAFETY: the menu is created, used and destroyed here; `hwnd` is live and owns
+        // the menu while it tracks.
+        unsafe {
+            let menu = CreatePopupMenu().ok()?;
+            let picked = AppendMenuW(menu, MF_STRING, MENU_QUIT, w!("Quit ai-notch"))
+                .ok()
+                .and_then(|()| {
+                    let mut cursor = POINT::default();
+                    GetCursorPos(&mut cursor).ok()?;
+                    // Without this the menu does not close when clicking elsewhere.
+                    let _ = SetForegroundWindow(self.hwnd);
+                    let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
+                    let id = TrackPopupMenu(menu, flags, cursor.x, cursor.y, None, self.hwnd, None);
+                    usize::try_from(id.0).ok()
+                });
+            let _ = DestroyMenu(menu);
+            match picked? {
+                MENU_QUIT => Some(MenuChoice::Quit),
+                _ => None,
+            }
         }
     }
 

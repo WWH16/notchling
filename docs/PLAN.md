@@ -40,7 +40,7 @@ Run before any UI work. If a check fails, update Phases 2-5 before writing their
 Record results in `docs/FINDINGS.md`. Commit
 `docs: record hook payloads and data source findings`.
 
-## Phase 1: Notch window and system stats
+## Phase 1: Notch window and system stats (done)
 
 - [x] **1.1** Slint, `build.rs`, lints table in `Cargo.toml`, release profile (LTO, strip).
   Commit `chore: add slint and build setup`.
@@ -60,10 +60,13 @@ Record results in `docs/FINDINGS.md`. Commit
   Commit `feat: cpu and ram stats`.
 - [x] **1.7** `gpu.rs`: GPU % and VRAM via PDH, Task Manager aggregation rule, unit test.
   Commit `feat: gpu usage via pdh`.
-- [ ] **1.8** Wire stats into the UI: CPU and GPU when idle, RAM and VRAM on hover.
-  Right-click menu with Quit. Commit `feat: show system stats in notch`.
+- [x] **1.8** Wire stats into the UI: CPU and GPU when idle, RAM and VRAM on hover.
+  Right-click menu with Quit, software renderer.
+  Commit `feat: right-click quit menu and software renderer`.
 
 Phase check: release build uses about 40 MB RAM or less and under 1% CPU when idle.
+Result: 27 MB working set, 10.5 MB private, 0.12% CPU, 9.2 MB exe, with Slint's
+software renderer. The OpenGL renderer used 95 MB and 0.94% CPU for the same look.
 
 ## Phase 2: Claude Code hooks
 
@@ -146,3 +149,6 @@ must show the normal dialog.
 - One exe for app and `--hook` mode. If V1 shows stdin/stdout problems with the GUI
   subsystem, split the hook into a second binary in the same crate.
 - Start with Windows: not included; add later if wanted.
+- Slint software renderer instead of OpenGL (femtovg): same look, a third of the RAM.
+- Right-click menu is a native Win32 popup: a Slint popup would be clipped by the
+  window region.

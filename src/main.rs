@@ -9,13 +9,14 @@ mod ui {
     slint::include_modules!();
 }
 
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpu::GpuLoad;
 use slint::{ComponentHandle, Timer, TimerMode, Weak};
 use system::SystemLoad;
 use ui::Notch;
-use window::NotchWindow;
+use window::{MenuChoice, NotchWindow};
 
 /// One frame at 60 Hz; how often to check whether the native window exists yet.
 const FRAME: Duration = Duration::from_millis(16);
@@ -33,6 +34,16 @@ fn main() -> anyhow::Result<()> {
 
     on_native_window(notch.as_weak(), NATIVE_WINDOW_ATTEMPTS, |notch, native| {
         native.apply_tool_styles();
+        let native = Rc::new(native);
+
+        let menu_native = Rc::clone(&native);
+        notch.on_menu_requested(move || {
+            if menu_native.show_menu() == Some(MenuChoice::Quit) {
+                // Only fails when the loop already stopped, which is what we want anyway.
+                let _ = slint::quit_event_loop();
+            }
+        });
+
         let weak = notch.as_weak();
         let clip = move || {
             let Some(notch) = weak.upgrade() else {

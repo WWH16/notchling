@@ -107,6 +107,10 @@ export component Notch inherits Window {
         self.shape-changed();
     }
 
+    // Right-click on the notch; Rust shows a native menu because a Slint popup would be
+    // clipped by the window region.
+    callback menu-requested();
+
     private property <bool> expanded: hover.has-hover;
     private property <length> target-width: self.expanded ? open-width : idle-width;
     private property <length> target-height: self.expanded ? open-height : idle-height;
@@ -135,7 +139,13 @@ export component Notch inherits Window {
         border-bottom-right-radius: self.border-bottom-left-radius;
         clip: true;
 
-        hover := TouchArea { }
+        hover := TouchArea {
+            pointer-event(event) => {
+                if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                    root.menu-requested();
+                }
+            }
+        }
 
         idle-row := HorizontalLayout {
             alignment: center;

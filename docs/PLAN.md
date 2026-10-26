@@ -50,7 +50,7 @@ Record results in `docs/FINDINGS.md`. Commit
   states, ~200 ms ease-out morph, color tokens. Request and alert states are built in
   2.4 and 2.5 with their data. No embedded font: Segoe UI digits are already tabular.
   Commit `feat: notch pill ui with morph states`.
-- [ ] **1.4** `window.rs`: no frame, transparent, topmost, hidden from taskbar and Alt+Tab,
+- [x] **1.4** `window.rs`: no frame, transparent, topmost, hidden from taskbar and Alt+Tab,
   never steals focus, top-center placement, DPI-correct.
   Commit `feat: notch window placement and styles`.
 - [ ] **1.5** Cursor poll (~30 Hz) drives hover and toggles click-through when the cursor

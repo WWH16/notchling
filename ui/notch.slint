@@ -112,7 +112,9 @@ export component Notch inherits Window {
     always-on-top: true;
     background: transparent;
     // Fixed size large enough for the biggest state; only the shape is drawn.
-    width: 520px;
+    // Exposed because Rust positions the window before Slint knows its size.
+    out property <length> fixed-width: 520px;
+    width: self.fixed-width;
     height: 280px;
 
     pill := Rectangle {

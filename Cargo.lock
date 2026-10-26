@@ -159,8 +159,10 @@ name = "ai-notch"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "raw-window-handle",
  "slint",
  "slint-build",
+ "windows",
 ]
 
 [[package]]
@@ -4014,6 +4016,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "pin-weak",
+ "raw-window-handle",
  "slint-macros",
  "unicode-segmentation",
  "vtable",

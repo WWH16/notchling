@@ -95,13 +95,21 @@ export component Notch inherits Window {
     in property <string> ram-text: "-";
     in property <string> vram-text: "-";
 
-    // Rust reads these to keep the clickable window region around the visible shape.
-    out property <bool> expanded: hover.has-hover;
-    out property <length> pill-width: pill.width;
-    out property <length> pill-height: pill.height;
-    out property <length> target-width: self.expanded ? open-width : idle-width;
-    out property <length> target-height: self.expanded ? open-height : idle-height;
+    // The clickable window region: the shape's current size or where it is heading,
+    // whichever is larger. Rust clips the window to it, so clicks elsewhere pass through.
+    out property <length> shape-width: max(pill.width, self.target-width);
+    out property <length> shape-height: max(pill.height, self.target-height);
+    callback shape-changed();
+    changed shape-width => {
+        self.shape-changed();
+    }
+    changed shape-height => {
+        self.shape-changed();
+    }
 
+    private property <bool> expanded: hover.has-hover;
+    private property <length> target-width: self.expanded ? open-width : idle-width;
+    private property <length> target-height: self.expanded ? open-height : idle-height;
     private property <length> idle-width: 190px;
     private property <length> idle-height: 30px;
     private property <length> open-width: 380px;

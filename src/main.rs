@@ -24,8 +24,22 @@ fn main() -> anyhow::Result<()> {
     window::place_top_center(notch.window(), notch.get_fixed_width())?;
     notch.show()?;
 
-    on_native_window(notch.as_weak(), NATIVE_WINDOW_ATTEMPTS, |_notch, native| {
+    on_native_window(notch.as_weak(), NATIVE_WINDOW_ATTEMPTS, |notch, native| {
         native.apply_tool_styles();
+        let weak = notch.as_weak();
+        let clip = move || {
+            let Some(notch) = weak.upgrade() else {
+                return;
+            };
+            native.clip_to(window::shape_rect(
+                notch.get_fixed_width(),
+                notch.get_shape_width(),
+                notch.get_shape_height(),
+                notch.window().scale_factor(),
+            ));
+        };
+        clip();
+        notch.on_shape_changed(clip);
     });
 
     slint::run_event_loop()?;

@@ -5,9 +5,10 @@ use std::mem;
 
 use anyhow::{Context, bail};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, HMONITOR, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromPoint,
+    CreateRectRgn, DeleteObject, GetMonitorInfoW, HMONITOR, MONITOR_DEFAULTTOPRIMARY, MONITORINFO,
+    MonitorFromPoint, SetWindowRgn,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -40,7 +41,7 @@ pub fn place_top_center(window: &slint::Window, logical_width: f32) -> anyhow::R
     Ok(())
 }
 
-fn monitor_bounds(monitor: HMONITOR) -> anyhow::Result<windows::Win32::Foundation::RECT> {
+fn monitor_bounds(monitor: HMONITOR) -> anyhow::Result<RECT> {
     let mut info = MONITORINFO {
         cbSize: mem::size_of::<MONITORINFO>() as u32,
         ..Default::default()
@@ -100,5 +101,59 @@ impl NotchWindow {
             SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, style);
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
         }
+    }
+
+    /// Limits drawing and mouse input to `rect`; clicks outside it reach the windows below.
+    pub fn clip_to(&self, rect: RECT) {
+        // SAFETY: `hwnd` is live. On success the system owns the region; on failure we
+        // still own it and delete it.
+        unsafe {
+            let region = CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom);
+            if SetWindowRgn(self.hwnd, Some(region), true) == 0 {
+                let _ = DeleteObject(region.into());
+            }
+        }
+    }
+}
+
+/// The top-centered rectangle, in physical pixels, that holds a shape of the given
+/// logical size inside a window of the given logical width.
+///
+/// Rounds outward so anti-aliased edges are never cut off.
+#[must_use]
+pub fn shape_rect(window_width: f32, shape_width: f32, shape_height: f32, scale: f32) -> RECT {
+    let left = (window_width - shape_width) / 2.0 * scale;
+    let right = left + shape_width * scale;
+    // Pixel coordinates are far inside i32 range; truncation after floor/ceil is intended.
+    RECT {
+        left: left.floor() as i32,
+        top: 0,
+        right: right.ceil() as i32,
+        bottom: (shape_height * scale).ceil() as i32,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shape_rect_is_centered_at_100_percent() {
+        let rect = shape_rect(520.0, 190.0, 30.0, 1.0);
+        assert_eq!(
+            (rect.left, rect.top, rect.right, rect.bottom),
+            (165, 0, 355, 30)
+        );
+    }
+
+    #[test]
+    fn shape_rect_rounds_outward_when_scaled() {
+        let rect = shape_rect(520.0, 191.0, 30.5, 1.25);
+        // Unrounded: left 205.625, right 444.375, bottom 38.125.
+        assert_eq!(
+            (rect.left, rect.right, rect.bottom),
+            (205, 445, 39),
+            "{rect:?}"
+        );
     }
 }

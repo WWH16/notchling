@@ -53,8 +53,8 @@ Record results in `docs/FINDINGS.md`. Commit
 - [x] **1.4** `window.rs`: no frame, transparent, topmost, hidden from taskbar and Alt+Tab,
   never steals focus, top-center placement, DPI-correct.
   Commit `feat: notch window placement and styles`.
-- [ ] **1.5** Cursor poll (~30 Hz) drives hover and toggles click-through when the cursor
-  leaves the pill. Riskiest UI piece; test it on its own first.
+- [x] **1.5** Window region follows the shape (Slint `changed` handlers, no polling); hover
+  comes from Slint; clicks outside the shape pass through to the windows below.
   Commit `feat: hover detection and click-through`.
 - [ ] **1.6** `system.rs`: CPU and RAM via `sysinfo`, every second.
   Commit `feat: cpu and ram stats`.

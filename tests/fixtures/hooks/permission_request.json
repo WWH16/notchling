@@ -1,0 +1,23 @@
+{
+  "session_id": "00000000-0000-0000-0000-000000000001",
+  "transcript_path": "C:\Users\example\.claude\projects\example\00000000-0000-0000-0000-000000000001.jsonl",
+  "cwd": "C:\work\example",
+  "prompt_id": "00000000-0000-0000-0000-000000000002",
+  "scratchpad_dir": "C:\Users\example\AppData\Local\Temp\claude\example",
+  "permission_mode": "default",
+  "effort": { "level": "high" },
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "cargo build --release",
+    "description": "Build release binary"
+  },
+  "permission_suggestions": [
+    {
+      "type": "addRules",
+      "rules": [{ "toolName": "Bash", "ruleContent": "cargo build:*" }],
+      "behavior": "allow",
+      "destination": "localSettings"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+{"sessionId":"00000000-0000-0000-0000-00000000000a","projectHash":"example","startTime":"2026-06-18T10:59:49.527Z","lastUpdated":"2026-06-18T11:05:33.475Z","kind":"main"}
+{"id":"m1","timestamp":"2026-06-18T10:59:49.527Z","type":"user","content":"example prompt"}
+{"id":"m2","timestamp":"2026-06-18T11:00:02.000Z","type":"gemini","content":"example reply","model":"gemini-3-flash-preview","tokens":{"input":12963,"output":22,"cached":7599,"thoughts":155,"tool":0,"total":13140}}

@@ -86,6 +86,63 @@ component Pair inherits HorizontalLayout {
     }
 }
 
+component PillButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary;
+    callback clicked();
+    width: max(68px, label-text.preferred-width + 28px);
+    height: 28px;
+    border-radius: 14px;
+    border-width: self.primary ? 0 : 1px;
+    border-color: #3a3a3c;
+    background: self.primary
+        ? (touch.pressed ? #d1d1d6 : touch.has-hover ? #f2f2f7 : #ffffff)
+        : (touch.pressed ? #3a3a3c : touch.has-hover ? #2c2c2e : transparent);
+
+    label-text := Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        color: root.primary ? #000000 : Theme.text;
+        font-family: Theme.font;
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component LinkButton inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+    width: link-text.preferred-width;
+    height: 28px;
+
+    link-text := Text {
+        height: parent.height;
+        text: root.label;
+        color: touch.has-hover ? Theme.text : Theme.muted;
+        font-family: Theme.font;
+        font-size: 11px;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// What the user picked on a permission request.
+export enum Choice { allow, deny, ask-in-app }
+
 export component Notch inherits Window {
     // Loads as fractions in 0..1; text values are formatted by Rust.
     in property <float> cpu;
@@ -94,6 +151,15 @@ export component Notch inherits Window {
     in property <float> vram;
     in property <string> ram-text: "-";
     in property <string> vram-text: "-";
+
+    // The permission request on screen, if any. Rust keeps the queue.
+    in property <bool> has-request;
+    in property <int> request-id;
+    in property <string> request-tool;
+    in property <string> request-project;
+    in property <string> request-detail;
+    in property <int> request-more;
+    callback decide(int, Choice);
 
     // The clickable window region: the shape's current size or where it is heading,
     // whichever is larger. Rust clips the window to it, so clicks elsewhere pass through.
@@ -112,12 +178,16 @@ export component Notch inherits Window {
     callback menu-requested();
 
     private property <bool> expanded: hover.has-hover;
-    private property <length> target-width: self.expanded ? open-width : idle-width;
-    private property <length> target-height: self.expanded ? open-height : idle-height;
+    private property <length> target-width: self.has-request ? request-width
+        : self.expanded ? open-width : idle-width;
+    private property <length> target-height: self.has-request ? request-height
+        : self.expanded ? open-height : idle-height;
     private property <length> idle-width: 190px;
     private property <length> idle-height: 30px;
     private property <length> open-width: 380px;
     private property <length> open-height: 64px;
+    private property <length> request-width: 460px;
+    private property <length> request-height: 196px;
 
     title: "ai-notch";
     no-frame: true;
@@ -189,7 +259,119 @@ export component Notch inherits Window {
             }
         }
 
+        request-view := VerticalLayout {
+            opacity: 0;
+            visible: self.opacity > 0;
+            padding-left: 18px;
+            padding-right: 18px;
+            padding-top: 12px;
+            padding-bottom: 14px;
+            spacing: 10px;
+
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle {
+                    width: 6px;
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: Theme.claude;
+                    }
+                }
+                Text {
+                    text: "Claude wants to use \{root.request-tool}";
+                    color: Theme.text;
+                    font-family: Theme.font;
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.request-more > 0
+                        ? "\{root.request-project}  +\{root.request-more}"
+                        : root.request-project;
+                    color: Theme.muted;
+                    font-family: Theme.font;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+            }
+
+            Rectangle {
+                height: 104px;
+                background: #161618;
+                border-radius: 10px;
+                clip: true;
+
+                Flickable {
+                    x: 10px;
+                    y: 8px;
+                    width: parent.width - 20px;
+                    height: parent.height - 16px;
+                    content-height: max(self.height, command.preferred-height);
+
+                    command := Text {
+                        width: parent.width;
+                        height: self.preferred-height;
+                        vertical-alignment: top;
+                        text: root.request-detail;
+                        color: #e5e5ea;
+                        font-family: "Cascadia Mono";
+                        font-size: 11px;
+                        wrap: char-wrap;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                LinkButton {
+                    label: "Open in app";
+                    clicked => {
+                        root.decide(root.request-id, Choice.ask-in-app);
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                PillButton {
+                    label: "Deny";
+                    clicked => {
+                        root.decide(root.request-id, Choice.deny);
+                    }
+                }
+                PillButton {
+                    label: "Allow";
+                    primary: true;
+                    clicked => {
+                        root.decide(root.request-id, Choice.allow);
+                    }
+                }
+            }
+        }
+
         states [
+            request when root.has-request: {
+                pill.width: root.request-width;
+                pill.height: root.request-height;
+                idle-row.opacity: 0;
+                detail.opacity: 0;
+                request-view.opacity: 1;
+                in {
+                    animate pill.width, pill.height { duration: 220ms; easing: ease-out; }
+                    animate idle-row.opacity, detail.opacity { duration: 80ms; }
+                    animate request-view.opacity { duration: 140ms; delay: 160ms; }
+                }
+                out {
+                    animate pill.width, pill.height { duration: 200ms; easing: ease-out; }
+                    animate request-view.opacity { duration: 80ms; }
+                    animate idle-row.opacity { duration: 140ms; delay: 120ms; }
+                }
+            }
             open when root.expanded: {
                 pill.width: root.open-width;
                 pill.height: root.open-height;

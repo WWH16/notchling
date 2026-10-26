@@ -81,7 +81,7 @@ software renderer. The OpenGL renderer used 95 MB and 0.94% CPU for the same loo
   click up to a configurable timeout (default 120 s), print the exact JSON format from
   V1. If the notch is not running or time runs out, exit with no decision so the normal
   dialog appears. Commit `feat: hook mode`.
-- [ ] **2.4** Request card: queue across sessions, full command with scrolling, Allow and
+- [x] **2.4** Request card: queue across sessions, full command with scrolling, Allow and
   Deny. Commit `feat: permission request card`.
 - [ ] **2.5** Done and needs-input pulses; click focuses the source window, found by walking
   the hook's parent processes. Commit `feat: task alerts with click-to-focus`.

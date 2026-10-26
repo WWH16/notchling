@@ -16,6 +16,7 @@ const MAX_HOOK_TIMEOUT_SECS: u64 = 580;
 
 /// Extra seconds the Claude Code hook entry allows beyond our own wait, so the notch
 /// always gives up first and Claude Code never kills the hook mid-reply.
+#[expect(dead_code, reason = "used by the hook installer in step 2.7")]
 pub const HOOK_ENTRY_MARGIN_SECS: u64 = 10;
 
 /// Settings with their defaults; every field is optional in the file.

@@ -1,9 +1,9 @@
 {
   "session_id": "00000000-0000-0000-0000-000000000001",
-  "transcript_path": "C:\Users\example\.claude\projects\example\00000000-0000-0000-0000-000000000001.jsonl",
-  "cwd": "C:\work\example",
+  "transcript_path": "C:\\Users\\example\\.claude\\projects\\example\\00000000-0000-0000-0000-000000000001.jsonl",
+  "cwd": "C:\\work\\example",
   "prompt_id": "00000000-0000-0000-0000-000000000002",
-  "scratchpad_dir": "C:\Users\example\AppData\Local\Temp\claude\example",
+  "scratchpad_dir": "C:\\Users\\example\\AppData\\Local\\Temp\\claude\\example",
   "hook_event_name": "Notification",
   "message": "Claude needs your permission to use Bash",
   "notification_type": "permission_prompt"

@@ -77,7 +77,7 @@ software renderer. The OpenGL renderer used 95 MB and 0.94% CPU for the same loo
 - [x] **2.2** `pipe.rs`: named pipe restricted to the current Windows user, rejects remote
   clients, first-instance only. Integration test.
   Commit `feat: secure named pipe server and client`.
-- [ ] **2.3** `--hook` mode: read the event from stdin, send it to the notch, wait for a
+- [x] **2.3** `--hook` mode: read the event from stdin, send it to the notch, wait for a
   click up to a configurable timeout (default 120 s), print the exact JSON format from
   V1. If the notch is not running or time runs out, exit with no decision so the normal
   dialog appears. Commit `feat: hook mode`.

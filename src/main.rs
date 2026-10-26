@@ -1,17 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-#[expect(dead_code, reason = "read by hook mode from step 2.3")]
 mod config;
 mod gpu;
+mod hook;
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "used by hook mode and the notch from step 2.3")
+    expect(dead_code, reason = "the notch side is wired up in step 2.4")
 )]
 mod pipe;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by hook mode and the notch from step 2.3")
-)]
+mod process;
 mod protocol;
 mod system;
 mod window;
@@ -21,6 +18,7 @@ mod ui {
     slint::include_modules!();
 }
 
+use std::env;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -40,6 +38,11 @@ const NATIVE_WINDOW_ATTEMPTS: u32 = 60;
 const STATS_INTERVAL: Duration = Duration::from_secs(1);
 
 fn main() -> anyhow::Result<()> {
+    if env::args().nth(1).as_deref() == Some("--hook") {
+        hook::run();
+        return Ok(());
+    }
+
     let notch = Notch::new()?;
     window::place_top_center(notch.window(), notch.get_fixed_width())?;
     notch.show()?;

@@ -229,7 +229,14 @@ sessions (needs the user, since it changes the global settings).
   the ring's colour, and unfolds while pointed at. The upright panel is 230 px wide
   instead of 210; offscreen, "Claude · Degraded" and the ESTIMATED badge now fit with
   room to spare. Commit `feat: tuck the notch into side edges`.
-- [ ] **8.5** Polish: colours into `Theme`, "2 more", the Consolas fallback, label sizes.
+- [x] **8.5** Polish: colours into `Theme`, "2 more", the Consolas fallback, label sizes.
+  Every colour and type size is a `Theme` token; nothing is below 10 px (labels 10 to
+  11 px, the badge 9 to 10 px). Commands use Cascadia Mono where it is installed, else
+  Consolas. Windows' text size (`HKCU\SOFTWARE\Microsoft\Accessibility`,
+  `TextScaleFactor`) scales the text and the shapes holding it, and the window is
+  placed again when its size changes. A short command now starts at the top of its
+  box instead of the middle. Checked offscreen at 100% and 150%. Commit
+  `feat: theme tokens and windows text size`.
 - [ ] **8.6** Live Claude activity in the idle pill.
 - [ ] **8.7** Limit forecast in the hover panel.
 - [ ] **8.8** "Start at sign-in" toggle in Settings.

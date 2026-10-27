@@ -163,6 +163,14 @@ fn main() -> anyhow::Result<()> {
             notch.on_shape_changed(move || shape_clip());
             drag_and_stick(&notch, &placement, &clip);
             answer_with_shortcuts(&notch, &native);
+            let weak = notch.as_weak();
+            let resized = Rc::clone(&placement);
+            let settled = Rc::clone(&clip);
+            notch.on_size_changed(move || {
+                if let Some(notch) = weak.upgrade() {
+                    replace(&notch, &mut resized.borrow_mut(), &settled);
+                }
+            });
 
             let weak = notch.as_weak();
             let settings = RefCell::new(None);
@@ -469,20 +477,30 @@ fn apply_settings(
         notch.set_tuck(config.tuck());
         let mut placement = placement.borrow_mut();
         placement.device = config.monitor().map(str::to_owned);
-        // Fails only when Windows reports no display; the notch then stays put.
-        let _ = placement.apply(notch.window(), window_size(&notch));
-        show_placement(&notch, &placement);
-        let clip = Rc::clone(&clip);
-        Timer::single_shot(MONITOR_MOVE_SETTLE, move || clip());
+        replace(&notch, &mut placement, &clip);
     }
 }
 
-/// Keeps the notch in line with Windows' "Show animations" setting until the returned
-/// timer is dropped.
+/// Moves the notch to its placement again, after its display or size changed, and
+/// re-clips it once Windows has settled the move.
+fn replace(notch: &Notch, placement: &mut Placement, clip: &Rc<dyn Fn()>) {
+    // Fails only when Windows reports no display; the notch then stays put.
+    let _ = placement.apply(notch.window(), window_size(notch));
+    show_placement(notch, placement);
+    let clip = Rc::clone(clip);
+    Timer::single_shot(MONITOR_MOVE_SETTLE, move || clip());
+}
+
+/// Keeps the notch in line with Windows' "Show animations" and text size settings until
+/// the returned timer is dropped.
 fn follow_system_settings(notch: &Notch) -> Timer {
+    notch
+        .global::<ui::Theme>()
+        .set_mono(window::mono_font().into());
     let apply = |notch: &Notch| {
         let theme = notch.global::<ui::Theme>();
         theme.set_reduce_motion(!window::animations_enabled());
+        theme.set_text_scale(window::text_scale());
     };
     apply(notch);
     let timer = Timer::default();

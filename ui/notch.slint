@@ -7,6 +7,15 @@ export global Theme {
     out property <color> text: #ffffff;
     out property <color> muted: #8e8e93;
     out property <color> track: #2c2c2e;
+    // Borders, and an outline button while pressed.
+    out property <color> outline: #3a3a3c;
+    // The command box on a request card.
+    out property <color> code-surface: #161618;
+    out property <color> code-text: #e5e5ea;
+    // The primary button, light on the black notch, with its hover and pressed shades.
+    out property <color> button: #ffffff;
+    out property <color> button-hover: #f2f2f7;
+    out property <color> button-pressed: #d1d1d6;
     out property <color> claude: #d97757;
     out property <color> chatgpt: #10a37f;
     out property <color> gemini: #4c8df6;
@@ -15,6 +24,16 @@ export global Theme {
     out property <color> bad: #ff453a;
     // Segoe UI digits are tabular by default, so numbers don't jitter.
     out property <string> font: "Segoe UI Variable";
+    // Cascadia Mono where it is installed, else Consolas, which every Windows has; Rust
+    // picks one.
+    in property <string> mono: "Consolas";
+    // Windows' text size, 1 at 100%. Text and the shapes holding it grow with it.
+    in property <float> text-scale: 1;
+    // Type sizes; nothing is smaller than 10px, which stays legible at 100% scaling.
+    out property <length> size-small: 10px * self.text-scale;
+    out property <length> size-label: 11px * self.text-scale;
+    out property <length> size-value: 12px * self.text-scale;
+    out property <length> size-large: 13px * self.text-scale;
     // Windows "Show animations" is off: shapes change at once and only fades remain.
     in property <bool> reduce-motion;
 }
@@ -49,7 +68,7 @@ component Stat inherits VerticalLayout {
             text: root.label;
             color: Theme.muted;
             font-family: Theme.font;
-            font-size: 10px;
+            font-size: Theme.size-label;
             font-weight: 600;
             vertical-alignment: center;
         }
@@ -57,7 +76,7 @@ component Stat inherits VerticalLayout {
             text: root.value;
             color: Theme.text;
             font-family: Theme.font;
-            font-size: 12px;
+            font-size: Theme.size-value;
             font-weight: 600;
             horizontal-alignment: right;
             vertical-alignment: center;
@@ -78,7 +97,7 @@ component Pair inherits HorizontalLayout {
         text: root.label;
         color: Theme.muted;
         font-family: Theme.font;
-        font-size: 10px;
+        font-size: Theme.size-label;
         font-weight: 600;
         vertical-alignment: center;
     }
@@ -86,7 +105,7 @@ component Pair inherits HorizontalLayout {
         text: root.value;
         color: Theme.text;
         font-family: Theme.font;
-        font-size: 12px;
+        font-size: Theme.size-value;
         font-weight: 600;
         vertical-alignment: center;
     }
@@ -102,7 +121,7 @@ component StackedPair inherits VerticalLayout {
         text: root.label;
         color: Theme.muted;
         font-family: Theme.font;
-        font-size: 10px;
+        font-size: Theme.size-label;
         font-weight: 600;
         horizontal-alignment: center;
     }
@@ -110,7 +129,7 @@ component StackedPair inherits VerticalLayout {
         text: root.value;
         color: Theme.text;
         font-family: Theme.font;
-        font-size: 12px;
+        font-size: Theme.size-value;
         font-weight: 600;
         horizontal-alignment: center;
     }
@@ -123,16 +142,16 @@ component PillButton inherits Rectangle {
     in property <bool> armed: true;
     in property <float> progress: 1;
     callback clicked();
-    width: max(68px, label-text.preferred-width + 28px);
-    height: 28px;
-    border-radius: 14px;
+    width: max(68px * Theme.text-scale, label-text.preferred-width + 28px);
+    height: 28px * Theme.text-scale;
+    border-radius: self.height / 2;
     border-width: self.primary ? 0 : 1px;
-    border-color: #3a3a3c;
+    border-color: Theme.outline;
     clip: true;
-    background: !self.armed ? (self.primary ? #3a3a3c : transparent)
+    background: !self.armed ? (self.primary ? Theme.outline : transparent)
         : self.primary
-        ? (touch.pressed ? #d1d1d6 : touch.has-hover ? #f2f2f7 : #ffffff)
-        : (touch.pressed ? #3a3a3c : touch.has-hover ? #2c2c2e : transparent);
+        ? (touch.pressed ? Theme.button-pressed : touch.has-hover ? Theme.button-hover : Theme.button)
+        : (touch.pressed ? Theme.outline : touch.has-hover ? Theme.track : transparent);
     accessible-role: button;
     accessible-label: self.label;
     accessible-enabled: self.armed;
@@ -143,16 +162,16 @@ component PillButton inherits Rectangle {
     if !root.armed: Rectangle {
         x: 0;
         width: parent.width * clamp(root.progress, 0, 1);
-        background: root.primary ? #8e8e93 : #2c2c2e;
+        background: root.primary ? Theme.muted : Theme.track;
     }
 
     label-text := Text {
         width: parent.width;
         height: parent.height;
         text: root.label;
-        color: root.primary && root.armed ? #000000 : Theme.text;
+        color: root.primary && root.armed ? Theme.surface : Theme.text;
         font-family: Theme.font;
-        font-size: 12px;
+        font-size: Theme.size-value;
         font-weight: 600;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -170,7 +189,7 @@ component LinkButton inherits Rectangle {
     in property <string> label;
     callback clicked();
     width: link-text.preferred-width;
-    height: 28px;
+    height: 28px * Theme.text-scale;
     accessible-role: button;
     accessible-label: self.label;
     accessible-action-default => {
@@ -182,7 +201,7 @@ component LinkButton inherits Rectangle {
         text: root.label;
         color: touch.has-hover ? Theme.text : Theme.muted;
         font-family: Theme.font;
-        font-size: 11px;
+        font-size: Theme.size-label;
         vertical-alignment: center;
     }
 
@@ -212,16 +231,16 @@ component Badge inherits Rectangle {
 
     Rectangle {
         y: (parent.height - self.height) / 2;
-        height: 15px;
+        height: 15px * Theme.text-scale;
         border-width: 1px;
-        border-color: #3a3a3c;
+        border-color: Theme.outline;
         border-radius: 4px;
 
         badge-text := Text {
             text: root.label;
             color: Theme.muted;
             font-family: Theme.font;
-            font-size: 9px;
+            font-size: Theme.size-small;
             font-weight: 600;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -234,8 +253,8 @@ component Ring inherits Rectangle {
     in property <float> fraction;
     in property <color> fill;
     in property <length> thickness: 2px;
-    width: 14px;
-    height: 14px;
+    width: 14px * Theme.text-scale;
+    height: 14px * Theme.text-scale;
 
     Rectangle {
         border-radius: self.width / 2;
@@ -284,8 +303,8 @@ component Gauge inherits HorizontalLayout {
     accessible-description: self.detail;
 
     Ring {
-        width: 24px;
-        height: 24px;
+        width: 24px * Theme.text-scale;
+        height: 24px * Theme.text-scale;
         thickness: 3px;
         fraction: root.fraction;
         fill: root.fill;
@@ -301,7 +320,7 @@ component Gauge inherits HorizontalLayout {
                 text: root.value;
                 color: Theme.text;
                 font-family: Theme.font;
-                font-size: 13px;
+                font-size: Theme.size-large;
                 font-weight: 600;
                 vertical-alignment: center;
             }
@@ -309,7 +328,7 @@ component Gauge inherits HorizontalLayout {
                 text: root.label;
                 color: Theme.muted;
                 font-family: Theme.font;
-                font-size: 10px;
+                font-size: Theme.size-label;
                 font-weight: 600;
                 vertical-alignment: center;
             }
@@ -318,7 +337,7 @@ component Gauge inherits HorizontalLayout {
             text: root.detail;
             color: Theme.muted;
             font-family: Theme.font;
-            font-size: 10px;
+            font-size: Theme.size-label;
         }
     }
 }
@@ -357,7 +376,7 @@ component ProviderInfo inherits VerticalLayout {
             text: root.name;
             color: Theme.text;
             font-family: Theme.font;
-            font-size: 12px;
+            font-size: Theme.size-value;
             font-weight: 600;
             vertical-alignment: center;
         }
@@ -366,7 +385,7 @@ component ProviderInfo inherits VerticalLayout {
             text: root.status == Health.down ? "· Outage" : "· Degraded";
             color: root.status == Health.down ? Theme.bad : Theme.warn;
             font-family: Theme.font;
-            font-size: 11px;
+            font-size: Theme.size-label;
             font-weight: 600;
             vertical-alignment: center;
         }
@@ -378,7 +397,7 @@ component ProviderInfo inherits VerticalLayout {
         text: root.detail;
         color: Theme.muted;
         font-family: Theme.font;
-        font-size: 10px;
+        font-size: Theme.size-label;
     }
 }
 
@@ -553,11 +572,13 @@ export component Notch inherits Window {
     private property <bool> vertical: self.edge == NotchEdge.left || self.edge == NotchEdge.right;
     private property <bool> tucked: self.tuck && self.vertical && !self.hovered && !self.expanded
         && !self.has-request && !self.alert-active && !self.floating;
-    private property <length> idle-width: self.tucked ? 6px : self.vertical ? 54px : 250px;
-    private property <length> idle-height: self.tucked ? 96px : self.vertical ? 140px : 30px;
+    private property <length> idle-width: self.tucked ? 6px
+        : (self.vertical ? 54px : 250px) * Theme.text-scale;
+    private property <length> idle-height: self.tucked ? 96px
+        : (self.vertical ? 140px : 30px) * Theme.text-scale;
     // Wide enough for "ChatGPT · Outage" and the ESTIMATED badge on one line.
-    private property <length> open-width: self.vertical ? 230px : 460px;
-    private property <length> open-height: self.vertical ? 304px : 106px;
+    private property <length> open-width: (self.vertical ? 230px : 460px) * Theme.text-scale;
+    private property <length> open-height: (self.vertical ? 304px : 106px) * Theme.text-scale;
     // The idle and open sizes as drawn, easing into the other orientation when the notch
     // moves between a side edge and the top or bottom. The window region follows the
     // targets above instead, since re-clipping on every frame made the notch flicker.
@@ -569,10 +590,10 @@ export component Notch inherits Window {
         duration: Theme.reduce-motion ? 0ms : 260ms;
         easing: ease-out;
     }
-    private property <length> request-width: 460px;
-    private property <length> request-height: 196px;
-    private property <length> alert-width: 290px;
-    private property <length> alert-height: 34px;
+    private property <length> request-width: 460px * Theme.text-scale;
+    private property <length> request-height: 196px * Theme.text-scale;
+    private property <length> alert-width: 290px * Theme.text-scale;
+    private property <length> alert-height: 34px * Theme.text-scale;
 
     title: "ai-notch";
     no-frame: true;
@@ -580,8 +601,13 @@ export component Notch inherits Window {
     background: transparent;
     // Fixed size large enough for the biggest state; only the shape is drawn.
     // Exposed because Rust positions the window before Slint knows its size.
-    out property <length> fixed-width: 520px;
-    out property <length> fixed-height: 320px;
+    out property <length> fixed-width: 520px * Theme.text-scale;
+    out property <length> fixed-height: 320px * Theme.text-scale;
+    // Runs when the text size changes the window's size, so Rust can place it again.
+    callback size-changed();
+    changed fixed-width => {
+        self.size-changed();
+    }
     width: self.fixed-width;
     height: self.fixed-height;
 
@@ -674,7 +700,7 @@ export component Notch inherits Window {
                         text: root.usage-short;
                         color: Theme.text;
                         font-family: Theme.font;
-                        font-size: 12px;
+                        font-size: Theme.size-value;
                         font-weight: 600;
                         vertical-alignment: center;
                     }
@@ -704,7 +730,7 @@ export component Notch inherits Window {
                         text: root.usage-short;
                         color: Theme.text;
                         font-family: Theme.font;
-                        font-size: 12px;
+                        font-size: Theme.size-value;
                         font-weight: 600;
                         horizontal-alignment: center;
                     }
@@ -858,7 +884,7 @@ export component Notch inherits Window {
                     text: "Claude wants to use \{root.request-tool}";
                     color: Theme.text;
                     font-family: Theme.font;
-                    font-size: 12px;
+                    font-size: Theme.size-value;
                     font-weight: 600;
                     vertical-alignment: center;
                     overflow: elide;
@@ -866,18 +892,18 @@ export component Notch inherits Window {
                 }
                 Text {
                     text: root.request-more > 0
-                        ? "\{root.request-project}  +\{root.request-more}"
+                        ? "\{root.request-project} · \{root.request-more} more"
                         : root.request-project;
                     color: Theme.muted;
                     font-family: Theme.font;
-                    font-size: 11px;
+                    font-size: Theme.size-label;
                     vertical-alignment: center;
                 }
             }
 
             code-box := Rectangle {
-                height: 104px;
-                background: #161618;
+                height: 104px * Theme.text-scale;
+                background: Theme.code-surface;
                 border-radius: 10px;
                 clip: true;
 
@@ -889,13 +915,15 @@ export component Notch inherits Window {
                     content-height: max(self.height, command.preferred-height);
 
                     command := Text {
+                        // Slint centres a shorter child; a short command starts at the top.
+                        y: 0;
                         width: parent.width;
                         height: self.preferred-height;
                         vertical-alignment: top;
                         text: root.request-detail;
-                        color: #e5e5ea;
-                        font-family: "Cascadia Mono";
-                        font-size: 11px;
+                        color: Theme.code-text;
+                        font-family: Theme.mono;
+                        font-size: Theme.size-label;
                         wrap: char-wrap;
                     }
                 }
@@ -914,7 +942,7 @@ export component Notch inherits Window {
                 if self.hidden-lines > 0: Rectangle {
                     y: parent.height - self.height;
                     height: 34px;
-                    background: @linear-gradient(180deg, #16161800 0%, #161618 75%);
+                    background: @linear-gradient(180deg, Theme.code-surface.transparentize(100%) 0%, Theme.code-surface 75%);
 
                     Text {
                         x: parent.width - self.width - 12px;
@@ -923,7 +951,7 @@ export component Notch inherits Window {
                             : "+\{code-box.hidden-lines} lines";
                         color: Theme.muted;
                         font-family: Theme.font;
-                        font-size: 10px;
+                        font-size: Theme.size-label;
                         font-weight: 600;
                     }
                 }
@@ -944,7 +972,7 @@ export component Notch inherits Window {
                     text: "Ctrl+Alt+Y · N";
                     color: Theme.muted;
                     font-family: Theme.font;
-                    font-size: 10px;
+                    font-size: Theme.size-label;
                     vertical-alignment: center;
                 }
                 PillButton {
@@ -1000,7 +1028,7 @@ export component Notch inherits Window {
                 text: root.alert-text;
                 color: Theme.text;
                 font-family: Theme.font;
-                font-size: 12px;
+                font-size: Theme.size-value;
                 font-weight: 600;
                 vertical-alignment: center;
                 overflow: elide;

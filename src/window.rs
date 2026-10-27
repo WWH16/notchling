@@ -1,8 +1,10 @@
 //! Win32 window tweaks that Slint does not expose: tool-window styles and placement.
 
 use std::cell::RefCell;
+use std::env;
 use std::ffi::c_void;
 use std::mem;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use anyhow::{Context, bail};
@@ -12,6 +14,7 @@ use windows::Win32::Graphics::Gdi::{
     CreateRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR,
     MONITOR_DEFAULTTONEAREST, MONITORINFO, MONITORINFOEXW, MonitorFromPoint, SetWindowRgn,
 };
+use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey, VIRTUAL_KEY, VK_N, VK_Y,
@@ -37,6 +40,9 @@ use crate::usage::Provider;
 
 /// DPI that Windows treats as 100% scaling.
 const BASE_DPI: f32 = 96.0;
+
+/// The largest text size Windows offers, 225%.
+const MAX_TEXT_SCALE: f32 = 2.25;
 
 /// winit's window procedure for the notch, which [`notch_procedure`] hands every other
 /// message to.
@@ -159,6 +165,51 @@ pub fn animations_enabled() -> bool {
         )
     };
     enabled.as_bool()
+}
+
+/// Windows' text size (Settings, Accessibility, Text size) as a factor, 1 at 100%.
+#[must_use]
+pub fn text_scale() -> f32 {
+    let mut percent = 100u32;
+    let mut size = mem::size_of::<u32>() as u32;
+    // SAFETY: the key and value names are static wide strings; RRF_RT_REG_DWORD makes the
+    // call write at most `size` bytes, one u32, into `percent`, which outlives it.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!(r"SOFTWARE\Microsoft\Accessibility"),
+            w!("TextScaleFactor"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&raw mut percent).cast()),
+            Some(&mut size),
+        )
+    };
+    // Unset until the user first changes it, which means 100%.
+    if status.is_err() {
+        return 1.0;
+    }
+    // A percentage is far inside f32's exact range.
+    (percent as f32 / 100.0).clamp(1.0, MAX_TEXT_SCALE)
+}
+
+/// The monospaced font for commands: Cascadia Mono where it is installed for everyone
+/// or for this user, else Consolas, which every Windows has.
+#[must_use]
+pub fn mono_font() -> &'static str {
+    let font_dirs = [
+        env::var_os("WINDIR").map(|dir| PathBuf::from(dir).join("Fonts")),
+        env::var_os("LOCALAPPDATA").map(|dir| PathBuf::from(dir).join(r"Microsoft\Windows\Fonts")),
+    ];
+    let installed = font_dirs
+        .into_iter()
+        .flatten()
+        .any(|dir| dir.join("CascadiaMono.ttf").exists());
+    if installed {
+        "Cascadia Mono"
+    } else {
+        "Consolas"
+    }
 }
 
 /// Whether a fullscreen app, game or presentation is in front, so the notch should

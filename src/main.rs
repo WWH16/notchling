@@ -122,8 +122,10 @@ fn main() -> anyhow::Result<()> {
     let listener = Listener::bind(&pipe::pipe_name()?)?;
 
     let config = Config::load();
+    let shown = config.shown_provider();
     let usages = Arc::new(Mutex::new(Usages::new(
-        config.provider(),
+        shown,
+        config.providers(),
         Thresholds::new(config.usage_alerts()),
     )));
     // Known before any source runs, so an alert at startup during a game becomes a toast.
@@ -143,7 +145,9 @@ fn main() -> anyhow::Result<()> {
         .apply(notch.window(), window_size(&notch))?;
     show_placement(&notch, &placement.borrow());
     show_preferences(&notch, &config);
-    show_usage(&notch, config.provider(), None);
+    if let Some(provider) = shown {
+        show_usage(&notch, provider, None);
+    }
     notch.show()?;
     let status_switch = start_status(&notch, &usages);
 
@@ -182,17 +186,22 @@ fn main() -> anyhow::Result<()> {
                 let Some(notch) = weak.upgrade() else {
                     return;
                 };
-                let shown = lock_usages(&menu_usages).shown;
-                match window::show_menu(shown) {
+                // Copied out: the menu waits for a pick, and sources check `tracked` meanwhile.
+                let (shown, tracked) = {
+                    let usages = lock_usages(&menu_usages);
+                    (usages.shown, usages.tracked.clone())
+                };
+                match window::show_menu(shown, &tracked) {
                     Some(MenuChoice::Quit) => {
                         // Only fails when the loop already stopped, which is what we want anyway.
                         let _ = slint::quit_event_loop();
                     }
                     Some(MenuChoice::Show(provider)) => {
-                        select_provider(&notch, &menu_usages, &status_switch, provider);
+                        select_provider(&notch, &menu_usages, &status_switch, Some(provider));
                     }
                     Some(MenuChoice::Settings) => {
-                        let saved = apply_settings(&notch, &menu_usages, &placement, &clip);
+                        let saved =
+                            apply_settings(&notch, &menu_usages, &status_switch, &placement, &clip);
                         // A window that cannot open leaves everything as it is.
                         let _ = settings::open(&settings, saved);
                     }
@@ -462,24 +471,37 @@ fn glide_window(
 }
 
 /// Applies saved settings to the running notch: its display, tucking, the readings it
-/// shows and the usage alerts. The usage sources and hook mode read the rest from the
-/// config file themselves.
+/// shows, the tracked providers and the usage alerts. The usage sources and hook mode
+/// read the rest from the config file themselves.
 fn apply_settings(
     notch: &Notch,
     usages: &Arc<Mutex<Usages>>,
+    status_switch: &Sender<Option<Provider>>,
     placement: &Rc<RefCell<Placement>>,
     clip: &Rc<dyn Fn()>,
 ) -> impl Fn(&Config) + 'static {
     let weak = notch.as_weak();
     let usages = Arc::clone(usages);
+    let status_switch = status_switch.clone();
     let placement = Rc::clone(placement);
     let clip = Rc::clone(clip);
     move |config| {
-        lock_usages(&usages).thresholds = Thresholds::new(config.usage_alerts());
+        let shown = {
+            let mut usages = lock_usages(&usages);
+            usages.thresholds = Thresholds::new(config.usage_alerts());
+            usages.tracked = config.providers();
+            // An untracked provider's last numbers would go stale, so they go.
+            usages.latest.retain(|&provider, _| config.tracks(provider));
+            usages.shown
+        };
         let Some(notch) = weak.upgrade() else {
             return;
         };
         show_preferences(&notch, config);
+        let next = config.shown_provider();
+        if next != shown {
+            select_provider(&notch, &usages, &status_switch, next);
+        }
         let mut placement = placement.borrow_mut();
         placement.device = config.monitor().map(str::to_owned);
         replace(&notch, &mut placement, &clip);
@@ -521,6 +543,7 @@ fn follow_system_settings(notch: &Notch) -> Timer {
 /// Applies the settings the notch reads directly: tucking and which readings show.
 fn show_preferences(notch: &Notch, config: &Config) {
     notch.set_tuck(config.tuck());
+    notch.set_show_usage(config.shown_provider().is_some());
     notch.set_show_cpu(config.show_cpu());
     notch.set_show_gpu(config.show_gpu());
 }
@@ -555,19 +578,22 @@ fn start_stats(notch: &Notch) -> Timer {
     timer
 }
 
-/// The latest good usage reading of each provider, which one the notch shows, and
-/// which usage alerts already fired.
+/// The latest good usage reading of each provider, which one the notch shows, which
+/// ones are tracked, and which usage alerts already fired.
 #[derive(Debug)]
 struct Usages {
-    shown: Provider,
+    /// `None` when no provider is tracked.
+    shown: Option<Provider>,
+    tracked: Vec<Provider>,
     latest: HashMap<Provider, Usage>,
     thresholds: Thresholds,
 }
 
 impl Usages {
-    fn new(shown: Provider, thresholds: Thresholds) -> Self {
+    fn new(shown: Option<Provider>, tracked: Vec<Provider>, thresholds: Thresholds) -> Self {
         Self {
             shown,
+            tracked,
             latest: HashMap::new(),
             thresholds,
         }
@@ -578,10 +604,14 @@ fn lock_usages(usages: &Mutex<Usages>) -> std::sync::MutexGuard<'_, Usages> {
     usages.lock().expect("usages lock poisoned")
 }
 
-/// Polls every provider's usage in the background and keeps the notch showing the
-/// selected one. A provider whose source cannot start shows as "no data".
+/// Polls every tracked provider's usage in the background and keeps the notch showing
+/// the selected one. A provider whose source cannot start shows as "no data".
 fn start_usage(notch: &Notch, usages: &Arc<Mutex<Usages>>, alert: &Arc<Mutex<Alert>>) {
     let weak = notch.as_weak();
+    let tracked = {
+        let usages = Arc::clone(usages);
+        move |provider| lock_usages(&usages).tracked.contains(&provider)
+    };
     let usages = Arc::clone(usages);
     let alert = Arc::clone(alert);
     let notify = move |reading: Reading| {
@@ -590,6 +620,10 @@ fn start_usage(notch: &Notch, usages: &Arc<Mutex<Usages>>, alert: &Arc<Mutex<Ale
         // Fails only once the event loop has quit, when nothing needs drawing.
         let _ = weak.upgrade_in_event_loop(move |notch| {
             let mut usages = lock_usages(&usages);
+            // A read that was under way when its provider was unchecked.
+            if !usages.tracked.contains(&reading.provider) {
+                return;
+            }
             // A failed read drops the old numbers instead of leaving them up as current.
             match reading.usage {
                 Ok(usage) => {
@@ -604,25 +638,29 @@ fn start_usage(notch: &Notch, usages: &Arc<Mutex<Usages>>, alert: &Arc<Mutex<Ale
                     usages.latest.remove(&reading.provider);
                 }
             }
-            if reading.provider == usages.shown {
-                show_usage(&notch, usages.shown, usages.latest.get(&usages.shown));
+            if Some(reading.provider) == usages.shown {
+                show_usage(
+                    &notch,
+                    reading.provider,
+                    usages.latest.get(&reading.provider),
+                );
             }
         });
     };
     if let Ok(source) = Claude::try_new() {
-        usage::spawn(source, CLAUDE_INTERVAL, notify.clone());
+        usage::spawn(source, CLAUDE_INTERVAL, tracked.clone(), notify.clone());
     }
     if let Ok(source) = Codex::try_new() {
-        usage::spawn(source, CLI_LOG_INTERVAL, notify.clone());
+        usage::spawn(source, CLI_LOG_INTERVAL, tracked.clone(), notify.clone());
     }
     if let Ok(source) = Gemini::try_new() {
-        usage::spawn(source, CLI_LOG_INTERVAL, notify);
+        usage::spawn(source, CLI_LOG_INTERVAL, tracked, notify);
     }
 }
 
 /// Checks the shown provider's status page in the background and shows incidents on
 /// the notch. Returns where to send the provider whenever the selection changes.
-fn start_status(notch: &Notch, usages: &Arc<Mutex<Usages>>) -> Sender<Provider> {
+fn start_status(notch: &Notch, usages: &Arc<Mutex<Usages>>) -> Sender<Option<Provider>> {
     let weak = notch.as_weak();
     let usages = Arc::clone(usages);
     let shown = lock_usages(&usages).shown;
@@ -631,7 +669,7 @@ fn start_status(notch: &Notch, usages: &Arc<Mutex<Usages>>) -> Sender<Provider> 
         // Fails only once the event loop has quit, when nothing needs drawing.
         let _ = weak.upgrade_in_event_loop(move |notch| {
             // A status that arrives after a switch belongs to the old provider.
-            if lock_usages(&usages).shown == provider {
+            if lock_usages(&usages).shown == Some(provider) {
                 notch.set_status(health.map_or(ui::Health::Unknown, ui::Health::from));
             }
         });
@@ -639,18 +677,22 @@ fn start_status(notch: &Notch, usages: &Arc<Mutex<Usages>>) -> Sender<Provider> 
 }
 
 /// Shows `provider` on the notch from now on, and remembers the choice in the config.
+/// `None`, when no provider is tracked, keeps the old choice for when one is again.
 fn select_provider(
     notch: &Notch,
     usages: &Mutex<Usages>,
-    status_switch: &Sender<Provider>,
-    provider: Provider,
+    status_switch: &Sender<Option<Provider>>,
+    provider: Option<Provider>,
 ) {
     let mut usages = lock_usages(usages);
     usages.shown = provider;
-    show_usage(notch, provider, usages.latest.get(&provider));
     notch.set_status(ui::Health::Unknown);
     // Fails only if the status thread is gone, which leaves the status unknown.
     let _ = status_switch.send(provider);
+    let Some(provider) = provider else {
+        return;
+    };
+    show_usage(notch, provider, usages.latest.get(&provider));
     // On failure the choice only lasts until the notch restarts.
     let _ = Config::update(|config| config.set_provider(provider));
 }

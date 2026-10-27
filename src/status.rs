@@ -36,19 +36,22 @@ pub enum Health {
 
 /// Checks the status of whichever provider the notch shows, now and then every
 /// [`STATUS_INTERVAL`], on a background thread. Only the shown provider is checked, so
-/// Google's larger feed is fetched only while Gemini is on screen.
+/// Google's larger feed is fetched only while Gemini is on screen, and nothing is
+/// checked while the notch shows no provider.
 ///
 /// Send the newly shown provider through the returned sender to check it right away.
 /// `notify` runs on the background thread, so it should hand the result to the UI thread.
 pub fn spawn(
-    mut shown: Provider,
+    mut shown: Option<Provider>,
     notify: impl Fn(Provider, anyhow::Result<Health>) + Send + 'static,
-) -> Sender<Provider> {
+) -> Sender<Option<Provider>> {
     let (switch, switched) = mpsc::channel();
     thread::spawn(move || {
         let agent = http::agent();
         loop {
-            notify(shown, fetch(&agent, shown));
+            if let Some(provider) = shown {
+                notify(provider, fetch(&agent, provider));
+            }
             match switched.recv_timeout(STATUS_INTERVAL) {
                 Ok(provider) => shown = provider,
                 Err(RecvTimeoutError::Timeout) => {}

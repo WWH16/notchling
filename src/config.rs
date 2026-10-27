@@ -35,6 +35,9 @@ pub struct Config {
     gemini_daily_requests: u32,
     /// The provider whose usage the notch shows.
     provider: Provider,
+    /// The providers whose usage is read and offered in the menu. The others are never
+    /// read, so their CLIs and logs are left alone.
+    providers: Vec<Provider>,
     /// Usage percentages that raise an alert, each once per usage window.
     usage_alerts: Vec<u32>,
     /// Windows' device name of the display the notch sits on; the primary display
@@ -72,6 +75,7 @@ impl Default for Config {
             // The Gemini CLI's daily request limit for a free Google login.
             gemini_daily_requests: 1000,
             provider: Provider::Claude,
+            providers: Provider::ALL.to_vec(),
             usage_alerts: vec![80, 95],
             monitor: None,
             claude_account: true,
@@ -121,14 +125,43 @@ impl Config {
         self.gemini_daily_requests.max(1)
     }
 
-    /// The provider whose usage the notch shows.
-    #[must_use]
-    pub fn provider(&self) -> Provider {
-        self.provider
-    }
-
     pub fn set_provider(&mut self, provider: Provider) {
         self.provider = provider;
+    }
+
+    /// Whether `provider`'s usage is read and offered in the menu.
+    #[must_use]
+    pub fn tracks(&self, provider: Provider) -> bool {
+        self.providers.contains(&provider)
+    }
+
+    /// The tracked providers, in menu order.
+    #[must_use]
+    pub fn providers(&self) -> Vec<Provider> {
+        Provider::ALL
+            .into_iter()
+            .filter(|&provider| self.tracks(provider))
+            .collect()
+    }
+
+    pub fn set_providers(&mut self, providers: Vec<Provider>) {
+        self.providers = providers;
+    }
+
+    /// The provider the notch shows: the chosen one while it is tracked, else the next
+    /// tracked one in menu order, or `None` when no provider is tracked.
+    #[must_use]
+    pub fn shown_provider(&self) -> Option<Provider> {
+        let chosen = Provider::ALL
+            .iter()
+            .position(|&provider| provider == self.provider)
+            .expect("Provider::ALL lists every provider");
+        Provider::ALL
+            .into_iter()
+            .cycle()
+            .skip(chosen)
+            .take(Provider::ALL.len())
+            .find(|&provider| self.tracks(provider))
     }
 
     /// Usage percentages that raise an alert.
@@ -302,12 +335,47 @@ mod tests {
         let config =
             Config::parse("gemini_daily_requests = 0\nprovider = \"chatgpt\"").expect("valid TOML");
         assert_eq!(config.gemini_daily_requests(), 1);
-        assert_eq!(config.provider(), Provider::ChatGpt);
-        assert_eq!(Config::default().provider(), Provider::Claude);
+        assert_eq!(config.shown_provider(), Some(Provider::ChatGpt));
+        assert_eq!(Config::default().shown_provider(), Some(Provider::Claude));
         assert!(Config::parse("provider = \"copilot\"").is_err());
         assert_eq!(Config::default().usage_alerts(), [80, 95]);
         let alerts = Config::parse("usage_alerts = [50, 90]").expect("valid TOML");
         assert_eq!(alerts.usage_alerts(), [50, 90]);
+    }
+
+    #[test]
+    fn an_untracked_choice_passes_to_the_next_tracked_provider() {
+        let shown = |text: &str| Config::parse(text).expect("valid TOML").shown_provider();
+        assert_eq!(
+            shown(""),
+            Some(Provider::Claude),
+            "every provider by default"
+        );
+        assert_eq!(shown("provider = \"gemini\""), Some(Provider::Gemini));
+        let cases = [
+            (
+                "claude",
+                "[\"gemini\", \"chatgpt\"]",
+                Some(Provider::ChatGpt),
+            ),
+            (
+                "chatgpt",
+                "[\"claude\", \"gemini\"]",
+                Some(Provider::Gemini),
+            ),
+            (
+                "gemini",
+                "[\"claude\", \"chatgpt\"]",
+                Some(Provider::Claude),
+            ),
+            ("claude", "[]", None),
+        ];
+        for (provider, providers, want) in cases {
+            let text = format!("provider = \"{provider}\"\nproviders = {providers}");
+            assert_eq!(shown(&text), want, "{text}");
+        }
+        let config = Config::parse("providers = [\"gemini\", \"claude\"]").expect("valid TOML");
+        assert_eq!(config.providers(), [Provider::Claude, Provider::Gemini]);
     }
 
     #[test]
@@ -354,6 +422,7 @@ mod tests {
             "both show by default"
         );
         config.set_show_gpu(false);
+        config.set_providers(vec![Provider::Gemini]);
         let text = toml::to_string(&config).expect("config serializes");
         assert_eq!(Config::parse(&text), Ok(config));
         assert!(
@@ -375,12 +444,12 @@ mod tests {
         };
 
         update_file(&path, pick_gemini).expect("a missing file is created");
-        assert_eq!(read(&path).provider(), Provider::Gemini);
+        assert_eq!(read(&path).shown_provider(), Some(Provider::Gemini));
 
         fs::write(&path, "hook_timeout_secs = 45\n").expect("temp file is writable");
         update_file(&path, pick_gemini).expect("a valid file is updated");
         assert_eq!(read(&path).hook_timeout(), Duration::from_secs(45));
-        assert_eq!(read(&path).provider(), Provider::Gemini);
+        assert_eq!(read(&path).shown_provider(), Some(Provider::Gemini));
 
         fs::write(&path, "hook_timeout = 45\n").expect("temp file is writable");
         assert!(update_file(&path, pick_gemini).is_err());

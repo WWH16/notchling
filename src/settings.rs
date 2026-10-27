@@ -6,6 +6,7 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 use crate::config::Config;
 use crate::ui::Settings;
+use crate::usage::Provider;
 use crate::window;
 
 /// Opens the settings window filled from the config file, or brings it back if it is
@@ -47,6 +48,9 @@ pub fn open(
     settings.set_tuck(config.tuck());
     settings.set_show_cpu(config.show_cpu());
     settings.set_show_gpu(config.show_gpu());
+    settings.set_track_claude(config.tracks(Provider::Claude));
+    settings.set_track_chatgpt(config.tracks(Provider::ChatGpt));
+    settings.set_track_gemini(config.tracks(Provider::Gemini));
     settings.set_error(SharedString::new());
 
     let weak = settings.as_weak();
@@ -77,6 +81,16 @@ pub fn open(
         let shortcuts = settings.get_request_shortcuts();
         let tuck = settings.get_tuck();
         let (show_cpu, show_gpu) = (settings.get_show_cpu(), settings.get_show_gpu());
+        let tracked = [
+            settings.get_track_claude(),
+            settings.get_track_chatgpt(),
+            settings.get_track_gemini(),
+        ];
+        let providers: Vec<Provider> = Provider::ALL
+            .into_iter()
+            .zip(tracked)
+            .filter_map(|(provider, tracked)| tracked.then_some(provider))
+            .collect();
         let updated = Config::update(|config| {
             config.set_monitor(monitor);
             config.set_usage_alerts(alerts);
@@ -87,6 +101,7 @@ pub fn open(
             config.set_tuck(tuck);
             config.set_show_cpu(show_cpu);
             config.set_show_gpu(show_gpu);
+            config.set_providers(providers);
         });
         match updated {
             Ok(config) => {

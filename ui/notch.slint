@@ -558,6 +558,8 @@ export component Notch inherits Window {
 
     // AI usage of the selected provider; texts are formatted by Rust. Shares are
     // fractions in 0..1, or below 0 when unknown.
+    // Off when no provider is tracked: the ring and the limits leave the notch.
+    in property <bool> show-usage: true;
     in property <Provider> usage-provider;
     // The limit the pill follows.
     in property <float> usage-fraction: -1;
@@ -892,7 +894,7 @@ export component Notch inherits Window {
         clip: true;
         accessible-role: groupbox;
         accessible-label: "ai-notch";
-        accessible-description: "\{root.provider-name} \{root.usage-short}"
+        accessible-description: (root.show-usage ? "\{root.provider-name} \{root.usage-short}" : "No provider")
             + (root.show-cpu ? ", CPU \{round(root.cpu * 100)}%" : "")
             + (root.show-gpu ? ", GPU \{round(root.gpu * 100)}%" : "")
             + (root.working ? ", Claude working \{root.activity}" : "");
@@ -927,7 +929,7 @@ export component Notch inherits Window {
             width: 2px;
             height: 24px;
             border-radius: 1px;
-            background: root.usage-fraction >= 0 ? Theme.level(root.usage-fraction) : Theme.muted;
+            background: root.show-usage && root.usage-fraction >= 0 ? Theme.level(root.usage-fraction) : Theme.muted;
         }
 
         idle-row := Rectangle {
@@ -937,7 +939,7 @@ export component Notch inherits Window {
                 visible: !root.vertical;
                 alignment: center;
                 spacing: 16px;
-                HorizontalLayout {
+                if root.show-usage: HorizontalLayout {
                     spacing: 7px;
                     MarkRing {
                         provider: root.usage-provider;
@@ -986,7 +988,7 @@ export component Notch inherits Window {
                 visible: root.vertical;
                 alignment: center;
                 spacing: 12px;
-                VerticalLayout {
+                if root.show-usage: VerticalLayout {
                     spacing: 4px;
                     HorizontalLayout {
                         alignment: center;
@@ -1047,47 +1049,51 @@ export component Notch inherits Window {
                 padding-bottom: 18px;
                 spacing: root.vertical ? 12px : 14px;
 
-                HorizontalLayout {
-                    spacing: 12px;
-                    ProviderName {
-                        provider: root.usage-provider;
-                        accent: root.accent;
-                        name: root.provider-name;
-                        status: root.status;
-                        estimated: root.usage-estimated;
+                if root.show-usage: VerticalLayout {
+                    spacing: root.vertical ? 12px : 14px;
+
+                    HorizontalLayout {
+                        spacing: 12px;
+                        ProviderName {
+                            provider: root.usage-provider;
+                            accent: root.accent;
+                            name: root.provider-name;
+                            status: root.status;
+                            estimated: root.usage-estimated;
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+                        if !root.vertical && root.usage-tokens != "": Label {
+                            text: root.usage-tokens;
+                        }
+                        if !root.vertical && root.usage-rate != "": Label {
+                            text: root.usage-rate;
+                        }
+                        if !root.vertical && root.usage-via != "": Label {
+                            text: root.usage-via;
+                        }
                     }
-                    Rectangle {
-                        horizontal-stretch: 1;
+                    if root.vertical && (root.usage-tokens != "" || root.usage-rate != "" || root.usage-via != ""): HorizontalLayout {
+                        alignment: start;
+                        spacing: 12px;
+                        if root.usage-tokens != "": Label {
+                            text: root.usage-tokens;
+                        }
+                        if root.usage-rate != "": Label {
+                            text: root.usage-rate;
+                        }
+                        if root.usage-via != "": Label {
+                            text: root.usage-via;
+                        }
                     }
-                    if !root.vertical && root.usage-tokens != "": Label {
-                        text: root.usage-tokens;
-                    }
-                    if !root.vertical && root.usage-rate != "": Label {
-                        text: root.usage-rate;
-                    }
-                    if !root.vertical && root.usage-via != "": Label {
-                        text: root.usage-via;
-                    }
-                }
-                if root.vertical && (root.usage-tokens != "" || root.usage-rate != "" || root.usage-via != ""): HorizontalLayout {
-                    alignment: start;
-                    spacing: 12px;
-                    if root.usage-tokens != "": Label {
-                        text: root.usage-tokens;
-                    }
-                    if root.usage-rate != "": Label {
-                        text: root.usage-rate;
-                    }
-                    if root.usage-via != "": Label {
-                        text: root.usage-via;
+
+                    for limit-line in root.vertical ? root.tall-lines : root.wide-lines: LimitRow {
+                        line: limit-line;
                     }
                 }
 
-                for limit-line in root.vertical ? root.tall-lines : root.wide-lines: LimitRow {
-                    line: limit-line;
-                }
-
-                if root.show-cpu || root.show-gpu: Rectangle {
+                if root.show-usage && (root.show-cpu || root.show-gpu): Rectangle {
                     height: 1px;
                     background: Theme.rule;
                 }

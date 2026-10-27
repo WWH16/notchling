@@ -30,6 +30,9 @@ export component Settings inherits Window {
     in-out property <bool> tuck;
     in-out property <bool> show-cpu;
     in-out property <bool> show-gpu;
+    in-out property <bool> track-claude;
+    in-out property <bool> track-chatgpt;
+    in-out property <bool> track-gemini;
     // Why the last save failed; empty when it did not.
     in property <string> error;
     callback save();
@@ -96,6 +99,26 @@ export component Settings inherits Window {
         HorizontalLayout {
             spacing: 18px;
             alignment: start;
+            Label {
+                text: "Track";
+            }
+            CheckBox {
+                text: "Claude";
+                checked <=> root.track-claude;
+            }
+            CheckBox {
+                text: "ChatGPT";
+                checked <=> root.track-chatgpt;
+            }
+            CheckBox {
+                text: "Gemini";
+                checked <=> root.track-gemini;
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 18px;
+            alignment: start;
             CheckBox {
                 text: "Show CPU and RAM";
                 checked <=> root.show-cpu;
@@ -122,7 +145,7 @@ export component Settings inherits Window {
         }
 
         Hint {
-            text: "A usage alert set to 0 is off. A longer permission wait reaches Claude Code only after running ai-notch --install-hooks again.";
+            text: "Untracked providers are never read and leave the menu. A usage alert set to 0 is off. A longer permission wait reaches Claude Code only after running ai-notch --install-hooks again.";
         }
 
         if root.error != "": Text {

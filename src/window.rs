@@ -27,7 +27,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CallWindowProcW, CheckMenuRadioItem, CreatePopupMenu, CreateWindowExW,
     DestroyMenu, DestroyWindow, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetCursorPos,
     GetSystemMetrics, GetWindowLongPtrW, HMENU, IsWindowVisible, MB_ICONERROR, MB_ICONINFORMATION,
-    MB_OK, MF_BYCOMMAND, MF_SEPARATOR, MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, PostMessageW,
+    MB_OK, MF_BYPOSITION, MF_SEPARATOR, MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, PostMessageW,
     SM_CXDRAG, SM_CYDRAG, SPI_GETCLIENTAREAANIMATION, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED,
     SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
     SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW,
@@ -662,8 +662,8 @@ unsafe extern "system" fn notch_procedure(
     }
 }
 
-/// Shows the right-click menu at the cursor, with `shown` marked as the provider on the
-/// notch, and waits for a pick.
+/// Shows the right-click menu at the cursor, offering the `tracked` providers with
+/// `shown` marked as the one on the notch, and waits for a pick.
 ///
 /// The menu belongs to a hidden helper window, not the notch. A menu's owner has to be
 /// the foreground window, and activating the notch makes Windows paint a caption over
@@ -671,7 +671,7 @@ unsafe extern "system" fn notch_procedure(
 ///
 /// Returns `None` when the menu is dismissed or cannot be shown.
 #[must_use]
-pub fn show_menu(shown: Provider) -> Option<MenuChoice> {
+pub fn show_menu(shown: Option<Provider>, tracked: &[Provider]) -> Option<MenuChoice> {
     // SAFETY: the helper window and the menu are created, used and destroyed here on
     // this thread; the helper owns the menu while it tracks.
     let picked = unsafe {
@@ -691,7 +691,7 @@ pub fn show_menu(shown: Provider) -> Option<MenuChoice> {
         )
         .ok()?;
         let picked = CreatePopupMenu().ok().and_then(|menu| {
-            let picked = fill_menu(menu, shown).ok().and_then(|()| {
+            let picked = fill_menu(menu, shown, tracked).ok().and_then(|()| {
                 let mut cursor = POINT::default();
                 GetCursorPos(&mut cursor).ok()?;
                 // Without this the menu does not close when clicking elsewhere.
@@ -718,32 +718,37 @@ pub fn show_menu(shown: Provider) -> Option<MenuChoice> {
     }
 }
 
-/// Adds the provider choices, with `shown` marked, and Quit to an empty popup menu.
+/// Adds the `tracked` provider choices, with `shown` marked, Settings and Quit to an
+/// empty popup menu.
 ///
 /// # Safety
 ///
 /// `menu` must be a live menu handle.
-unsafe fn fill_menu(menu: HMENU, shown: Provider) -> windows::core::Result<()> {
-    let id = |index: usize| MENU_FIRST_PROVIDER + index;
-    let check_id = |index: usize| u32::try_from(id(index)).expect("menu ids are small");
-    let shown = Provider::ALL
-        .iter()
-        .position(|&provider| provider == shown)
-        .expect("Provider::ALL lists every provider");
-    let last = Provider::ALL.len() - 1;
+unsafe fn fill_menu(
+    menu: HMENU,
+    shown: Option<Provider>,
+    tracked: &[Provider],
+) -> windows::core::Result<()> {
+    // Each choice keeps its `Provider::ALL` index in its id, so a pick maps back.
+    let listed: Vec<(usize, Provider)> = Provider::ALL
+        .into_iter()
+        .enumerate()
+        .filter(|(_, provider)| tracked.contains(provider))
+        .collect();
+    let position = |index: usize| u32::try_from(index).expect("menu positions are small");
     // SAFETY: the caller guarantees `menu` is live; every string outlives its call.
     unsafe {
-        for (index, provider) in Provider::ALL.iter().enumerate() {
-            AppendMenuW(menu, MF_STRING, id(index), &HSTRING::from(provider.name()))?;
+        for &(index, provider) in &listed {
+            let id = MENU_FIRST_PROVIDER + index;
+            AppendMenuW(menu, MF_STRING, id, &HSTRING::from(provider.name()))?;
         }
-        CheckMenuRadioItem(
-            menu,
-            check_id(0),
-            check_id(last),
-            check_id(shown),
-            MF_BYCOMMAND.0,
-        )?;
-        AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        if let Some(checked) = listed.iter().position(|&(_, p)| Some(p) == shown) {
+            let last = position(listed.len() - 1);
+            CheckMenuRadioItem(menu, 0, last, position(checked), MF_BYPOSITION.0)?;
+        }
+        if !listed.is_empty() {
+            AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        }
         AppendMenuW(menu, MF_STRING, MENU_SETTINGS, w!("Settings…"))?;
         AppendMenuW(menu, MF_STRING, MENU_QUIT, w!("Quit ai-notch"))
     }

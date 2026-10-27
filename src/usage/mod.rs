@@ -104,19 +104,31 @@ pub struct Reading {
     pub usage: anyhow::Result<Usage>,
 }
 
+/// How often a source whose provider is not tracked checks whether it is again, so a
+/// provider turned back on shows its numbers within a few seconds.
+const UNTRACKED_CHECK: Duration = Duration::from_secs(2);
+
 /// Reads `source` now and then every `interval` on a background thread, until the
-/// process exits. A source that fails or even panics never takes the notch down.
+/// process exits, but only while `tracked` says its provider is wanted. A source that
+/// fails or even panics never takes the notch down.
 ///
-/// `notify` runs on that thread, so it should hand the reading to the UI thread.
+/// `tracked` and `notify` run on that thread, so `notify` should hand the reading to the
+/// UI thread.
 pub fn spawn(
     mut source: impl Source,
     interval: Duration,
+    tracked: impl Fn(Provider) -> bool + Send + 'static,
     notify: impl Fn(Reading) + Send + 'static,
 ) {
     thread::spawn(move || {
         loop {
+            let provider = source.provider();
+            if !tracked(provider) {
+                thread::sleep(UNTRACKED_CHECK);
+                continue;
+            }
             notify(Reading {
-                provider: source.provider(),
+                provider,
                 usage: source.read(),
             });
             thread::sleep(interval);
@@ -273,6 +285,7 @@ mod tests {
         spawn(
             Flaky::default(),
             Duration::from_millis(10),
+            |_| true,
             move |reading| {
                 // Fails once the test has stopped listening, which is fine.
                 let _ = tx.send(reading);

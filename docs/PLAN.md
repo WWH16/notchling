@@ -300,6 +300,12 @@ sessions (needs the user, since it changes the global settings).
   shrinks it; the panel drops the hairline when neither shows, and upright it pairs
   CPU with RAM and GPU with VRAM. GPU counters are not read while the GPU is hidden.
   Commit `feat: optional cpu and gpu readings`.
+- [x] **8.18** Choose which AI providers to track: `providers`, all three by default, as
+  one checkbox each in Settings. An untracked provider is never read, so Antigravity
+  stops running while Gemini is off, and it leaves the right-click menu. Unchecking the
+  shown provider moves the notch to the next tracked one; with none tracked, the ring
+  and limits leave the notch and no status page is checked. Commit
+  `feat: choose which ai providers to track`.
 
 ## Deviations from SPEC.md
 

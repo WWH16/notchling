@@ -47,8 +47,8 @@ mark shows how long, such as "12m", with "×2" when two sessions are.
   against it, and expands away from that edge. On the left or right edge it stands
   upright, with its readings stacked. It stays put next time. Turn on tucking in the
   settings and, on a side edge, it waits as a thin sliver until you point at it.
-- **Right-click** it to pick the provider shown (Claude, ChatGPT or Gemini), open the
-  settings, or quit.
+- **Right-click** it to pick the provider shown (Claude, ChatGPT or Gemini, as many as
+  you track), open the settings, or quit.
 - **Click** a "Needs your input" alert to bring that Claude Code window to the front.
 
 The notch grows with Windows' text size (Settings, Accessibility, Text size).
@@ -150,6 +150,7 @@ Right-click the notch and choose **Settings…**, or edit
 | Key | Default | Meaning |
 |---|---|---|
 | `provider` | `"claude"` | Usage shown on the notch: `"claude"`, `"chatgpt"` or `"gemini"` |
+| `providers` | `["claude", "chatgpt", "gemini"]` | Providers whose usage is read and offered in the menu. The others are never read; with none, the ring and limits leave the notch |
 | `usage_alerts` | `[80, 95]` | Percentages that raise an alert |
 | `hook_timeout_secs` | `120` | How long a permission request waits for you (5 to 580) |
 | `gemini_daily_requests` | `1000` | Your Gemini CLI daily request limit |
@@ -175,7 +176,8 @@ ai-notch sends no telemetry. It connects to:
 - the public status pages `status.claude.com`, `status.openai.com` and
   `status.cloud.google.com`, for the provider shown, every 5 minutes.
 
-It also runs `agy -p /usage` every 5 minutes when the Antigravity CLI is installed. The
+It also runs `agy -p /usage` every 5 minutes when the Antigravity CLI is installed and
+Gemini is tracked. The
 CLI asks Google for your quota with its own login, in an empty folder of ai-notch's
 own, `%LOCALAPPDATA%\ai-notch\antigravity`, so it never touches a project.
 

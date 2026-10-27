@@ -15,6 +15,8 @@ export global Theme {
     out property <color> bad: #ff453a;
     // Segoe UI digits are tabular by default, so numbers don't jitter.
     out property <string> font: "Segoe UI Variable";
+    // Windows "Show animations" is off: shapes change at once and only fades remain.
+    in property <bool> reduce-motion;
 }
 
 component Bar inherits Rectangle {
@@ -31,7 +33,7 @@ component Bar inherits Rectangle {
         height: parent.height;
         border-radius: parent.border-radius;
         background: root.fill;
-        animate width { duration: 300ms; easing: ease-out; }
+        animate width { duration: Theme.reduce-motion ? 0ms : 300ms; easing: ease-out; }
     }
 }
 
@@ -559,7 +561,7 @@ export component Notch inherits Window {
     private property <length> drawn-open-width: self.open-width;
     private property <length> drawn-open-height: self.open-height;
     animate drawn-idle-width, drawn-idle-height, drawn-open-width, drawn-open-height {
-        duration: 260ms;
+        duration: Theme.reduce-motion ? 0ms : 260ms;
         easing: ease-out;
     }
     private property <length> request-width: 460px;
@@ -599,7 +601,7 @@ export component Notch inherits Window {
         property <float> round-left: !root.floating && root.edge == NotchEdge.left ? 0 : 1;
         property <float> round-right: !root.floating && root.edge == NotchEdge.right ? 0 : 1;
         animate round-top, round-bottom, round-left, round-right {
-            duration: 260ms;
+            duration: Theme.reduce-motion ? 0ms : 260ms;
             easing: ease-out;
         }
         border-top-left-radius: self.corner * min(self.round-top, self.round-left);
@@ -975,7 +977,8 @@ export component Notch inherits Window {
                         : root.alert-kind == AlertKind.usage-high ? Theme.warn
                         : root.alert-kind == AlertKind.usage-critical ? Theme.bad
                         : Theme.claude;
-                    opacity: 0.55 + 0.45 * Math.sin(animation-tick() / 1100ms * 360deg);
+                    opacity: Theme.reduce-motion ? 1
+                        : 0.55 + 0.45 * Math.sin(animation-tick() / 1100ms * 360deg);
                 }
             }
             Text {
@@ -1005,12 +1008,12 @@ export component Notch inherits Window {
                 detail.opacity: 0;
                 request-view.opacity: 1;
                 in {
-                    animate pill.width, pill.height { duration: 220ms; easing: ease-out; }
+                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 220ms; easing: ease-out; }
                     animate idle-row.opacity, detail.opacity { duration: 80ms; }
                     animate request-view.opacity { duration: 140ms; delay: 160ms; }
                 }
                 out {
-                    animate pill.width, pill.height { duration: 200ms; easing: ease-out; }
+                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
                     animate request-view.opacity { duration: 80ms; }
                     animate idle-row.opacity { duration: 140ms; delay: 120ms; }
                 }
@@ -1022,12 +1025,12 @@ export component Notch inherits Window {
                 detail.opacity: 0;
                 alert-view.opacity: 1;
                 in {
-                    animate pill.width, pill.height { duration: 220ms; easing: ease-out; }
+                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 220ms; easing: ease-out; }
                     animate idle-row.opacity, detail.opacity { duration: 80ms; }
                     animate alert-view.opacity { duration: 140ms; delay: 140ms; }
                 }
                 out {
-                    animate pill.width, pill.height { duration: 200ms; easing: ease-out; }
+                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
                     animate alert-view.opacity { duration: 80ms; }
                     animate idle-row.opacity { duration: 140ms; delay: 120ms; }
                 }
@@ -1038,12 +1041,12 @@ export component Notch inherits Window {
                 idle-row.opacity: 0;
                 detail.opacity: 1;
                 in {
-                    animate pill.width, pill.height { duration: 200ms; easing: ease-out; delay: 80ms; }
+                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; delay: Theme.reduce-motion ? 0ms : 80ms; }
                     animate idle-row.opacity { duration: 80ms; }
                     animate detail.opacity { duration: 140ms; delay: 180ms; }
                 }
                 out {
-                    animate pill.width, pill.height { duration: 200ms; easing: ease-out; }
+                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
                     animate detail.opacity { duration: 80ms; }
                     animate idle-row.opacity { duration: 140ms; delay: 120ms; }
                 }

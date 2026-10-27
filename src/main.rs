@@ -72,6 +72,9 @@ const GLIDE: Duration = Duration::from_millis(260);
 /// How often the notch checks for a fullscreen app to hide from.
 const FULLSCREEN_CHECK: Duration = Duration::from_secs(1);
 
+/// How often the notch re-reads Windows settings it follows, such as "Show animations".
+const SYSTEM_SETTINGS_CHECK: Duration = Duration::from_secs(2);
+
 /// How long "task done" stays on the notch.
 const DONE_ALERT: Duration = Duration::from_secs(5);
 
@@ -187,6 +190,7 @@ fn main() -> anyhow::Result<()> {
     );
 
     let _stats = start_stats(&notch);
+    let _system_settings = follow_system_settings(&notch);
     start_usage(&notch, &usages, &alert);
     let _awake_check = serve_hooks(&notch, listener, &alert);
 
@@ -411,13 +415,18 @@ fn drag_and_stick(notch: &Notch, placement: &Rc<RefCell<Placement>>, clip: &Rc<d
 }
 
 /// Moves the notch window from `from` to `to` over `GLIDE`, easing out, unless `timer`
-/// is stopped or restarted first.
+/// is stopped or restarted first. With Windows' animations off it jumps there.
 fn glide_window(
     notch: &Notch,
     timer: &Rc<Timer>,
     from: slint::PhysicalPosition,
     to: slint::PhysicalPosition,
 ) {
+    if notch.global::<ui::Theme>().get_reduce_motion() {
+        timer.stop();
+        notch.window().set_position(to);
+        return;
+    }
     let weak = notch.as_weak();
     let own = Rc::downgrade(timer);
     let started = Instant::now();
@@ -464,6 +473,24 @@ fn apply_settings(
         let clip = Rc::clone(&clip);
         Timer::single_shot(MONITOR_MOVE_SETTLE, move || clip());
     }
+}
+
+/// Keeps the notch in line with Windows' "Show animations" setting until the returned
+/// timer is dropped.
+fn follow_system_settings(notch: &Notch) -> Timer {
+    let apply = |notch: &Notch| {
+        let theme = notch.global::<ui::Theme>();
+        theme.set_reduce_motion(!window::animations_enabled());
+    };
+    apply(notch);
+    let timer = Timer::default();
+    let weak = notch.as_weak();
+    timer.start(TimerMode::Repeated, SYSTEM_SETTINGS_CHECK, move || {
+        if let Some(notch) = weak.upgrade() {
+            apply(&notch);
+        }
+    });
+    timer
 }
 
 /// Refreshes the CPU, GPU and RAM readings until the returned timer is dropped.

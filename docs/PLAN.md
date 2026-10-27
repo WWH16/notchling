@@ -219,7 +219,11 @@ sessions (needs the user, since it changes the global settings).
   pointer leaves. Hover opens after 300 ms instead of 120 ms. A drag now starts past
   Windows' drag threshold, so a click with a shaky hand stays a click. Commit
   `feat: click the notch to open its panel`.
-- [ ] **8.3** Follow Windows "Show animations".
+- [x] **8.3** Follow Windows "Show animations". Read through
+  `SPI_GETCLIENTAREAANIMATION` every 2 s. Off, the morphs, corner easing, bar growth,
+  alert pulse and glide stop; the fades stay. Checked offscreen: 400 ms into a hover
+  the panel is mid-morph with animations and full size without. Commit
+  `feat: follow windows' show animations setting`.
 - [ ] **8.4** Tuck mode on the side edges; check and fix the upright panel width.
 - [ ] **8.5** Polish: colours into `Theme`, "2 more", the Consolas fallback, label sizes.
 - [ ] **8.6** Live Claude activity in the idle pill.

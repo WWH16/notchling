@@ -45,6 +45,10 @@ The ring turns amber at 80% and red at 95%.
 - **Click** a "Done" or "Needs your input" alert to bring that Claude Code window to
   the front.
 
+With Windows' "Show animations" turned off (Settings, Accessibility, Visual effects),
+the notch changes shape at once instead of morphing and gliding, and alerts stop
+pulsing.
+
 The notch hides while a fullscreen app, game or presentation is in front. Alerts
 then arrive as Windows notifications instead.
 

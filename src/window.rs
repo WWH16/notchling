@@ -175,55 +175,29 @@ fn monitor_info(handle: HMONITOR) -> anyhow::Result<Monitor> {
     })
 }
 
-/// Where the notch hangs: from the top edge of its display, from the bottom of the work
-/// area (just above the taskbar), or floating anywhere in between.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The screen edge the notch sticks to, flat side against it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Edge {
+    #[default]
     Top,
     Bottom,
-    Floating,
+    Left,
+    Right,
 }
 
-/// Which way the notch expands from its fixed side.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Growth {
-    Down,
-    Up,
-}
-
-/// How close to the top or bottom edge, in logical pixels, a dropped notch sticks to it.
-const SNAP_DISTANCE: f32 = 32.0;
-
-/// Where the notch sits. The anchor is the middle of its fixed side: the top while it
-/// grows down, the bottom while it grows up.
+/// Where the notch sits: a display, the edge it sticks to, and how far along that edge
+/// its middle is, from 0 to 1 (left to right on the top and bottom edges, top to
+/// bottom on the side edges).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Placement {
     /// Windows' device name; the primary display when `None` or disconnected.
     pub device: Option<String>,
-    /// The anchor across the display, from 0 (left edge) to 1 (right edge).
+    pub edge: Edge,
     pub position: f32,
-    /// The anchor down the display, from 0 (top edge) to 1 (bottom of the work area).
-    pub vertical: f32,
 }
 
 impl Placement {
-    #[must_use]
-    pub fn edge(&self) -> Edge {
-        if self.vertical <= 0.0 {
-            Edge::Top
-        } else if self.vertical >= 1.0 {
-            Edge::Bottom
-        } else {
-            Edge::Floating
-        }
-    }
-
-    /// Up in the lower half of the display, so a tall request card stays on screen.
-    #[must_use]
-    pub fn growth(&self) -> Growth {
-        growth(self.vertical)
-    }
-
     /// Moves the window there, keeping it on its display; the position is clamped to
     /// match. `size` is the window size in logical pixels, since Slint reports no size
     /// before the window exists. Before the first `show()` this keeps the window from
@@ -238,33 +212,19 @@ impl Placement {
         size: slint::LogicalSize,
     ) -> anyhow::Result<()> {
         let area = Area::of(&self.monitor()?)?;
-        let (x, y, position) = area.origin(size, self.position, self.vertical);
+        let (x, y, position) = area.origin(size, self.edge, self.position);
         self.position = position;
         window.set_position(slint::PhysicalPosition::new(x, y));
         Ok(())
     }
 
-    /// The anchor in screen pixels, where a drag starts from.
+    /// Sticks the notch to whichever edge of whichever display is nearest `point`, in
+    /// screen pixels, at the spot along that edge closest to it; where a drag lets go.
     ///
     /// # Errors
     ///
     /// Fails when Windows reports no display, or not its DPI.
-    pub fn anchor(&self) -> anyhow::Result<POINT> {
-        let (x, y) = Area::of(&self.monitor()?)?.anchor(self.position, self.vertical);
-        // Rounding to whole pixels is intended.
-        Ok(POINT {
-            x: x.round() as i32,
-            y: y.round() as i32,
-        })
-    }
-
-    /// Puts the anchor at `point`, in screen pixels, on whichever display holds it, as a
-    /// drag does.
-    ///
-    /// # Errors
-    ///
-    /// Fails when Windows reports no display, or not its DPI.
-    pub fn move_anchor(
+    pub fn stick_near(
         &mut self,
         window: &slint::Window,
         size: slint::LogicalSize,
@@ -273,21 +233,9 @@ impl Placement {
         // SAFETY: MonitorFromPoint has no preconditions; with DEFAULTTONEAREST it always
         // returns a display.
         let monitor = monitor_info(unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST) })?;
-        let area = Area::of(&monitor)?;
         // Pixel counts are far inside f32's exact range.
-        (self.position, self.vertical) = area.fractions(point.x as f32, point.y as f32);
+        (self.edge, self.position) = Area::of(&monitor)?.nearest(point.x as f32, point.y as f32);
         self.device = Some(monitor.device);
-        self.apply(window, size)
-    }
-
-    /// Sticks the notch to the top or bottom edge when it was let go within
-    /// [`SNAP_DISTANCE`] of one; anywhere else it stays where it is.
-    ///
-    /// # Errors
-    ///
-    /// Fails when Windows reports no display, or not its DPI.
-    pub fn snap(&mut self, window: &slint::Window, size: slint::LogicalSize) -> anyhow::Result<()> {
-        self.vertical = Area::of(&self.monitor()?)?.snapped(self.vertical);
         self.apply(window, size)
     }
 
@@ -302,16 +250,9 @@ impl Placement {
     }
 }
 
-fn growth(vertical: f32) -> Growth {
-    if vertical > 0.5 {
-        Growth::Up
-    } else {
-        Growth::Down
-    }
-}
-
-/// A display as the notch uses it, in physical pixels: the whole width, from the top of
-/// the display to the bottom of its work area.
+/// A display as the notch uses it, in physical pixels: from the top of the display down
+/// to the bottom of its work area, and across its work area, so the notch never covers a
+/// taskbar.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Area {
     left: f32,
@@ -325,57 +266,66 @@ impl Area {
     fn of(monitor: &Monitor) -> anyhow::Result<Self> {
         // Pixel counts are far inside f32's exact range.
         Ok(Self {
-            left: monitor.bounds.left as f32,
-            right: monitor.bounds.right as f32,
+            left: monitor.work.left as f32,
+            right: monitor.work.right as f32,
             top: monitor.bounds.top as f32,
             bottom: monitor.work.bottom as f32,
             scale: monitor_scale(monitor.handle)?,
         })
     }
 
-    fn anchor(self, position: f32, vertical: f32) -> (f32, f32) {
-        (
-            self.left + position * (self.right - self.left),
-            self.top + vertical * (self.bottom - self.top),
-        )
-    }
-
-    fn fractions(self, x: f32, y: f32) -> (f32, f32) {
-        (
-            ((x - self.left) / (self.right - self.left)).clamp(0.0, 1.0),
-            ((y - self.top) / (self.bottom - self.top)).clamp(0.0, 1.0),
-        )
-    }
-
-    /// The window's top-left corner for a placement, keeping the whole window across
-    /// the display, and the position that leaves.
-    fn origin(self, size: slint::LogicalSize, position: f32, vertical: f32) -> (i32, i32, f32) {
+    /// The window's top-left corner for a placement, keeping the whole window on the
+    /// display, and the position that leaves.
+    fn origin(self, size: slint::LogicalSize, edge: Edge, position: f32) -> (i32, i32, f32) {
         let (width, height) = (size.width * self.scale, size.height * self.scale);
-        let half = width / 2.0;
-        let (x, y) = self.anchor(position, vertical);
-        let lowest = self.left + half;
-        let x = x.clamp(lowest, (self.right - half).max(lowest));
-        let top = match growth(vertical) {
-            Growth::Down => y,
-            Growth::Up => y - height,
+        // The window's middle along the edge, kept far enough in for the whole window.
+        let along = |start: f32, end: f32, length: f32| {
+            let half = length / 2.0;
+            let middle = (start + position * (end - start))
+                .clamp(start + half, (end - half).max(start + half));
+            (middle - half, (middle - start) / (end - start))
         };
-        let position = (x - self.left) / (self.right - self.left);
+        let (x, y, position) = match edge {
+            Edge::Top | Edge::Bottom => {
+                let (x, position) = along(self.left, self.right, width);
+                let y = if edge == Edge::Top {
+                    self.top
+                } else {
+                    self.bottom - height
+                };
+                (x, y, position)
+            }
+            Edge::Left | Edge::Right => {
+                let (y, position) = along(self.top, self.bottom, height);
+                let x = if edge == Edge::Left {
+                    self.left
+                } else {
+                    self.right - width
+                };
+                (x, y, position)
+            }
+        };
         // Rounding to whole pixels is intended.
-        ((x - half).round() as i32, top.round() as i32, position)
+        (x.round() as i32, y.round() as i32, position)
     }
 
-    /// `vertical` pulled onto the top or bottom edge when it is within
-    /// [`SNAP_DISTANCE`] of one.
-    fn snapped(self, vertical: f32) -> f32 {
-        let span = self.bottom - self.top;
-        let distance = SNAP_DISTANCE * self.scale;
-        if vertical * span <= distance {
-            0.0
-        } else if (1.0 - vertical) * span <= distance {
-            1.0
-        } else {
-            vertical
-        }
+    /// The edge nearest `(x, y)` and the spot along it closest to that point.
+    fn nearest(self, x: f32, y: f32) -> (Edge, f32) {
+        let distances = [
+            (Edge::Top, y - self.top),
+            (Edge::Bottom, self.bottom - y),
+            (Edge::Left, x - self.left),
+            (Edge::Right, self.right - x),
+        ];
+        let (edge, _) = distances
+            .into_iter()
+            .min_by(|(_, a), (_, b)| a.total_cmp(b))
+            .expect("there are four edges");
+        let position = match edge {
+            Edge::Top | Edge::Bottom => (x - self.left) / (self.right - self.left),
+            Edge::Left | Edge::Right => (y - self.top) / (self.bottom - self.top),
+        };
+        (edge, position.clamp(0.0, 1.0))
     }
 }
 
@@ -619,8 +569,8 @@ pub fn union(a: RECT, b: RECT) -> RECT {
 }
 
 /// The rectangle, in physical pixels, that holds a shape of the given logical size
-/// inside a window of the given logical size: centered across it, against the top when
-/// the notch grows down and against the bottom when it grows up.
+/// inside a window of the given logical size: against the window side that faces
+/// `edge`, and centered the other way.
 ///
 /// Rounds outward so anti-aliased edges are never cut off.
 #[must_use]
@@ -628,23 +578,25 @@ pub fn shape_rect(
     window: slint::LogicalSize,
     shape: slint::LogicalSize,
     scale: f32,
-    growth: Growth,
+    edge: Edge,
 ) -> RECT {
-    let left = (window.width - shape.width) / 2.0 * scale;
-    let right = left + shape.width * scale;
-    let (top, bottom) = match growth {
-        Growth::Down => (0.0, shape.height * scale),
-        Growth::Up => (
-            (window.height - shape.height) * scale,
-            window.height * scale,
-        ),
+    let centered = |window: f32, shape: f32| (window - shape) / 2.0;
+    let left = match edge {
+        Edge::Top | Edge::Bottom => centered(window.width, shape.width),
+        Edge::Left => 0.0,
+        Edge::Right => window.width - shape.width,
+    };
+    let top = match edge {
+        Edge::Left | Edge::Right => centered(window.height, shape.height),
+        Edge::Top => 0.0,
+        Edge::Bottom => window.height - shape.height,
     };
     // Pixel coordinates are far inside i32 range; truncation after floor/ceil is intended.
     RECT {
-        left: left.floor() as i32,
-        top: top.floor() as i32,
-        right: right.ceil() as i32,
-        bottom: bottom.ceil() as i32,
+        left: (left * scale).floor() as i32,
+        top: (top * scale).floor() as i32,
+        right: ((left + shape.width) * scale).ceil() as i32,
+        bottom: ((top + shape.height) * scale).ceil() as i32,
     }
 }
 
@@ -685,16 +637,17 @@ mod tests {
     }
 
     #[test]
-    fn shape_rect_is_centered_at_100_percent() {
+    fn shape_rect_sits_against_its_edge() {
         let window = slint::LogicalSize::new(520.0, 280.0);
         let shape = slint::LogicalSize::new(190.0, 30.0);
-        let down = shape_rect(window, shape, 1.0, Growth::Down);
-        assert_eq!(
-            (down.left, down.top, down.right, down.bottom),
-            (165, 0, 355, 30)
-        );
-        let up = shape_rect(window, shape, 1.0, Growth::Up);
-        assert_eq!((up.left, up.top, up.right, up.bottom), (165, 250, 355, 280));
+        let at = |edge| {
+            let rect = shape_rect(window, shape, 1.0, edge);
+            (rect.left, rect.top, rect.right, rect.bottom)
+        };
+        assert_eq!(at(Edge::Top), (165, 0, 355, 30));
+        assert_eq!(at(Edge::Bottom), (165, 250, 355, 280));
+        assert_eq!(at(Edge::Left), (0, 125, 190, 155));
+        assert_eq!(at(Edge::Right), (330, 125, 520, 155));
     }
 
     #[test]
@@ -704,7 +657,7 @@ mod tests {
             window,
             slint::LogicalSize::new(191.0, 30.5),
             1.25,
-            Growth::Down,
+            Edge::Top,
         );
         // Unrounded: left 205.625, right 444.375, bottom 38.125.
         assert_eq!(
@@ -714,7 +667,7 @@ mod tests {
         );
     }
 
-    /// A 1920x1080 display at 125% with a 48-pixel taskbar.
+    /// A 1920x1080 display at 125% with a 48-pixel taskbar along the bottom.
     fn area() -> Area {
         Area {
             left: 0.0,
@@ -726,42 +679,28 @@ mod tests {
     }
 
     #[test]
-    fn notch_hangs_from_the_edge_it_is_on() {
+    fn notch_sits_against_its_edge() {
+        // 520 x 280 logical is 650 x 350 physical.
         let size = slint::LogicalSize::new(520.0, 280.0);
-        // 650 x 350 physical pixels.
-        assert_eq!(area().origin(size, 0.5, 0.0), (635, 0, 0.5), "top edge");
-        assert_eq!(
-            area().origin(size, 0.5, 1.0),
-            (635, 682, 0.5),
-            "bottom edge grows up"
-        );
-        assert_eq!(
-            area().origin(size, 0.5, 0.25),
-            (635, 258, 0.5),
-            "upper half grows down"
-        );
-        let (x, _, position) = area().origin(size, 0.0, 0.0);
+        assert_eq!(area().origin(size, Edge::Top, 0.5), (635, 0, 0.5));
+        assert_eq!(area().origin(size, Edge::Bottom, 0.5), (635, 682, 0.5));
+        assert_eq!(area().origin(size, Edge::Left, 0.5), (0, 341, 0.5));
+        assert_eq!(area().origin(size, Edge::Right, 0.5), (1270, 341, 0.5));
+        let (x, _, position) = area().origin(size, Edge::Top, 0.0);
         assert_eq!((x, position), (0, 325.0 / 1920.0), "kept on the display");
     }
 
     #[test]
-    fn dropped_notch_sticks_only_near_an_edge() {
-        // 32 logical pixels are 40 physical ones; the area is 1032 tall.
-        assert_eq!(area().snapped(39.0 / 1032.0), 0.0);
-        assert_eq!(area().snapped(1.0 - 39.0 / 1032.0), 1.0);
-        let middle = 500.0 / 1032.0;
-        assert_eq!(area().snapped(middle), middle);
-        assert_eq!(area().snapped(41.0 / 1032.0), 41.0 / 1032.0);
-    }
-
-    #[test]
-    fn anchor_and_fractions_agree() {
-        let (x, y) = area().anchor(0.25, 0.75);
-        assert_eq!(area().fractions(x, y), (0.25, 0.75));
+    fn dropped_notch_sticks_to_the_nearest_edge() {
+        assert_eq!(area().nearest(960.0, 100.0), (Edge::Top, 0.5));
+        assert_eq!(area().nearest(960.0, 1000.0), (Edge::Bottom, 0.5));
+        assert_eq!(area().nearest(50.0, 516.0), (Edge::Left, 0.5));
+        assert_eq!(area().nearest(1900.0, 258.0), (Edge::Right, 0.25));
+        let (edge, _) = area().nearest(-40.0, 5000.0);
         assert_eq!(
-            area().fractions(-50.0, 5000.0),
-            (0.0, 1.0),
-            "clamped to the display"
+            edge,
+            Edge::Bottom,
+            "points off the display still find an edge"
         );
     }
 }

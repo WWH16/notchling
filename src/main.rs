@@ -46,7 +46,7 @@ use status::Health;
 use system::SystemLoad;
 use ui::{AlertKind, Choice, Notch};
 use usage::{Claude, Codex, Crossing, Gemini, Provider, Reading, Thresholds, Usage};
-use window::{Edge, Growth, MenuChoice, MessageKind, NotchWindow, Placement};
+use window::{Edge, MenuChoice, MessageKind, NotchWindow, Placement};
 use windows::Win32::Foundation::POINT;
 
 /// One frame at 60 Hz; how often to check whether the native window exists yet.
@@ -127,8 +127,8 @@ fn main() -> anyhow::Result<()> {
     let notch = Notch::new()?;
     let placement = Rc::new(RefCell::new(Placement {
         device: config.monitor().map(str::to_owned),
+        edge: config.edge(),
         position: config.position(),
-        vertical: config.position_y(),
     }));
     placement
         .borrow_mut()
@@ -154,7 +154,7 @@ fn main() -> anyhow::Result<()> {
             clip();
             let shape_clip = Rc::clone(&clip);
             notch.on_shape_changed(move || shape_clip());
-            drag_anywhere(&notch, &placement, &clip);
+            drag_and_stick(&notch, &placement, &clip);
 
             let weak = notch.as_weak();
             let settings = RefCell::new(None);
@@ -239,16 +239,11 @@ fn clip_to_shape(notch: &Notch, native: Rc<NotchWindow>) -> Rc<dyn Fn()> {
     let weak = notch.as_weak();
     let target = Rc::new(move || {
         let notch = weak.upgrade()?;
-        let growth = if notch.get_grows_up() {
-            Growth::Up
-        } else {
-            Growth::Down
-        };
         Some(window::shape_rect(
             window_size(&notch),
             slint::LogicalSize::new(notch.get_shape_width(), notch.get_shape_height()),
             notch.window().scale_factor(),
-            growth,
+            Edge::from(notch.get_edge()),
         ))
     });
     let applied = Rc::new(Cell::new(None));
@@ -284,77 +279,65 @@ fn window_size(notch: &Notch) -> slint::LogicalSize {
     slint::LogicalSize::new(notch.get_fixed_width(), notch.get_fixed_height())
 }
 
-/// Tells the notch which edge it hangs from and which way it grows.
+/// Tells the notch which edge it sticks to.
 fn show_placement(notch: &Notch, placement: &Placement) {
-    notch.set_edge(placement.edge().into());
-    notch.set_grows_up(placement.growth() == Growth::Up);
+    notch.set_edge(placement.edge.into());
 }
 
-/// Lets the user drag the notch anywhere, onto any display. Dropped near the top or
-/// bottom edge it sticks there; anywhere else it stays where it was let go. Either way
-/// the spot is remembered.
-fn drag_anywhere(notch: &Notch, placement: &Rc<RefCell<Placement>>, clip: &Rc<dyn Fn()>) {
-    // Where the cursor and the notch's anchor were when the button went down. The drag
-    // follows the cursor on screen, so the pill resizing under it does not matter.
-    let start: Rc<Cell<Option<(POINT, POINT)>>> = Rc::new(Cell::new(None));
+/// Lets the user drag the notch anywhere, onto any display. While dragged it floats
+/// with the cursor; let go, it sticks to the screen edge nearest the cursor, and that
+/// spot is remembered.
+fn drag_and_stick(notch: &Notch, placement: &Rc<RefCell<Placement>>, clip: &Rc<dyn Fn()>) {
+    // Where the cursor and the window were when the button went down. The drag follows
+    // the cursor on screen, so the pill resizing under it does not matter.
+    let start: Rc<Cell<Option<(POINT, slint::PhysicalPosition)>>> = Rc::new(Cell::new(None));
     let started = Rc::clone(&start);
-    let pressed = Rc::clone(placement);
+    let weak = notch.as_weak();
     notch.on_drag_started(move || {
-        let anchor = pressed.borrow().anchor().ok();
-        started.set(window::cursor().zip(anchor));
+        let window = weak.upgrade().map(|notch| notch.window().position());
+        started.set(window::cursor().zip(window));
     });
 
     let weak = notch.as_weak();
-    let moving = Rc::clone(placement);
     let dragging = Rc::clone(&start);
-    let moved_clip = Rc::clone(clip);
     notch.on_dragged(move || {
-        let (Some(notch), Some((cursor_start, anchor)), Some(cursor)) =
+        let (Some(notch), Some((cursor_start, window_start)), Some(cursor)) =
             (weak.upgrade(), dragging.get(), window::cursor())
         else {
             return;
         };
-        let point = POINT {
-            x: anchor.x + cursor.x - cursor_start.x,
-            y: anchor.y + cursor.y - cursor_start.y,
-        };
-        let mut placement = moving.borrow_mut();
-        // Fails only when Windows reports no display; the notch then stays put.
-        if placement
-            .move_anchor(notch.window(), window_size(&notch), point)
-            .is_ok()
-        {
-            show_placement(&notch, &placement);
-            moved_clip();
-        }
+        notch.set_floating(true);
+        notch.window().set_position(slint::PhysicalPosition::new(
+            window_start.x + cursor.x - cursor_start.x,
+            window_start.y + cursor.y - cursor_start.y,
+        ));
     });
 
     let weak = notch.as_weak();
-    let saved = RefCell::new(placement.borrow().clone());
     let placement = Rc::clone(placement);
     let clip = Rc::clone(clip);
     notch.on_drag_ended(move || {
-        let Some(notch) = weak.upgrade() else {
+        // A click without a drag leaves the notch where it is.
+        let (Some(notch), Some(cursor)) = (weak.upgrade(), window::cursor()) else {
             return;
         };
+        if !notch.get_floating() {
+            return;
+        }
+        notch.set_floating(false);
         let mut placement = placement.borrow_mut();
-        // Fails only when Windows reports no display; the notch then stays put.
-        let _ = placement.snap(notch.window(), window_size(&notch));
+        // Fails only when Windows reports no display; the notch then stays where it was let go.
+        let _ = placement.stick_near(notch.window(), window_size(&notch), cursor);
         show_placement(&notch, &placement);
         // A move to a display with another scale resizes the window a moment later.
         let settled = Rc::clone(&clip);
         Timer::single_shot(MONITOR_MOVE_SETTLE, move || settled());
-        // A click without a drag leaves nothing to save.
-        if *placement == *saved.borrow() {
-            return;
-        }
-        *saved.borrow_mut() = placement.clone();
         let spot = placement.clone();
         // On failure the spot only lasts until the notch restarts.
         let _ = Config::update(|config| {
             config.set_monitor(spot.device);
+            config.set_edge(spot.edge);
             config.set_position(spot.position);
-            config.set_position_y(spot.vertical);
         });
     });
 }
@@ -762,7 +745,19 @@ impl From<Edge> for ui::NotchEdge {
         match edge {
             Edge::Top => Self::Top,
             Edge::Bottom => Self::Bottom,
-            Edge::Floating => Self::Floating,
+            Edge::Left => Self::Left,
+            Edge::Right => Self::Right,
+        }
+    }
+}
+
+impl From<ui::NotchEdge> for Edge {
+    fn from(edge: ui::NotchEdge) -> Self {
+        match edge {
+            ui::NotchEdge::Top => Self::Top,
+            ui::NotchEdge::Bottom => Self::Bottom,
+            ui::NotchEdge::Left => Self::Left,
+            ui::NotchEdge::Right => Self::Right,
         }
     }
 }

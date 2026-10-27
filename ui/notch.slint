@@ -279,8 +279,8 @@ export enum Provider { claude, chatgpt, gemini }
 // The shown provider's status page; unknown until checked or when the check fails.
 export enum Health { unknown, operational, degraded, down }
 
-// Where the notch hangs; Rust decides from where it was dropped.
-export enum NotchEdge { top, bottom, floating }
+// The screen edge the notch sticks to; Rust picks the nearest one when it is dropped.
+export enum NotchEdge { top, bottom, left, right }
 
 // Why the notch is asking for attention.
 export enum AlertKind { done, needs-input, usage-high, usage-critical }
@@ -354,8 +354,8 @@ export component Notch inherits Window {
     // the window by how far the cursor travelled on screen, since the pill itself resizes
     // during a drag, and sticks it to an edge it is dropped near.
     in property <NotchEdge> edge;
-    // In the lower half of the screen the notch expands upward, from its bottom side.
-    in property <bool> grows-up;
+    // While it is dragged, the notch is a free pill with every corner round.
+    in property <bool> floating;
     callback drag-started();
     callback dragged();
     callback drag-ended();
@@ -405,17 +405,27 @@ export component Notch inherits Window {
     height: self.fixed-height;
 
     pill := Rectangle {
-        x: (parent.width - self.width) / 2;
-        y: root.grows-up ? parent.height - self.height : 0;
+        // Against the window side that faces the screen edge, centered the other way, so
+        // the notch always grows away from the edge.
+        x: root.edge == NotchEdge.left ? 0
+            : root.edge == NotchEdge.right ? parent.width - self.width
+            : (parent.width - self.width) / 2;
+        y: root.edge == NotchEdge.top ? 0
+            : root.edge == NotchEdge.bottom ? parent.height - self.height
+            : (parent.height - self.height) / 2;
         width: root.idle-width;
         height: root.idle-height;
         background: Theme.surface;
-        // The side against a screen edge stays square; every other corner is round.
+        // The side against the screen edge stays square; every other corner is round.
         property <length> corner: min(self.height / 2, 22px);
-        border-top-left-radius: root.edge == NotchEdge.top ? 0 : self.corner;
-        border-top-right-radius: self.border-top-left-radius;
-        border-bottom-left-radius: root.edge == NotchEdge.bottom ? 0 : self.corner;
-        border-bottom-right-radius: self.border-bottom-left-radius;
+        property <bool> square-top: !root.floating && root.edge == NotchEdge.top;
+        property <bool> square-bottom: !root.floating && root.edge == NotchEdge.bottom;
+        property <bool> square-left: !root.floating && root.edge == NotchEdge.left;
+        property <bool> square-right: !root.floating && root.edge == NotchEdge.right;
+        border-top-left-radius: self.square-top || self.square-left ? 0 : self.corner;
+        border-top-right-radius: self.square-top || self.square-right ? 0 : self.corner;
+        border-bottom-left-radius: self.square-bottom || self.square-left ? 0 : self.corner;
+        border-bottom-right-radius: self.square-bottom || self.square-right ? 0 : self.corner;
         clip: true;
 
         hover := TouchArea {

@@ -189,6 +189,10 @@ sessions (needs the user, since it changes the global settings).
   top or bottom edge it sticks there with its flat side against the edge; elsewhere it
   floats as a fully rounded pill. In the lower half it grows upward. Saved as
   `monitor`, `position` and `position_y`. Commit `feat: drag the notch anywhere`.
+- [x] **7.7** No floating: let go, the notch sticks to the edge nearest the cursor,
+  top, bottom, left or right, flat side against it, and grows away from it. While
+  dragged it is a round pill. Saved as `edge` and `position`; an old `position_y` is
+  read once to pick top or bottom. Commit `feat: stick the notch to the nearest edge`.
 
 ## Deviations from SPEC.md
 

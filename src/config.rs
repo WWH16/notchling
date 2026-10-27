@@ -10,6 +10,7 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::usage::Provider;
+use crate::window::Edge;
 
 /// Shortest allowed wait for a click on a permission request.
 const MIN_HOOK_TIMEOUT_SECS: u64 = 5;
@@ -43,12 +44,15 @@ pub struct Config {
     /// Whether to ask the account endpoint for Claude's exact usage, with Claude Code's
     /// login. Off, the notch shows the local estimate only.
     claude_account: bool,
-    /// Where the notch sits across its display, from 0 (left) to 1 (right); set by
-    /// dragging it.
+    /// The screen edge the notch sticks to; set by dragging it.
+    edge: Option<Edge>,
+    /// Where along that edge the notch sits, from 0 to 1: left to right on the top and
+    /// bottom edges, top to bottom on the side ones; set by dragging it.
     position: f32,
-    /// Where the notch sits down its display, from 0 (hanging from the top edge) to 1
-    /// (standing on the bottom of the work area); set by dragging it.
-    position_y: f32,
+    /// A key from before the notch stuck to any edge, where 1 meant the bottom one. It
+    /// is read once to pick the edge and never written again.
+    #[serde(skip_serializing)]
+    position_y: Option<f32>,
 }
 
 impl Default for Config {
@@ -61,8 +65,9 @@ impl Default for Config {
             usage_alerts: vec![80, 95],
             monitor: None,
             claude_account: true,
+            edge: None,
             position: 0.5,
-            position_y: 0.0,
+            position_y: None,
         }
     }
 }
@@ -150,7 +155,21 @@ impl Config {
         self.claude_account = enabled;
     }
 
-    /// Where the notch sits across its display, from 0 (left) to 1 (right).
+    /// The screen edge the notch sticks to.
+    #[must_use]
+    pub fn edge(&self) -> Edge {
+        self.edge.unwrap_or(match self.position_y {
+            Some(position_y) if position_y > 0.5 => Edge::Bottom,
+            _ => Edge::Top,
+        })
+    }
+
+    pub fn set_edge(&mut self, edge: Edge) {
+        self.edge = Some(edge);
+        self.position_y = None;
+    }
+
+    /// Where along its edge the notch sits, from 0 to 1.
     #[must_use]
     pub fn position(&self) -> f32 {
         fraction_or(self.position, 0.5)
@@ -158,16 +177,6 @@ impl Config {
 
     pub fn set_position(&mut self, position: f32) {
         self.position = position;
-    }
-
-    /// Where the notch sits down its display, from 0 (top edge) to 1 (bottom edge).
-    #[must_use]
-    pub fn position_y(&self) -> f32 {
-        fraction_or(self.position_y, 0.0)
-    }
-
-    pub fn set_position_y(&mut self, position_y: f32) {
-        self.position_y = position_y;
     }
 
     /// Changes the config file and keeps every other setting, returning the new
@@ -255,14 +264,22 @@ mod tests {
         assert_eq!(read("position = -3.0"), 0.0);
         assert_eq!(read("position = 7.5"), 1.0);
         assert_eq!(read("position = nan"), 0.5);
-        assert_eq!(
-            Config::default().position_y(),
-            0.0,
-            "hangs from the top edge"
-        );
-        let read_y = |text: &str| Config::parse(text).expect("valid TOML").position_y();
-        assert_eq!(read_y("position_y = 0.6"), 0.6);
-        assert_eq!(read_y("position_y = 2.0"), 1.0);
+    }
+
+    #[test]
+    fn edge_defaults_to_the_top_and_old_files_still_load() {
+        let edge = |text: &str| Config::parse(text).expect("valid TOML").edge();
+        assert_eq!(edge(""), Edge::Top);
+        assert_eq!(edge("edge = \"right\""), Edge::Right);
+        assert_eq!(edge("position_y = 1.0"), Edge::Bottom, "the older key");
+        assert_eq!(edge("position_y = 0.0"), Edge::Top);
+        assert!(Config::parse("edge = \"middle\"").is_err());
+
+        let mut config = Config::parse("position_y = 1.0").expect("valid TOML");
+        config.set_edge(Edge::Left);
+        let text = toml::to_string(&config).expect("config serializes");
+        assert!(!text.contains("position_y"), "{text}");
+        assert_eq!(Config::parse(&text).map(|c| c.edge()), Ok(Edge::Left));
     }
 
     #[test]

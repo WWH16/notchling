@@ -27,6 +27,7 @@ mod ui {
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::env;
+use std::iter;
 use std::mem;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
@@ -38,8 +39,8 @@ use chrono::{DateTime, Local, Utc};
 use config::Config;
 use gpu::GpuLoad;
 use pipe::Listener;
-use protocol::{Decision, Event};
-use requests::{RequestId, Requests};
+use protocol::{Decision, Event, Question};
+use requests::{Answering, Ask, RequestId, Requests};
 use server::Update;
 use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel, Weak};
 use status::Health;
@@ -804,7 +805,22 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
         };
         let mut requests = decided.lock().expect("requests lock poisoned");
         requests.decide(RequestId::from_ui(id), Decision::from(choice));
-        show_requests(&notch, &requests);
+        show_requests(&notch, &mut requests);
+    });
+
+    let weak = notch.as_weak();
+    let picked = Arc::clone(&requests);
+    notch.on_option_picked(move |id, option| {
+        if let (Some(notch), Ok(option)) = (weak.upgrade(), usize::try_from(option)) {
+            answer_question(&notch, &picked, RequestId::from_ui(id), Some(option));
+        }
+    });
+    let weak = notch.as_weak();
+    let confirmed = Arc::clone(&requests);
+    notch.on_question_confirmed(move |id| {
+        if let Some(notch) = weak.upgrade() {
+            answer_question(&notch, &confirmed, RequestId::from_ui(id), None);
+        }
     });
 
     let clicked = Arc::clone(alert);
@@ -840,7 +856,10 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
         // Fails only once the event loop has quit, when nothing needs drawing.
         let _ = weak.upgrade_in_event_loop(move |notch| match update {
             Update::Requests => {
-                show_requests(&notch, &requests.lock().expect("requests lock poisoned"));
+                show_requests(
+                    &notch,
+                    &mut requests.lock().expect("requests lock poisoned"),
+                );
             }
             Update::Session(Event::TaskDone { origin }) => {
                 let mut awake = lock_awake(&awake);
@@ -876,7 +895,11 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
                 show_activity(&notch, &awake);
             }
             // The server turns these into `Update::Requests`.
-            Update::Session(Event::PermissionRequest { .. } | Event::ToolSettled { .. }) => {}
+            Update::Session(
+                Event::PermissionRequest { .. }
+                | Event::Question { .. }
+                | Event::ToolSettled { .. },
+            ) => {}
         });
     });
     awake_check
@@ -971,19 +994,102 @@ fn show_alert(
 }
 
 /// Puts the front request on the notch, or hides the request card when none is left.
-fn show_requests(notch: &Notch, requests: &Requests) {
+/// A request with questions shows the one its answering has reached.
+fn show_requests(notch: &Notch, requests: &mut Requests) {
+    let progress = requests.answering.take();
     let Some(front) = requests.front() else {
         // The texts stay so the card can fade out with its content.
         notch.set_has_request(false);
         return;
     };
     notch.set_request_id(front.id.to_ui());
-    notch.set_request_tool(front.request.tool.as_str().into());
-    notch.set_request_description(front.request.description.as_str().into());
     notch.set_request_project(front.request.project.as_str().into());
-    notch.set_request_detail(front.request.detail.as_str().into());
     notch.set_request_more(i32::try_from(requests.behind_front()).unwrap_or(i32::MAX));
+    let progress = match &front.request.ask {
+        Ask::Permission {
+            tool,
+            description,
+            detail,
+        } => {
+            notch.set_request_is_question(false);
+            notch.set_request_tool(tool.as_str().into());
+            notch.set_request_description(description.as_str().into());
+            notch.set_request_detail(detail.as_str().into());
+            None
+        }
+        Ask::Questions(questions) => {
+            let progress = progress
+                .filter(|progress| progress.id == front.id)
+                .unwrap_or_else(|| Answering::new(front.id, questions));
+            show_question(notch, questions, &progress);
+            notch.set_request_is_question(true);
+            Some(progress)
+        }
+    };
     notch.set_has_request(true);
+    requests.answering = progress;
+}
+
+/// Puts the question `progress` has reached on the question card.
+fn show_question(notch: &Notch, questions: &[Question], progress: &Answering) {
+    let Some(question) = questions.get(progress.index) else {
+        return;
+    };
+    let options: Vec<ui::OptionView> = question
+        .options
+        .iter()
+        .zip(progress.picked.iter().chain(iter::repeat(&false)))
+        .map(|(option, picked)| ui::OptionView {
+            label: option.label.as_str().into(),
+            description: option.description.as_str().into(),
+            picked: *picked,
+        })
+        .collect();
+    notch.set_question_text(question.question.as_str().into());
+    notch.set_question_header(question.header.as_str().into());
+    let step = if questions.len() > 1 {
+        format!("{} of {}", progress.index + 1, questions.len())
+    } else {
+        String::new()
+    };
+    notch.set_question_step(step.into());
+    notch.set_question_multi(question.multi_select);
+    notch.set_question_options(ModelRc::new(VecModel::from(options)));
+}
+
+/// Picks option `option` of the question on request `id`'s card, or with no option,
+/// confirms the ticked options of a multiple-choice question. Sends the answers once
+/// every question has one.
+fn answer_question(
+    notch: &Notch,
+    requests: &Mutex<Requests>,
+    id: RequestId,
+    option: Option<usize>,
+) {
+    let mut requests = requests.lock().expect("requests lock poisoned");
+    let questions = match requests.front() {
+        Some(front) if front.id == id => match &front.request.ask {
+            // Cloned so the progress can change while the questions are read.
+            Ask::Questions(questions) => questions.clone(),
+            Ask::Permission { .. } => return,
+        },
+        _ => return,
+    };
+    let Some(progress) = requests
+        .answering
+        .as_mut()
+        .filter(|progress| progress.id == id)
+    else {
+        return;
+    };
+    let finished = match option {
+        Some(option) => progress.pick(&questions, option),
+        None => progress.confirm(&questions),
+    };
+    if let Some(answers) = finished {
+        requests.decide(id, answers);
+    }
+    show_requests(notch, &mut requests);
 }
 
 impl From<usage::Provider> for ui::Provider {

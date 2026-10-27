@@ -8,8 +8,8 @@ use std::thread;
 use std::time::Duration;
 
 use crate::pipe::{self, Listener};
-use crate::protocol::{self, Event};
-use crate::requests::{Request, Requests};
+use crate::protocol::{self, Event, Origin};
+use crate::requests::{Ask, Request, Requests};
 
 /// How often a waiting request checks whether its hook process is still there.
 const DISCONNECT_CHECK: Duration = Duration::from_millis(250);
@@ -59,33 +59,21 @@ fn handle(connection: &File, requests: &Mutex<Requests>, notify: &impl Fn(Update
             description,
             detail,
         } => {
-            let (reply, decision) = mpsc::channel();
-            let request = Request {
-                session_id: origin.session_id,
-                project: origin.project,
+            let ask = Ask::Permission {
                 tool,
                 description,
                 detail,
             };
-            let id = lock(requests).push(request, reply);
-            notify(Update::Requests);
-            loop {
-                match decision.recv_timeout(DISCONNECT_CHECK) {
-                    Ok(decision) => {
-                        // A write failure means the hook already gave up; nothing to do.
-                        let _ = protocol::write_line(&mut &*connection, &decision);
-                        return;
-                    }
-                    Err(RecvTimeoutError::Timeout) if pipe::peer_closed(connection) => {
-                        // The hook timed out or Claude Code cancelled it.
-                        lock(requests).remove(id);
-                        notify(Update::Requests);
-                        return;
-                    }
-                    Err(RecvTimeoutError::Timeout) => {}
-                    Err(RecvTimeoutError::Disconnected) => return,
-                }
-            }
+            wait_for_answer(connection, requests, notify, origin, ask);
+        }
+        Event::Question { origin, questions } => {
+            wait_for_answer(
+                connection,
+                requests,
+                notify,
+                origin,
+                Ask::Questions(questions),
+            );
         }
         Event::ToolSettled {
             origin,
@@ -104,6 +92,42 @@ fn handle(connection: &File, requests: &Mutex<Requests>, notify: &impl Fn(Update
             notify(Update::Session(event));
         }
         other => notify(Update::Session(other)),
+    }
+}
+
+/// Queues `ask` on the notch and writes the answer back to its hook, or drops it once
+/// the hook goes away.
+fn wait_for_answer(
+    connection: &File,
+    requests: &Mutex<Requests>,
+    notify: &impl Fn(Update),
+    origin: Origin,
+    ask: Ask,
+) {
+    let (reply, decision) = mpsc::channel();
+    let request = Request {
+        session_id: origin.session_id,
+        project: origin.project,
+        ask,
+    };
+    let id = lock(requests).push(request, reply);
+    notify(Update::Requests);
+    loop {
+        match decision.recv_timeout(DISCONNECT_CHECK) {
+            Ok(decision) => {
+                // A write failure means the hook already gave up; nothing to do.
+                let _ = protocol::write_line(&mut &*connection, &decision);
+                return;
+            }
+            Err(RecvTimeoutError::Timeout) if pipe::peer_closed(connection) => {
+                // The hook timed out or Claude Code cancelled it.
+                lock(requests).remove(id);
+                notify(Update::Requests);
+                return;
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
     }
 }
 

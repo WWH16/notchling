@@ -1,5 +1,6 @@
 //! Messages between the hook process and the notch: one JSON object per line.
 
+use std::collections::BTreeMap;
 use std::io::{self, BufRead, Read, Write};
 
 use serde::de::DeserializeOwned;
@@ -34,6 +35,12 @@ pub enum Event {
         /// The full command, or the full tool input for non-shell tools.
         detail: String,
     },
+    /// Claude asks the user to pick among options, through its `AskUserQuestion` tool;
+    /// the hook waits for a [`Decision::Answered`].
+    Question {
+        origin: Origin,
+        questions: Vec<Question>,
+    },
     /// Claude is waiting for the user, e.g. idle or asking a question.
     NeedsInput { origin: Origin, message: String },
     /// Claude finished its turn.
@@ -50,14 +57,42 @@ pub enum Event {
     },
 }
 
-/// The notch's answer to a [`Event::PermissionRequest`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// One question of an `AskUserQuestion` call, in the tool input's own shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Question {
+    /// The question itself; the answer is keyed by this text.
+    pub question: String,
+    /// A short label for the question, such as "Framework".
+    #[serde(default)]
+    pub header: String,
+    pub options: Vec<QuestionOption>,
+    /// Whether more than one option may be picked.
+    #[serde(default)]
+    pub multi_select: bool,
+}
+
+/// One option Claude offers for a [`Question`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionOption {
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+/// The notch's answer to a [`Event::PermissionRequest`] or an [`Event::Question`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Decision {
     Allow,
     Deny,
     /// Hand the request back to Claude Code's own dialog.
     AskInApp,
+    /// The options picked, keyed by each question's text; several picks for one
+    /// question are joined with ", ", as Claude Code expects.
+    Answered {
+        answers: BTreeMap<String, String>,
+    },
 }
 
 /// Writes `message` as one JSON line and flushes.
@@ -114,6 +149,18 @@ mod tests {
                 description: "Build release binary".to_owned(),
                 detail: "cargo build\n--release".to_owned(),
             },
+            Event::Question {
+                origin: origin(),
+                questions: vec![Question {
+                    question: "Which framework?".to_owned(),
+                    header: "Framework".to_owned(),
+                    options: vec![QuestionOption {
+                        label: "React".to_owned(),
+                        description: "Component library".to_owned(),
+                    }],
+                    multi_select: true,
+                }],
+            },
             Event::NeedsInput {
                 origin: origin(),
                 message: "Claude is waiting".to_owned(),
@@ -145,6 +192,26 @@ mod tests {
         let mut wire = Vec::new();
         write_line(&mut wire, &Decision::AskInApp).expect("writing to a Vec succeeds");
         assert_eq!(wire, b"\"ask_in_app\"\n");
+
+        let answered = Decision::Answered {
+            answers: BTreeMap::from([("Which framework?".to_owned(), "React".to_owned())]),
+        };
+        let mut wire = Vec::new();
+        write_line(&mut wire, &answered).expect("writing to a Vec succeeds");
+        let got: Decision = read_line(&mut wire.as_slice())
+            .expect("valid line")
+            .expect("not at end");
+        assert_eq!(got, answered);
+    }
+
+    #[test]
+    fn questions_read_claude_codes_camel_case_input() {
+        let question: Question = serde_json::from_str(
+            r#"{"question":"Which?","header":"Pick","options":[{"label":"A"}],"multiSelect":true}"#,
+        )
+        .expect("tool input parses");
+        assert!(question.multi_select);
+        assert_eq!(question.options[0].description, "");
     }
 
     #[test]

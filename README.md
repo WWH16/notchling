@@ -73,7 +73,8 @@ ai-notch.exe --install-hooks
 
 This backs up `%USERPROFILE%\.claude\settings.json` to
 `settings.json.ai-notch-backup-<time>` in the same folder, then adds ai-notch to the
-`PermissionRequest`, `Notification`, `Stop` and `UserPromptSubmit` events, plus
+`PermissionRequest`, `Notification`, `Stop` and `UserPromptSubmit` events, to
+`PreToolUse` for Claude's multiple-choice questions (`AskUserQuestion`) only, plus
 `PostToolUse`, `PostToolUseFailure` and `PermissionDenied` as background hooks that
 never slow a tool call down. Your other settings and hooks are left as they are, and
 running it twice adds nothing twice. Claude Code picks up the change without a
@@ -89,6 +90,10 @@ How a permission request works:
   meanwhile, so a click meant for the window behind cannot answer it.
 - With the shortcuts turned on in the settings, Ctrl+Alt+Y allows and Ctrl+Alt+N
   denies the request on the notch. The keys are only taken while a card shows.
+- When Claude asks you to pick among options, the notch shows the question with its
+  options as buttons, one question at a time; tick several and press Done where Claude
+  allows more than one. "Open in app" hands the question back to Claude Code, which is
+  also where you type an answer of your own.
 - ai-notch never approves anything by itself. If the notch is not running, if you do
   not answer within the permission wait (120 s by default), or if anything goes wrong,
   Claude Code shows its normal dialog.

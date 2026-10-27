@@ -16,13 +16,16 @@ use serde_json::{Value, json};
 use crate::config::Config;
 use crate::pipe;
 use crate::process;
-use crate::protocol::{self, Decision, Event, Origin};
+use crate::protocol::{self, Decision, Event, Origin, Question};
 
 /// Largest stdin payload accepted from Claude Code.
 const MAX_INPUT_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Message Claude sees when a request is denied from the notch.
 const DENY_MESSAGE: &str = "The user denied this from the ai-notch overlay.";
+
+/// The tool Claude uses to ask the user to pick among options.
+const ASK_USER_QUESTION: &str = "AskUserQuestion";
 
 /// The fields of a Claude Code hook payload that the notch uses.
 #[derive(Debug, Default, Deserialize)]
@@ -52,7 +55,10 @@ fn handle_stdin() -> Option<String> {
         .ok()?;
     let input: HookInput = serde_json::from_str(&text).ok()?;
     let event = to_event(&input, process::ancestors())?;
-    let wants_reply = matches!(event, Event::PermissionRequest { .. });
+    let wants_reply = matches!(
+        event,
+        Event::PermissionRequest { .. } | Event::Question { .. }
+    );
 
     let connection = pipe::connect(&pipe::pipe_name().ok()?).ok()?;
     protocol::write_line(&mut &connection, &event).ok()?;
@@ -73,7 +79,7 @@ fn handle_stdin() -> Option<String> {
         .recv_timeout(Config::load().hook_timeout())
         .ok()?
         .ok()??;
-    decision_output(decision)
+    decision_output(&input, decision)
 }
 
 /// Turns a hook payload into a notch event, or `None` for events the notch ignores.
@@ -84,6 +90,18 @@ fn to_event(input: &HookInput, ancestors: Vec<u32>) -> Option<Event> {
         ancestors,
     };
     match input.hook_event_name.as_str() {
+        // A question is answered before it runs, through PreToolUse; a permission card
+        // could only allow it without an answer, so Claude Code's own dialog takes it.
+        "PermissionRequest" if input.tool_name == ASK_USER_QUESTION => None,
+        "PreToolUse" if input.tool_name == ASK_USER_QUESTION => {
+            let questions: Vec<Question> =
+                serde_json::from_value(input.tool_input.get("questions")?.clone()).ok()?;
+            let answerable = !questions.is_empty()
+                && questions
+                    .iter()
+                    .all(|question| !question.options.is_empty());
+            answerable.then_some(Event::Question { origin, questions })
+        }
         "PermissionRequest" => Some(Event::PermissionRequest {
             origin,
             tool: input.tool_name.clone(),
@@ -141,24 +159,44 @@ fn project_name(cwd: &str) -> String {
         .unwrap_or_default()
 }
 
-/// The JSON Claude Code expects for a decision, or `None` to show its own dialog.
-fn decision_output(decision: Decision) -> Option<String> {
-    let decision = match decision {
-        Decision::Allow => json!({ "behavior": "allow" }),
-        Decision::Deny => json!({ "behavior": "deny", "message": DENY_MESSAGE }),
-        Decision::AskInApp => return None,
-    };
-    let output = json!({
-        "hookSpecificOutput": {
-            "hookEventName": "PermissionRequest",
-            "decision": decision,
+/// The JSON Claude Code expects for the notch's reply to `input`, or `None` to show its
+/// own dialog. A question's answers echo the tool input, as `updatedInput` replaces it.
+fn decision_output(input: &HookInput, decision: Decision) -> Option<String> {
+    let output = match (input.hook_event_name.as_str(), decision) {
+        ("PermissionRequest", Decision::Allow) => json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": { "behavior": "allow" },
+            }
+        }),
+        ("PermissionRequest", Decision::Deny) => json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": { "behavior": "deny", "message": DENY_MESSAGE },
+            }
+        }),
+        ("PreToolUse", Decision::Answered { answers }) => {
+            let mut updated = input.tool_input.clone();
+            updated
+                .as_object_mut()?
+                .insert("answers".into(), json!(answers));
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": updated,
+                }
+            })
         }
-    });
+        _ => return None,
+    };
     Some(output.to_string())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     fn fixture(json: &str) -> HookInput {
@@ -269,21 +307,84 @@ mod tests {
 
     #[test]
     fn decisions_match_the_documented_format() {
-        let allow: Value = serde_json::from_str(&decision_output(Decision::Allow).expect("allow"))
-            .expect("valid JSON");
+        let permission = fixture(include_str!(
+            "../tests/fixtures/hooks/permission_request.json"
+        ));
+        let output = |decision| {
+            let text = decision_output(&permission, decision)?;
+            Some(serde_json::from_str::<Value>(&text).expect("valid JSON"))
+        };
         assert_eq!(
-            allow,
+            output(Decision::Allow).expect("allow"),
             json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest",
                 "decision": {"behavior": "allow"}}})
         );
-        let deny: Value = serde_json::from_str(&decision_output(Decision::Deny).expect("deny"))
-            .expect("valid JSON");
+        let deny = output(Decision::Deny).expect("deny");
         assert_eq!(deny["hookSpecificOutput"]["decision"]["behavior"], "deny");
         assert_eq!(
             deny["hookSpecificOutput"]["decision"]["message"],
             DENY_MESSAGE
         );
-        assert_eq!(decision_output(Decision::AskInApp), None);
+        assert_eq!(output(Decision::AskInApp), None);
+        let answers = BTreeMap::from([("Q".to_owned(), "A".to_owned())]);
+        assert_eq!(
+            output(Decision::Answered { answers }),
+            None,
+            "answers only fit a question"
+        );
+    }
+
+    const QUESTION: &str = r#"{"hook_event_name":"PreToolUse","session_id":"s",
+        "cwd":"C:\\w\\example","tool_name":"AskUserQuestion","tool_use_id":"toolu_example",
+        "tool_input":{"questions":[{"question":"Which framework?","header":"Framework",
+            "options":[{"label":"React","description":"Component library"},
+                       {"label":"Vue","description":"Progressive framework"}],
+            "multiSelect":false}]}}"#;
+
+    #[test]
+    fn questions_become_question_events() {
+        let event = event_for(QUESTION);
+        let Some(Event::Question { questions, origin }) = event else {
+            panic!("expected a question, got {event:?}");
+        };
+        assert_eq!(origin.project, "example");
+        assert_eq!(questions[0].question, "Which framework?");
+        assert_eq!(questions[0].options[1].label, "Vue");
+        assert!(!questions[0].multi_select);
+
+        let other_tool = QUESTION.replace("AskUserQuestion", "Bash");
+        assert_eq!(
+            event_for(&other_tool),
+            None,
+            "only questions use PreToolUse"
+        );
+        let permission = QUESTION.replace("PreToolUse", "PermissionRequest");
+        assert_eq!(
+            event_for(&permission),
+            None,
+            "Claude Code's dialog takes it"
+        );
+    }
+
+    #[test]
+    fn answers_echo_the_questions_as_documented() {
+        let input = fixture(QUESTION);
+        let answers = BTreeMap::from([("Which framework?".to_owned(), "React".to_owned())]);
+        let text = decision_output(&input, Decision::Answered { answers }).expect("answered");
+        let output: Value = serde_json::from_str(&text).expect("valid JSON");
+        let specific = &output["hookSpecificOutput"];
+        assert_eq!(specific["hookEventName"], "PreToolUse");
+        assert_eq!(specific["permissionDecision"], "allow");
+        assert_eq!(
+            specific["updatedInput"]["answers"],
+            json!({"Which framework?": "React"})
+        );
+        assert_eq!(
+            specific["updatedInput"]["questions"],
+            input.tool_input["questions"]
+        );
+        assert_eq!(decision_output(&input, Decision::AskInApp), None);
+        assert_eq!(decision_output(&input, Decision::Allow), None);
     }
 
     #[test]

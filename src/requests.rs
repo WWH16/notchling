@@ -1,9 +1,11 @@
-//! Permission requests waiting for a click, shared between pipe threads and the UI.
+//! Permission requests and questions waiting for a click, shared between pipe threads
+//! and the UI.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
+use std::mem;
 use std::sync::mpsc::Sender;
 
-use crate::protocol::Decision;
+use crate::protocol::{Decision, Question};
 
 /// Identifies one request for the lifetime of the notch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -24,16 +26,28 @@ impl RequestId {
     }
 }
 
-/// What a permission request asks.
+/// Something a Claude Code session waits on the user for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
     pub session_id: String,
     pub project: String,
-    pub tool: String,
-    /// What Claude says the call does; empty when it gave no description.
-    pub description: String,
-    /// The full command, or the full tool input for non-shell tools.
-    pub detail: String,
+    pub ask: Ask,
+}
+
+/// What a [`Request`] asks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ask {
+    /// Claude wants to use a tool, answered with Allow or Deny.
+    Permission {
+        tool: String,
+        /// What Claude says the call does; empty when it gave no description.
+        description: String,
+        /// The full command, or the full tool input for non-shell tools.
+        detail: String,
+    },
+    /// Claude asks the user to pick among options, answered with
+    /// [`Decision::Answered`].
+    Questions(Vec<Question>),
 }
 
 /// One request shown on the notch.
@@ -49,6 +63,8 @@ pub struct Pending {
 pub struct Requests {
     queue: VecDeque<Pending>,
     next_id: u64,
+    /// Progress through the front request's questions, kept by the UI.
+    pub answering: Option<Answering>,
 }
 
 impl Requests {
@@ -92,7 +108,16 @@ impl Requests {
     /// decision, so their hooks exit and the cards go. Returns how many there were.
     pub fn settle(&mut self, session_id: &str, tool: &str, detail: &str) -> usize {
         self.release(|request| {
-            request.session_id == session_id && request.tool == tool && request.detail == detail
+            let same_call = match &request.ask {
+                Ask::Permission {
+                    tool: asked_tool,
+                    detail: asked_detail,
+                    ..
+                } => asked_tool == tool && asked_detail == detail,
+                // Answered before the tool runs, so a settled call is never one waiting here.
+                Ask::Questions(_) => false,
+            };
+            request.session_id == session_id && same_call
         })
     }
 
@@ -121,19 +146,152 @@ impl Requests {
     }
 }
 
+/// Progress through one request's questions on the notch: which question shows, which
+/// options of a multiple-choice one are ticked, and the answers so far.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Answering {
+    pub id: RequestId,
+    /// The question on screen.
+    pub index: usize,
+    /// Ticks on the options of a multiple-choice question.
+    pub picked: Vec<bool>,
+    answers: BTreeMap<String, String>,
+}
+
+impl Answering {
+    #[must_use]
+    pub fn new(id: RequestId, questions: &[Question]) -> Self {
+        Self {
+            id,
+            index: 0,
+            picked: vec![false; questions.first().map_or(0, |q| q.options.len())],
+            answers: BTreeMap::new(),
+        }
+    }
+
+    /// Picks option `option` of the question on screen: answers a single-choice
+    /// question, or ticks or unticks it on a multiple-choice one. Returns every answer
+    /// once the last question has one.
+    pub fn pick(&mut self, questions: &[Question], option: usize) -> Option<Decision> {
+        let question = questions.get(self.index)?;
+        let label = &question.options.get(option)?.label;
+        if question.multi_select {
+            if let Some(ticked) = self.picked.get_mut(option) {
+                *ticked = !*ticked;
+            }
+            return None;
+        }
+        self.answer(questions, label.clone())
+    }
+
+    /// Answers the multiple-choice question on screen with its ticked options, joined
+    /// with ", " as Claude Code expects. Nothing happens while none is ticked.
+    pub fn confirm(&mut self, questions: &[Question]) -> Option<Decision> {
+        let question = questions.get(self.index)?;
+        let labels: Vec<&str> = question
+            .options
+            .iter()
+            .zip(&self.picked)
+            .filter(|(_, ticked)| **ticked)
+            .map(|(option, _)| option.label.as_str())
+            .collect();
+        if labels.is_empty() {
+            return None;
+        }
+        self.answer(questions, labels.join(", "))
+    }
+
+    fn answer(&mut self, questions: &[Question], answer: String) -> Option<Decision> {
+        let question = questions.get(self.index)?;
+        self.answers.insert(question.question.clone(), answer);
+        self.index += 1;
+        match questions.get(self.index) {
+            Some(next) => {
+                self.picked = vec![false; next.options.len()];
+                None
+            }
+            None => Some(Decision::Answered {
+                answers: mem::take(&mut self.answers),
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;
 
     use super::*;
+    use crate::protocol::QuestionOption;
+
+    fn question(text: &str, labels: &[&str], multi_select: bool) -> Question {
+        Question {
+            question: text.to_owned(),
+            header: String::new(),
+            options: labels
+                .iter()
+                .map(|label| QuestionOption {
+                    label: (*label).to_owned(),
+                    description: String::new(),
+                })
+                .collect(),
+            multi_select,
+        }
+    }
+
+    #[test]
+    fn single_choices_answer_and_move_on() {
+        let questions = [
+            question("Framework?", &["React", "Vue"], false),
+            question("Styling?", &["CSS", "Tailwind"], false),
+        ];
+        let mut answering = Answering::new(RequestId(1), &questions);
+        assert_eq!(answering.pick(&questions, 1), None, "one question is left");
+        assert_eq!(answering.index, 1);
+        let answers = BTreeMap::from([
+            ("Framework?".to_owned(), "Vue".to_owned()),
+            ("Styling?".to_owned(), "CSS".to_owned()),
+        ]);
+        assert_eq!(
+            answering.pick(&questions, 0),
+            Some(Decision::Answered { answers })
+        );
+    }
+
+    #[test]
+    fn multiple_choices_tick_until_confirmed() {
+        let questions = [question("Features?", &["Auth", "Search", "Billing"], true)];
+        let mut answering = Answering::new(RequestId(1), &questions);
+        assert_eq!(answering.confirm(&questions), None, "nothing ticked yet");
+        assert_eq!(answering.pick(&questions, 0), None);
+        assert_eq!(answering.pick(&questions, 2), None);
+        assert_eq!(answering.pick(&questions, 0), None, "unticked again");
+        assert_eq!(answering.picked, [false, false, true]);
+        assert_eq!(answering.pick(&questions, 1), None);
+        let answers = BTreeMap::from([("Features?".to_owned(), "Search, Billing".to_owned())]);
+        assert_eq!(
+            answering.confirm(&questions),
+            Some(Decision::Answered { answers })
+        );
+    }
+
+    #[test]
+    fn options_out_of_range_change_nothing() {
+        let questions = [question("Framework?", &["React"], false)];
+        let mut answering = Answering::new(RequestId(1), &questions);
+        assert_eq!(answering.pick(&questions, 5), None);
+        assert_eq!(answering.index, 0);
+    }
 
     fn request(session_id: &str, tool: &str, detail: &str) -> Request {
         Request {
             session_id: session_id.to_owned(),
             project: "proj".to_owned(),
-            tool: tool.to_owned(),
-            description: String::new(),
-            detail: detail.to_owned(),
+            ask: Ask::Permission {
+                tool: tool.to_owned(),
+                description: String::new(),
+                detail: detail.to_owned(),
+            },
         }
     }
 

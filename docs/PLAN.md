@@ -269,6 +269,14 @@ sessions (needs the user, since it changes the global settings).
   `description` that Claude Code puts above the command ("Read hook fixtures and
   install config"), on its own line under the title. Commit
   `feat: show claude's description on the request card`.
+- [x] **8.14** Answer Claude's multiple-choice questions on the notch. A `PreToolUse`
+  hook, matched to `AskUserQuestion` only, sends the questions; the card shows one at
+  a time ("1 of 2") with its options as buttons, ticks for a multiple-choice one and
+  Done. The answers go back as `permissionDecision: "allow"` with `updatedInput`
+  echoing the questions plus `answers` (labels joined with ", "), as the hooks docs
+  describe. "Open in app", a timeout or no notch leave the question to Claude Code;
+  free-text "Other" answers stay there too. Options share the 500 ms arming delay.
+  Needs `--install-hooks` again. Commit `feat: answer claude's questions on the notch`.
 
 ## Deviations from SPEC.md
 

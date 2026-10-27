@@ -13,8 +13,9 @@ use serde_json::{Map, Value, json};
 use crate::config::{Config, HOOK_ENTRY_MARGIN_SECS};
 
 /// Hook events the notch listens to.
-const EVENTS: [&str; 7] = [
+const EVENTS: [&str; 8] = [
     "PermissionRequest",
+    "PreToolUse",
     "Notification",
     "Stop",
     "UserPromptSubmit",
@@ -26,6 +27,14 @@ const EVENTS: [&str; 7] = [
 /// Events that only tell the notch a tool call was settled. They fire on every tool
 /// call, so Claude Code runs them in the background instead of waiting for them.
 const BACKGROUND_EVENTS: [&str; 3] = ["PostToolUse", "PostToolUseFailure", "PermissionDenied"];
+
+/// Events that wait for the user to answer on the notch, so they get the permission
+/// wait as their timeout.
+const WAITING_EVENTS: [&str; 2] = ["PermissionRequest", "PreToolUse"];
+
+/// The only tool the notch hooks before it runs: Claude's multiple-choice questions,
+/// which the notch can answer. Every other tool call passes PreToolUse untouched.
+const PRE_TOOL_USE_MATCHER: &str = "AskUserQuestion";
 
 /// Claude Code timeout for events that do not wait for the user; the hook returns at once.
 const QUICK_EVENT_TIMEOUT_SECS: u64 = 10;
@@ -122,7 +131,7 @@ fn install(settings: &mut Value, command: &str, permission_timeout: u64) -> anyh
     uninstall(settings)?;
     let hooks = hooks_object(settings)?;
     for event in EVENTS {
-        let timeout = if event == "PermissionRequest" {
+        let timeout = if WAITING_EVENTS.contains(&event) {
             permission_timeout
         } else {
             QUICK_EVENT_TIMEOUT_SECS
@@ -131,7 +140,10 @@ fn install(settings: &mut Value, command: &str, permission_timeout: u64) -> anyh
         if BACKGROUND_EVENTS.contains(&event) {
             handler["async"] = true.into();
         }
-        let entry = json!({ "hooks": [handler] });
+        let mut entry = json!({ "hooks": [handler] });
+        if event == "PreToolUse" {
+            entry["matcher"] = PRE_TOOL_USE_MATCHER.into();
+        }
         let groups = hooks.entry(event).or_insert_with(|| json!([]));
         let Some(groups) = groups.as_array_mut() else {
             bail!("hooks.{event} in settings.json is not a list");
@@ -208,6 +220,13 @@ mod tests {
             settings["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"],
             130
         );
+        let questions = &settings["hooks"]["PreToolUse"][0];
+        assert_eq!(questions["matcher"], "AskUserQuestion");
+        assert_eq!(
+            questions["hooks"][0]["timeout"], 130,
+            "a question waits too"
+        );
+        assert!(settings["hooks"]["Stop"][0].get("matcher").is_none());
         assert_eq!(settings["hooks"]["Stop"][0]["hooks"][0]["timeout"], 10);
         assert_eq!(
             settings["hooks"]["PostToolUse"][0]["hooks"][0]["async"],
@@ -243,6 +262,10 @@ mod tests {
         let mut settings = original.clone();
         install(&mut settings, COMMAND, 130).expect("valid settings");
         assert_eq!(settings["hooks"]["Stop"].as_array().map(Vec::len), Some(2));
+        assert_eq!(
+            settings["hooks"]["PreToolUse"].as_array().map(Vec::len),
+            Some(2)
+        );
         uninstall(&mut settings).expect("valid settings");
         assert_eq!(settings, original);
     }

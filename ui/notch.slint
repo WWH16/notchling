@@ -74,6 +74,13 @@ export struct LimitView {
     left-text: string,
 }
 
+// One option of a question Claude asks; `picked` ticks it on a multiple-choice one.
+export struct OptionView {
+    label: string,
+    description: string,
+    picked: bool,
+}
+
 // A line of the hover panel's limits: a model group's title, or up to two limits side
 // by side. A lone limit on a wide line keeps half the width, so columns stay aligned.
 export struct LimitLine {
@@ -396,6 +403,67 @@ component Shoulder inherits Path {
     Close { }
 }
 
+// One option of a question: its label over its description, the whole row a button.
+// A multiple-choice option shows a tick box. Until armed it ignores clicks.
+component OptionButton inherits Rectangle {
+    in property <OptionView> option;
+    in property <bool> multi;
+    in property <bool> armed: true;
+    callback clicked();
+    min-height: row.preferred-height;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: self.option.picked ? Theme.text : Theme.outline;
+    background: touch.pressed ? Theme.outline : touch.has-hover && self.armed ? Theme.track : transparent;
+    opacity: self.armed ? 1 : 0.6;
+    accessible-role: button;
+    accessible-label: self.option.picked ? "\{self.option.label}, ticked" : self.option.label;
+    accessible-description: self.option.description;
+    accessible-enabled: self.armed;
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    row := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 10px;
+        if root.multi: Rectangle {
+            width: 14px * Theme.text-scale;
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: parent.width;
+                height: self.width;
+                border-radius: 4px;
+                border-width: root.option.picked ? 0 : 1px;
+                border-color: Theme.muted;
+                background: root.option.picked ? Theme.text : transparent;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Value {
+                text: root.option.label;
+                overflow: elide;
+            }
+            if root.option.description != "": Label {
+                text: root.option.description;
+                overflow: elide;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.armed;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 component PillButton inherits Rectangle {
     in property <string> label;
     in property <bool> primary;
@@ -521,6 +589,20 @@ export component Notch inherits Window {
     in property <int> request-more;
     // Whether Ctrl+Alt+Y and Ctrl+Alt+N answer the request; Rust claims the keys.
     in property <bool> shortcuts;
+    // The request is a question Claude asks, not a tool to allow: Rust shows the one the
+    // answers have reached, with its options.
+    in property <bool> request-is-question;
+    in property <string> question-text;
+    // A short label for the question, such as "Framework".
+    in property <string> question-header;
+    // "1 of 3" when Claude asks several questions; empty for one.
+    in property <string> question-step;
+    in property <bool> question-multi;
+    in property <[OptionView]> question-options;
+    // An option clicked: it answers a single-choice question, or ticks a multiple-choice
+    // one, which `question-confirmed` then answers.
+    callback option-picked(int, int);
+    callback question-confirmed(int);
     callback decide(int, Choice);
     // Runs when a request card appears or goes, so Rust can claim or release the keys.
     callback request-shown-changed();
@@ -675,9 +757,10 @@ export component Notch inherits Window {
         easing: ease-out;
     }
     private property <length> request-width: 460px * Theme.text-scale;
-    // Taller by a line when Claude explains the call.
-    private property <length> request-height: (self.request-description != "" ? 222px : 196px)
-        * Theme.text-scale;
+    // Taller by a line when Claude explains the call; a question is as tall as its options.
+    private property <length> request-height: self.request-is-question
+        ? min(question-view.preferred-height, self.fixed-height - 2 * self.shoulder-radius)
+        : (self.request-description != "" ? 222px : 196px) * Theme.text-scale;
     private property <length> alert-width: 290px * Theme.text-scale;
     private property <length> alert-height: 36px * Theme.text-scale;
 
@@ -1145,6 +1228,91 @@ export component Notch inherits Window {
             }
         }
 
+        question-view := VerticalLayout {
+            opacity: 0;
+            visible: self.opacity > 0;
+            alignment: start;
+            padding-left: 18px;
+            padding-right: 18px;
+            padding-top: 13px;
+            padding-bottom: 14px;
+            spacing: 10px;
+            accessible-role: groupbox;
+            accessible-label: root.question-text;
+
+            HorizontalLayout {
+                spacing: 8px;
+                Logo {
+                    provider: Provider.claude;
+                    fill: Theme.claude;
+                }
+                Value {
+                    text: "Claude asks";
+                }
+                if root.question-header != "": Label {
+                    text: root.question-header;
+                    overflow: elide;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                if root.question-step != "": Label {
+                    text: root.question-step;
+                    color: Theme.text;
+                }
+                Label {
+                    text: root.request-project;
+                }
+                if root.request-more > 0: Label {
+                    text: "\{root.request-more} more";
+                    color: Theme.text;
+                }
+            }
+
+            Text {
+                text: root.question-text;
+                color: Theme.text;
+                font-family: Theme.font;
+                font-size: Theme.size-large;
+                wrap: word-wrap;
+            }
+
+            for option[index] in root.question-options: OptionButton {
+                option: option;
+                multi: root.question-multi;
+                armed: root.request-armed;
+                clicked => {
+                    if root.request-armed {
+                        root.option-picked(root.request-id, index);
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                LinkButton {
+                    label: "Open in app";
+                    clicked => {
+                        root.decide(root.request-id, Choice.ask-in-app);
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                if root.question-multi: PillButton {
+                    label: "Done";
+                    primary: true;
+                    armed: root.request-armed;
+                    progress: root.arming;
+                    clicked => {
+                        if root.request-armed {
+                            root.question-confirmed(root.request-id);
+                        }
+                    }
+                }
+            }
+        }
+
         alert-view := HorizontalLayout {
             opacity: 0;
             visible: self.opacity > 0;
@@ -1182,15 +1350,16 @@ export component Notch inherits Window {
                 pill.height: root.request-height;
                 idle-row.opacity: 0;
                 detail.opacity: 0;
-                request-view.opacity: 1;
+                request-view.opacity: root.request-is-question ? 0 : 1;
+                question-view.opacity: root.request-is-question ? 1 : 0;
                 in {
                     animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 220ms; easing: ease-out; }
                     animate idle-row.opacity, detail.opacity { duration: 80ms; }
-                    animate request-view.opacity { duration: 140ms; delay: 160ms; }
+                    animate request-view.opacity, question-view.opacity { duration: 140ms; delay: 160ms; }
                 }
                 out {
                     animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
-                    animate request-view.opacity { duration: 80ms; }
+                    animate request-view.opacity, question-view.opacity { duration: 80ms; }
                     animate idle-row.opacity { duration: 140ms; delay: 120ms; }
                 }
             }

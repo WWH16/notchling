@@ -34,6 +34,8 @@ pub struct Config {
     gemini_daily_requests: u32,
     /// The provider whose usage the notch shows.
     provider: Provider,
+    /// Usage percentages that raise an alert, each once per usage window.
+    usage_alerts: Vec<u32>,
 }
 
 impl Default for Config {
@@ -43,6 +45,7 @@ impl Default for Config {
             // The Gemini CLI's daily request limit for a free Google login.
             gemini_daily_requests: 1000,
             provider: Provider::Claude,
+            usage_alerts: vec![80, 95],
         }
     }
 }
@@ -90,6 +93,12 @@ impl Config {
 
     pub fn set_provider(&mut self, provider: Provider) {
         self.provider = provider;
+    }
+
+    /// Usage percentages that raise an alert.
+    #[must_use]
+    pub fn usage_alerts(&self) -> &[u32] {
+        &self.usage_alerts
     }
 
     /// Changes the config file and keeps every other setting. Comments in the file are
@@ -154,6 +163,9 @@ mod tests {
         assert_eq!(config.provider(), Provider::ChatGpt);
         assert_eq!(Config::default().provider(), Provider::Claude);
         assert!(Config::parse("provider = \"copilot\"").is_err());
+        assert_eq!(Config::default().usage_alerts(), [80, 95]);
+        let alerts = Config::parse("usage_alerts = [50, 90]").expect("valid TOML");
+        assert_eq!(alerts.usage_alerts(), [50, 90]);
     }
 
     #[test]

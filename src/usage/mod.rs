@@ -5,10 +5,12 @@ mod claude_account;
 mod claude_local;
 mod codex;
 mod gemini;
+mod thresholds;
 
 pub use claude::Claude;
 pub use codex::Codex;
 pub use gemini::Gemini;
+pub use thresholds::{Crossing, Thresholds};
 
 use std::collections::BTreeMap;
 use std::thread;

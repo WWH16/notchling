@@ -35,14 +35,14 @@ use chrono::Utc;
 use config::Config;
 use gpu::GpuLoad;
 use pipe::Listener;
-use protocol::{Decision, Event, Origin};
+use protocol::{Decision, Event};
 use requests::{RequestId, Requests};
 use server::Update;
 use slint::{ComponentHandle, Timer, TimerMode, Weak};
 use status::Health;
 use system::SystemLoad;
 use ui::{AlertKind, Choice, Notch};
-use usage::{Claude, Codex, Gemini, Provider, Reading, Usage};
+use usage::{Claude, Codex, Crossing, Gemini, Provider, Reading, Thresholds, Usage};
 use window::{MenuChoice, MessageKind, NotchWindow};
 
 /// One frame at 60 Hz; how often to check whether the native window exists yet.
@@ -59,6 +59,9 @@ const DONE_ALERT: Duration = Duration::from_secs(5);
 
 /// How long "needs your input" stays; longer, since it waits on the user.
 const NEEDS_INPUT_ALERT: Duration = Duration::from_secs(15);
+
+/// How long a usage alert stays on the notch.
+const USAGE_ALERT: Duration = Duration::from_secs(10);
 
 /// How often silent sessions are checked against the keep-awake safety window.
 const AWAKE_CHECK: Duration = Duration::from_secs(60);
@@ -96,7 +99,11 @@ fn main() -> anyhow::Result<()> {
     let listener = Listener::bind(&pipe::pipe_name()?)?;
 
     let config = Config::load();
-    let usages = Arc::new(Mutex::new(Usages::new(config.provider())));
+    let usages = Arc::new(Mutex::new(Usages::new(
+        config.provider(),
+        Thresholds::new(config.usage_alerts()),
+    )));
+    let alert = Arc::new(Mutex::new(Alert::default()));
 
     let notch = Notch::new()?;
     window::place_top_center(notch.window(), notch.get_fixed_width())?;
@@ -148,8 +155,8 @@ fn main() -> anyhow::Result<()> {
     );
 
     let _stats = start_stats(&notch);
-    start_usage(&notch, &usages, &config);
-    let _awake_check = serve_hooks(&notch, listener);
+    start_usage(&notch, &usages, &alert, &config);
+    let _awake_check = serve_hooks(&notch, listener, &alert);
 
     slint::run_event_loop()?;
     Ok(())
@@ -206,18 +213,21 @@ fn start_stats(notch: &Notch) -> Timer {
     timer
 }
 
-/// The latest good usage reading of each provider, and which one the notch shows.
+/// The latest good usage reading of each provider, which one the notch shows, and
+/// which usage alerts already fired.
 #[derive(Debug)]
 struct Usages {
     shown: Provider,
     latest: HashMap<Provider, Usage>,
+    thresholds: Thresholds,
 }
 
 impl Usages {
-    fn new(shown: Provider) -> Self {
+    fn new(shown: Provider, thresholds: Thresholds) -> Self {
         Self {
             shown,
             latest: HashMap::new(),
+            thresholds,
         }
     }
 }
@@ -228,19 +238,35 @@ fn lock_usages(usages: &Mutex<Usages>) -> std::sync::MutexGuard<'_, Usages> {
 
 /// Polls every provider's usage in the background and keeps the notch showing the
 /// selected one. A provider whose source cannot start shows as "no data".
-fn start_usage(notch: &Notch, usages: &Arc<Mutex<Usages>>, config: &Config) {
+fn start_usage(
+    notch: &Notch,
+    usages: &Arc<Mutex<Usages>>,
+    alert: &Arc<Mutex<Alert>>,
+    config: &Config,
+) {
     let weak = notch.as_weak();
     let usages = Arc::clone(usages);
+    let alert = Arc::clone(alert);
     let notify = move |reading: Reading| {
         let usages = Arc::clone(&usages);
+        let alert = Arc::clone(&alert);
         // Fails only once the event loop has quit, when nothing needs drawing.
         let _ = weak.upgrade_in_event_loop(move |notch| {
             let mut usages = lock_usages(&usages);
             // A failed read drops the old numbers instead of leaving them up as current.
             match reading.usage {
-                Ok(usage) => usages.latest.insert(reading.provider, usage),
-                Err(_) => usages.latest.remove(&reading.provider),
-            };
+                Ok(usage) => {
+                    if let Some(crossing) = usages.thresholds.crossed(reading.provider, &usage) {
+                        let text = usage_alert_text(reading.provider, &usage);
+                        let kind = alert_kind(crossing);
+                        show_alert(&notch, &alert, kind, text, Vec::new());
+                    }
+                    usages.latest.insert(reading.provider, usage);
+                }
+                Err(_) => {
+                    usages.latest.remove(&reading.provider);
+                }
+            }
             if reading.provider == usages.shown {
                 show_usage(&notch, usages.shown, usages.latest.get(&usages.shown));
             }
@@ -292,6 +318,28 @@ fn select_provider(
     let _ = Config::update(|config| config.set_provider(provider));
 }
 
+/// "Claude at 82% · resets in 2h 10m".
+fn usage_alert_text(provider: Provider, usage: &Usage) -> String {
+    let used = usage.used.unwrap_or(0.0) * 100.0;
+    match usage.resets_at {
+        Some(at) => format!(
+            "{} at {used:.0}% · resets in {}",
+            provider.name(),
+            usage::countdown(at - Utc::now())
+        ),
+        None => format!("{} at {used:.0}%", provider.name()),
+    }
+}
+
+/// Amber for the lower thresholds, red for the last one.
+fn alert_kind(crossing: Crossing) -> AlertKind {
+    if crossing.last {
+        AlertKind::UsageCritical
+    } else {
+        AlertKind::UsageHigh
+    }
+}
+
 /// Puts a provider's usage on the notch, or "no data" when there is no good reading.
 fn show_usage(notch: &Notch, provider: Provider, usage: Option<&Usage>) {
     notch.set_usage_provider(provider.into());
@@ -336,7 +384,7 @@ fn show_usage(notch: &Notch, provider: Provider, usage: Option<&Usage>) {
 
 /// Accepts hook connections and reacts to their events on the notch. Returns the
 /// timer that releases keep-awake for silent sessions; it runs until dropped.
-fn serve_hooks(notch: &Notch, listener: Listener) -> Timer {
+fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> Timer {
     let requests = Arc::new(Mutex::new(Requests::default()));
 
     let weak = notch.as_weak();
@@ -350,8 +398,7 @@ fn serve_hooks(notch: &Notch, listener: Listener) -> Timer {
         show_requests(&notch, &requests);
     });
 
-    let alert = Arc::new(Mutex::new(Alert::default()));
-    let clicked = Arc::clone(&alert);
+    let clicked = Arc::clone(alert);
     let weak = notch.as_weak();
     notch.on_alert_clicked(move || {
         let ancestors = mem::take(&mut clicked.lock().expect("alert lock poisoned").ancestors);
@@ -374,6 +421,7 @@ fn serve_hooks(notch: &Notch, listener: Listener) -> Timer {
 
     let weak = notch.as_weak();
     let shown = Arc::clone(&requests);
+    let alert = Arc::clone(alert);
     server::spawn(listener, requests, move |update| {
         let requests = Arc::clone(&shown);
         let alert = Arc::clone(&alert);
@@ -385,16 +433,18 @@ fn serve_hooks(notch: &Notch, listener: Listener) -> Timer {
             }
             Update::Session(Event::TaskDone { origin }) => {
                 lock_awake(&awake).stopped(&origin.session_id);
-                show_alert(&notch, &alert, AlertKind::Done, origin, DONE_ALERT);
+                let text = session_alert_text("Done", &origin.project);
+                show_alert(&notch, &alert, AlertKind::Done, text, origin.ancestors);
             }
             Update::Session(Event::NeedsInput { origin, .. }) => {
                 lock_awake(&awake).stopped(&origin.session_id);
+                let text = session_alert_text("Needs your input", &origin.project);
                 show_alert(
                     &notch,
                     &alert,
                     AlertKind::NeedsInput,
-                    origin,
-                    NEEDS_INPUT_ALERT,
+                    text,
+                    origin.ancestors,
                 );
             }
             Update::Session(Event::PromptSubmitted { origin }) => {
@@ -411,7 +461,7 @@ fn lock_awake(awake: &Mutex<KeepAwake>) -> std::sync::MutexGuard<'_, KeepAwake> 
     awake.lock().expect("keep-awake lock poisoned")
 }
 
-/// The alert on screen: which one it is, and where its session runs.
+/// The alert on screen: which one it is, and the session a click focuses, if any.
 #[derive(Debug, Default)]
 struct Alert {
     /// Bumped per alert, so an old alert's timer cannot hide a newer one.
@@ -419,28 +469,34 @@ struct Alert {
     ancestors: Vec<u32>,
 }
 
-/// Shows an attention message for `duration`, or until it is clicked.
+/// "Done · ai-notch", or just the label when the project is unknown.
+fn session_alert_text(label: &str, project: &str) -> String {
+    if project.is_empty() {
+        label.to_owned()
+    } else {
+        format!("{label} · {project}")
+    }
+}
+
+/// Shows an attention message until it times out or is clicked. A click focuses the
+/// first window among `ancestors`, the processes above a Claude Code hook.
 fn show_alert(
     notch: &Notch,
     alert: &Arc<Mutex<Alert>>,
     kind: AlertKind,
-    origin: Origin,
-    duration: Duration,
+    text: String,
+    ancestors: Vec<u32>,
 ) {
     let serial = {
         let mut current = alert.lock().expect("alert lock poisoned");
         current.serial += 1;
-        current.ancestors = origin.ancestors;
+        current.ancestors = ancestors;
         current.serial
     };
-    let label = match kind {
-        AlertKind::Done => "Done",
-        AlertKind::NeedsInput => "Needs your input",
-    };
-    let text = if origin.project.is_empty() {
-        label.to_owned()
-    } else {
-        format!("{label} · {}", origin.project)
+    let duration = match kind {
+        AlertKind::Done => DONE_ALERT,
+        AlertKind::NeedsInput => NEEDS_INPUT_ALERT,
+        AlertKind::UsageHigh | AlertKind::UsageCritical => USAGE_ALERT,
     };
     notch.set_alert_kind(kind);
     notch.set_alert_text(text.into());

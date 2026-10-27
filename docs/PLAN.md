@@ -139,8 +139,10 @@ sessions (needs the user, since it changes the global settings).
   URLs at this step. Only the shown provider is checked, and right away on a switch.
   The hover row shows an amber "Degraded" or red "Outage" dot; a healthy status shows
   nothing. URLs are in FINDINGS. Commit `feat: provider status dot`.
-- [ ] **6.2** Alerts at 80% and 95%, once per usage window.
-  Commit `feat: usage threshold alerts`.
+- [x] **6.2** Alerts at 80% and 95%, once per usage window.
+  Any provider with a known share alerts, shown or not; amber below the last threshold,
+  red at it. Thresholds are `usage_alerts` in the config. Only the main window (5-hour,
+  30-day or daily) alerts, not the weekly one. Commit `feat: usage threshold alerts`.
 - [ ] **6.3** Hide during fullscreen apps via `SHQueryUserNotificationState`.
   Commit `feat: hide during fullscreen`.
 - [ ] **6.4** Settings window: monitor picker, thresholds, hook timeout, account source

@@ -188,7 +188,7 @@ export enum Provider { claude, chatgpt, gemini }
 export enum Health { unknown, operational, degraded, down }
 
 // Why the notch is asking for attention.
-export enum AlertKind { done, needs-input }
+export enum AlertKind { done, needs-input, usage-high, usage-critical }
 
 export component Notch inherits Window {
     // Loads as fractions in 0..1; text values are formatted by Rust.
@@ -525,7 +525,10 @@ export component Notch inherits Window {
                     width: 8px;
                     height: 8px;
                     border-radius: 4px;
-                    background: root.alert-kind == AlertKind.done ? Theme.good : Theme.claude;
+                    background: root.alert-kind == AlertKind.done ? Theme.good
+                        : root.alert-kind == AlertKind.usage-high ? Theme.warn
+                        : root.alert-kind == AlertKind.usage-critical ? Theme.bad
+                        : Theme.claude;
                     opacity: 0.55 + 0.45 * Math.sin(animation-tick() / 1100ms * 360deg);
                 }
             }

@@ -86,18 +86,21 @@ when Claude finishes or waits for you, and after two hours at the latest.
 
 | Provider | Source | Exact or estimated |
 |---|---|---|
-| Claude | The usage endpoint behind Claude Code's `/usage` screen, signed in with Claude Code's own login | Exact 5-hour and weekly %, with their reset times |
+| Claude | The usage endpoint behind Claude Code's `/usage` screen, signed in with the Claude desktop app's login or Claude Code's own | Exact 5-hour and weekly %, with their reset times |
 | Claude | Claude Code's logs in `%USERPROFILE%\.claude\projects` | Tokens and burn rate; an estimated reset time when the endpoint is unavailable |
 | ChatGPT | Codex CLI sessions in `%USERPROFILE%\.codex\sessions` | Exact, as of your last Codex turn |
 | Gemini | Gemini CLI sessions in `%USERPROFILE%\.gemini\tmp` | Estimated: requests today against the daily limit you set |
 
 About the Claude account source:
 
-- It uses the login in `%USERPROFILE%\.claude\.credentials.json`. Only the Claude
-  Code CLI refreshes that file; the desktop app keeps its own login. So when the
-  stored token has expired, ai-notch refreshes it the same way Claude Code does
-  (`platform.claude.com`, Claude Code's client id) and writes the new tokens back,
-  leaving every other field as it was. The CLI then carries on with them.
+- It follows the account the Claude desktop app is signed in to: it reads the app's
+  login, which Windows keeps encrypted for your user, and never refreshes or writes
+  it. Switch accounts in the app and the notch follows within 30 seconds.
+- Without the desktop app it uses the login in `%USERPROFILE%\.claude\.credentials.json`.
+  Only the Claude Code CLI refreshes that file. So when the stored token has expired,
+  ai-notch refreshes it the same way Claude Code does (`platform.claude.com`, Claude
+  Code's client id) and writes the new tokens back, leaving every other field as it
+  was. The CLI then carries on with them.
 - If the CLI refreshes at the very same moment, the CLI may ask you to sign in once
   (`claude /login`). The desktop app is not affected.
 - Tokens are never logged or shown in errors.

@@ -365,6 +365,56 @@ Later:
 - [ ] **9.15** Installer (Inno Setup) with a Start menu entry and uninstaller, then a
   `winget` listing.
 
+## Phase 10: Agent requests and motion, after Crest's demo
+
+Answering requests:
+
+- [ ] **10.1** Find out what the `PermissionRequest` hook can return: a session or
+  permanent allow rule, or only allow and deny. Notes in `docs/FINDINGS.md`. Settles
+  8.9 and decides 10.2 and 10.3. No commit unless findings change.
+- [ ] **10.2** "Allow the rest of this session" checkbox on the request card: matching
+  requests from that session are allowed without a card until it ends.
+- [ ] **10.3** Allow ▾ menu: Allow once, Allow this command for the session, Always allow
+  (a rule in Claude Code's `settings.json`, if the hook API allows it).
+- [ ] **10.4** Show the outcome: after Allow, Deny, a timeout or an answer in the
+  terminal, the pill shows "Allowed" or "Denied" with a green or red mark for about
+  1.5 s, then goes back to idle.
+- [ ] **10.5** Live command in the pill: the running tool and a short argument ("npm test",
+  "Edit LoginForm.tsx") from `PreToolUse` and `PostToolUse`, beside the timer.
+- [ ] **10.6** Coloured command in the code box: command, flags and quoted strings each
+  in their own colour.
+- [ ] **10.7** Diff preview for Edit and Write requests: the file and the changed lines,
+  added and removed, in the code box.
+- [ ] **10.8** Rules: `always_allow` and `never_allow` patterns in the config, applied
+  before any card shows, editable in Settings.
+- [ ] **10.9** Research: do Codex CLI and Gemini CLI have approval hooks like Claude
+  Code's? If so, answer them on the same card.
+
+Motion (each follows Windows "Show animations", and the agent motion has its own
+`agent_motion` setting, on by default, as a checkbox in Settings):
+
+- [ ] **10.10** Working glow: while an agent works, a soft light circles the notch's
+  outline and breathes, brightening and fading over about 2 s, in the provider's
+  colour. Stops when the agent stops; a still outline when motion is off.
+- [ ] **10.11** Moving logo: while working, the agent's logo slides along the pill to the
+  right and back, or nudges right on each new tool call; it settles when the agent
+  stops.
+- [ ] **10.12** Card transitions: the pill grows into the request card and shrinks back
+  into the outcome pill (10.4) with one spring-like motion instead of a cut.
+
+Suggested UI polish:
+
+- [ ] **10.13** The usage ring fills smoothly to a new value instead of jumping.
+- [ ] **10.14** A pulse on the ring when a usage alert fires, amber or red as the alert.
+- [ ] **10.15** Several pending requests: small dots under the card, one per request,
+  instead of only "2 more".
+- [ ] **10.16** Keyboard hints on the buttons when shortcuts are on (Ctrl+Alt+Y,
+  Ctrl+Alt+N).
+- [ ] **10.17** Hover shows each provider's ring side by side in the panel, so all
+  tracked limits are visible at once (overlaps 8.10).
+- [ ] **10.18** Optional sound when a request arrives, off by default.
+- [ ] **10.19** Light theme for the panel and Settings, following Windows' app mode.
+
 ## Deviations from SPEC.md
 
 - No `nvml-wrapper`: PDH provides VRAM, and the design shows no GPU temperature.

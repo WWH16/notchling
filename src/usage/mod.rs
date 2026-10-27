@@ -3,6 +3,11 @@
 mod claude;
 mod claude_account;
 mod claude_local;
+#[expect(
+    dead_code,
+    reason = "shown once the provider selector lands in step 5.3"
+)]
+mod codex;
 
 pub use claude::Claude;
 
@@ -95,14 +100,16 @@ pub fn compact(count: u64) -> String {
     }
 }
 
-/// Formats the time left until a reset, e.g. "4h 25m" or "25m". Rounds up to the
-/// minute, so a reset never shows as due before it is.
+/// Formats the time left until a reset, e.g. "18d 4h", "4h 25m" or "25m". Rounds up
+/// to the minute, so a reset never shows as due before it is.
 #[must_use]
 pub fn countdown(left: TimeDelta) -> String {
     let minutes = (left.num_seconds().max(0) + 59) / 60;
-    match (minutes / 60, minutes % 60) {
-        (0, minutes) => format!("{minutes}m"),
-        (hours, minutes) => format!("{hours}h {minutes}m"),
+    let (days, hours, minutes) = (minutes / (24 * 60), minutes / 60 % 24, minutes % 60);
+    match (days, hours) {
+        (0, 0) => format!("{minutes}m"),
+        (0, hours) => format!("{hours}h {minutes}m"),
+        (days, hours) => format!("{days}d {hours}h"),
     }
 }
 
@@ -138,6 +145,8 @@ mod tests {
             (TimeDelta::minutes(59), "59m"),
             (TimeDelta::minutes(60), "1h 0m"),
             (TimeDelta::seconds(4 * 3600 + 24 * 60 + 10), "4h 25m"),
+            (TimeDelta::hours(24), "1d 0h"),
+            (TimeDelta::minutes(18 * 24 * 60 + 4 * 60 + 30), "18d 4h"),
         ];
         for (left, want) in cases {
             assert_eq!(countdown(left), want, "left {left}");

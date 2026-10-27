@@ -8,6 +8,8 @@ anyhow = "1.0.104"
 # Already built for Slint; parses log timestamps and the reset times of usage windows.
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 raw-window-handle = "0.6"
+# Pure-Rust zstd decoder for Codex's compressed session logs; no C build.
+ruzstd = { version = "0.9.1", default-features = false, features = ["std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
 # Software renderer: same look here, a third of the RAM of the OpenGL renderer.

@@ -122,7 +122,7 @@ sessions (needs the user, since it changes the global settings).
 
 ## Phase 5: ChatGPT, Gemini, provider selector
 
-- [ ] **5.1** Codex parser, per V2. Commit `feat: codex usage source`.
+- [x] **5.1** Codex parser, per V2. Commit `feat: codex usage source`.
 - [ ] **5.2** Gemini parser: requests per day against a configured daily limit, always
   estimated. Commit `feat: gemini usage source`.
 - [ ] **5.3** Provider selector in the right-click menu and config, accent color per
@@ -153,6 +153,7 @@ sessions (needs the user, since it changes the global settings).
   It uses Windows' own TLS (SChannel) and certificate store, not rustls and ring.
 - No `keyring`: step 4.2 was dropped, so ai-notch stores no secrets of its own.
 - `chrono` for timestamps: Slint already builds it, so it adds no crate.
+- `ruzstd` instead of `zstd` for Codex logs: a pure-Rust decoder, no C build.
 - Right-click menu added: needed to quit and switch providers.
 - `--install-hooks` added: edits `settings.json` safely with a backup.
 - One exe for app and `--hook` mode. If V1 shows stdin/stdout problems with the GUI

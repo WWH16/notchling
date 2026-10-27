@@ -161,8 +161,11 @@ sessions (needs the user, since it changes the global settings).
 
 ## Phase 7: Release
 
-- [ ] **7.1** README (install, hooks, uninstall), release build, size and RAM check, local
+- [x] **7.1** README (install, hooks, uninstall), release build, size and RAM check, local
   tag `v0.1.0`. Commit `docs: readme and v0.1.0`.
+  Result: 12.97 MB exe; 35.1 MB working set and 13.6 MB private when idle, 0.18% CPU
+  over 30 s. Startup peaks at 97.9 MB while the first scan reads the last day of Claude
+  Code logs whole. The live hook test from Phase 2 is still open.
 
 ## Deviations from SPEC.md
 

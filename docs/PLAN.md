@@ -315,6 +315,56 @@ sessions (needs the user, since it changes the global settings).
   copied over the first time, and `--install-hooks` replaces hooks that still name
   `ai-notch.exe`. Commit `refactor: rename to notchling`.
 
+## Phase 9: Ship it on GitHub
+
+Local setup after the rename:
+
+- [ ] **9.1** Build `target\release\notchling.exe`, run `--install-hooks` (the Claude Code
+  hooks still name the old `ai-notch.exe`), start it, then delete `%APPDATA%\ai-notch`,
+  `%LOCALAPPDATA%\ai-notch` and the old `ai-notch.exe`. No commit.
+
+The exe:
+
+- [ ] **9.2** Icon and file details: a `notchling.ico` (256×256), embedded with
+  `winresource` in `build.rs` along with product name, version and copyright. Commit
+  `feat: app icon and file details`.
+- [ ] **9.3** Link the C runtime statically (`.cargo/config.toml`,
+  `target-feature=+crt-static`), so the exe starts on a fresh Windows without the Visual
+  C++ runtime. Commit `build: static c runtime`.
+- [ ] **9.4** README: say that Windows SmartScreen warns about the unsigned exe and how to
+  run it anyway. Commit `docs: smartscreen note`.
+
+Releases:
+
+- [ ] **9.5** CI workflow: `cargo fmt --check`, `clippy -D warnings` and `test` on
+  `windows-latest` for every push and pull request. Commit `ci: check every push`.
+- [ ] **9.6** Release workflow: a `v*` tag builds `notchling.exe` and attaches it to a
+  GitHub Release. Commit `ci: build releases from tags`.
+- [ ] **9.7** First release: bump the version, tag `v0.1.0`, push the tag, write the
+  release notes. Commit `chore: release 0.1.0`.
+
+The GitHub page:
+
+- [ ] **9.8** Repo About box: description and topics (`windows`, `rust`, `slint`,
+  `claude-code`, `dynamic-island`, `system-monitor`). Done on GitHub, no commit.
+- [ ] **9.9** README top: one-line pitch, badges (license, release, CI), download link,
+  and a demo GIF recorded with ScreenToGif in `docs/`. Commit `docs: readme showcase`.
+- [ ] **9.10** Pin the repo on the GitHub profile. No commit.
+
+Getting it seen (never buy or swap stars):
+
+- [ ] **9.11** Post with the GIF: r/ClaudeAI, r/rust, r/Windows11, a Show HN, and Slint's
+  showcase. Read each community's self-promotion rules first.
+- [ ] **9.12** Pull requests to awesome lists (Claude Code, Slint).
+- [ ] **9.13** Label a few "good first issue"s and answer issues quickly.
+
+Later:
+
+- [ ] **9.14** Code signing (Azure Trusted Signing or a certificate) to end the
+  SmartScreen warning.
+- [ ] **9.15** Installer (Inno Setup) with a Start menu entry and uninstaller, then a
+  `winget` listing.
+
 ## Deviations from SPEC.md
 
 - No `nvml-wrapper`: PDH provides VRAM, and the design shows no GPU temperature.

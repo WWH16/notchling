@@ -1,5 +1,6 @@
 //! Usage limits of the AI providers, read from each source on a background thread.
 
+mod antigravity;
 mod claude;
 mod claude_account;
 mod claude_desktop;
@@ -46,17 +47,32 @@ impl Provider {
     }
 }
 
+/// One limit a provider enforces, as the hover panel lists it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Limit {
+    /// The models the limit covers, such as "Gemini Models", when the provider splits
+    /// its limits by model.
+    pub group: Option<String>,
+    /// Such as "Current session" or "Weekly limit".
+    pub name: String,
+    /// Share in use, from 0 to 1.
+    pub used: f32,
+    pub resets_at: Option<DateTime<Utc>>,
+}
+
 /// How much of a provider's limit is in use. Each source fills in what it knows.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Usage {
-    /// Share of the current limit in use, from 0 to 1, when the limit is known.
+    /// Share of the limit the pill and the alerts follow, from 0 to 1, when it is known.
     pub used: Option<f32>,
-    /// When the current limit window resets.
+    /// When that limit's window resets.
     pub resets_at: Option<DateTime<Utc>>,
-    /// Share of the weekly limit in use, from 0 to 1, when the provider has one.
-    pub weekly_used: Option<f32>,
-    /// When the weekly limit resets.
-    pub weekly_resets_at: Option<DateTime<Utc>>,
+    /// Every limit the provider reported, in its own order; empty when the source only
+    /// knows `used`.
+    pub limits: Vec<Limit>,
+    /// Where the numbers come from, such as "Antigravity", when the provider has more
+    /// than one source.
+    pub via: Option<&'static str>,
     /// Tokens used in the current window, when the source counts them.
     pub tokens: Option<u64>,
     /// `tokens` split by model name, when the source knows the models.
@@ -120,6 +136,22 @@ pub fn compact(count: u64) -> String {
             format!("{}.{}M", count / 1_000_000, count % 1_000_000 / 100_000)
         }
         _ => format!("{}M", count / 1_000_000),
+    }
+}
+
+/// "Resets at 2:20 PM" today, "Resets Thu 7:00 AM" within the coming week, "Resets
+/// Nov 14" after that, in the time zone of `at`.
+#[must_use]
+pub fn reset_label<Tz: TimeZone>(at: DateTime<Tz>, now: &DateTime<Tz>) -> String
+where
+    Tz::Offset: fmt::Display,
+{
+    let today = at.date_naive() == now.date_naive();
+    let time = reset_time(at, now);
+    if today {
+        format!("Resets at {time}")
+    } else {
+        format!("Resets {time}")
     }
 }
 
@@ -187,6 +219,29 @@ mod tests {
         for (reset, want) in cases {
             assert_eq!(reset_time(at(reset), &now), want, "reset {reset}");
         }
+    }
+
+    #[test]
+    fn reset_label_says_at_only_for_today() {
+        let manila = chrono::FixedOffset::east_opt(8 * 3600).expect("valid offset");
+        let at = |text: &str| {
+            DateTime::parse_from_rfc3339(text)
+                .expect("valid test timestamp")
+                .with_timezone(&manila)
+        };
+        let now = at("2026-10-27T11:47:00+08:00");
+        assert_eq!(
+            reset_label(at("2026-10-27T22:59:00+08:00"), &now),
+            "Resets at 10:59 PM"
+        );
+        assert_eq!(
+            reset_label(at("2026-10-30T06:59:00+08:00"), &now),
+            "Resets Fri 6:59 AM"
+        );
+        assert_eq!(
+            reset_label(at("2026-11-14T12:00:00+08:00"), &now),
+            "Resets Nov 14"
+        );
     }
 
     /// Fails on the first read, then reports 40% used.

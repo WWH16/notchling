@@ -102,6 +102,16 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   configured daily request limit.
 - Latest CLI session on this machine: 2026-06-18.
 - `~/.gemini` also holds Antigravity data, which is out of scope.
+- Revisited 2026-10-27: the Antigravity CLI (`agy`, installed in
+  `%LOCALAPPDATA%\agy\bin`) has a `/usage` slash command. `agy -p /usage` prints one
+  limit per line, tab-separated: model group, limit name, share **remaining** and the
+  reset time (RFC 3339), such as `Gemini Models`, `Five Hour Limit Remaining`, `100%`,
+  `2026-10-27T18:40:20Z`. Groups seen: `Gemini Models` and `Claude and GPT models`
+  (5-hour and weekly each), and `Gemini 4 Argon` (weekly only). A run takes about
+  7 seconds; the CLI fetches `retrieveUserQuotaSummary` from
+  `daily-cloudcode-pa.googleapis.com` with its own login. Another app on this machine
+  (codenotch) already reads Antigravity's quota this way, from a workspace folder of its
+  own. ai-notch now does the same and keeps the Gemini CLI estimate as the fallback.
 
 ## V4: Claude account usage (confirmed, exact %)
 

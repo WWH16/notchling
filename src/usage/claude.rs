@@ -102,6 +102,7 @@ mod tests {
     use chrono::{DateTime, Utc};
 
     use super::*;
+    use crate::usage::Limit;
 
     fn time(text: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(text)
@@ -113,8 +114,8 @@ mod tests {
         Usage {
             used: None,
             resets_at: Some(time("2026-10-27T06:00:00Z")),
-            weekly_used: None,
-            weekly_resets_at: None,
+            limits: Vec::new(),
+            via: None,
             tokens: Some(2100),
             tokens_by_model: BTreeMap::from([("claude-opus-5-5".to_owned(), 2100)]),
             burn_rate: Some(35.0),
@@ -122,11 +123,20 @@ mod tests {
         }
     }
 
+    fn weekly() -> Limit {
+        Limit {
+            group: None,
+            name: "Weekly (all models)".to_owned(),
+            used: 0.07,
+            resets_at: None,
+        }
+    }
+
     fn account() -> Usage {
         Usage {
             used: Some(0.41),
             resets_at: Some(time("2026-10-27T05:00:00Z")),
-            weekly_used: Some(0.07),
+            limits: vec![weekly()],
             ..Usage::default()
         }
     }
@@ -137,7 +147,7 @@ mod tests {
 
         assert_eq!(merged.used, Some(0.41));
         assert_eq!(merged.resets_at, Some(time("2026-10-27T05:00:00Z")));
-        assert_eq!(merged.weekly_used, Some(0.07));
+        assert_eq!(merged.limits, [weekly()]);
         assert_eq!(merged.tokens, Some(2100));
         assert_eq!(merged.tokens_by_model, local().tokens_by_model);
         assert_eq!(merged.burn_rate, Some(35.0));

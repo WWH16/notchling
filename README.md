@@ -31,13 +31,17 @@ Start `ai-notch.exe`. Only one copy runs at a time.
 
 The notch flows out of its screen edge in concave curves. It shows the selected
 provider's logo inside a ring with the share of its limit, then CPU and GPU. The ring
-turns amber at 80% and red at 95%. While Claude Code is working, Claude's mark shows
-how long, such as "12m", with "×2" when two sessions are.
+is green, turns amber at 80% and red at 95%. While Claude Code is working, Claude's
+mark shows how long, such as "12m", with "×2" when two sessions are.
 
-- **Hover** the pill for a moment, or **click** it, to see the provider's limits as
-  rings with the clock time each one resets ("resets 2:20 PM", "resets Fri 7:00 AM"),
-  tokens, burn rate and any incident on its status page, and below them CPU, GPU, RAM
-  and VRAM. A click keeps the panel open until you click again.
+- **Hover** the pill and the panel opens at once with every limit the provider has,
+  each as a bar in the same green, amber and red, with how much is used and left and
+  the clock time it resets ("Resets at 10:59 PM", "Resets Fri 6:59 AM"). Claude shows
+  its current session and weekly limits; ChatGPT its Codex windows (5-hour, weekly or
+  monthly, as your plan has them); Gemini, through Antigravity, each model group's
+  5-hour and weekly limits. Below them: tokens, burn rate, any incident on the status
+  page, and CPU, GPU, RAM and VRAM. **Click** to keep the panel open, and again to
+  close it.
 - **Drag** it with the left button anywhere, on any display. Let go and it glides
   onto the screen edge nearest the cursor (top, bottom, left or right), flat side
   against it, and expands away from that edge. On the left or right edge it stands
@@ -100,10 +104,11 @@ when Claude finishes or waits for you, and after two hours at the latest.
 
 | Provider | Source | Exact or estimated |
 |---|---|---|
-| Claude | The usage endpoint behind Claude Code's `/usage` screen, signed in with the Claude desktop app's login or Claude Code's own | Exact 5-hour and weekly %, with their reset times |
+| Claude | The usage endpoint behind Claude Code's `/usage` screen, signed in with the Claude desktop app's login or Claude Code's own | Exact: every limit it reports (current session, weekly, any per-model weekly), with reset times |
 | Claude | Claude Code's logs in `%USERPROFILE%\.claude\projects` | Tokens and burn rate; an estimated reset time when the endpoint is unavailable |
-| ChatGPT | Codex CLI sessions in `%USERPROFILE%\.codex\sessions` | Exact, as of your last Codex turn |
-| Gemini | Gemini CLI sessions in `%USERPROFILE%\.gemini\tmp` | Estimated: requests today against the daily limit you set |
+| ChatGPT | Codex CLI sessions in `%USERPROFILE%\.codex\sessions` | Exact, as of your last Codex turn: each window, named by its length |
+| Gemini | The Antigravity CLI's `/usage` command (`agy`, in `%LOCALAPPDATA%\agy\bin`), every 5 minutes | Exact: 5-hour and weekly limits for each model group |
+| Gemini | Gemini CLI sessions in `%USERPROFILE%\.gemini\tmp`, when Antigravity is not installed or fails | Estimated: requests today against the daily limit you set |
 
 About the Claude account source:
 
@@ -155,6 +160,10 @@ ai-notch sends no telemetry. It connects to:
   refresh Claude Code's login when it has expired (only when that source is on);
 - the public status pages `status.claude.com`, `status.openai.com` and
   `status.cloud.google.com`, for the provider shown, every 5 minutes.
+
+It also runs `agy -p /usage` every 5 minutes when the Antigravity CLI is installed. The
+CLI asks Google for your quota with its own login, in an empty folder of ai-notch's
+own, `%LOCALAPPDATA%\ai-notch\antigravity`, so it never touches a project.
 
 It writes:
 

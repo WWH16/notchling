@@ -12,14 +12,14 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, anyhow};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use ureq::Agent;
 
-use super::Usage;
 use super::claude_desktop::ClaudeDesktop;
+use super::{Limit, Usage};
 use crate::http;
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -255,49 +255,91 @@ fn write_atomically(path: &Path, text: &str) -> anyhow::Result<()> {
 /// One limit: an entry of `limits`, or the older `five_hour` and `seven_day` objects,
 /// which call the percentage `utilization`.
 #[derive(Debug, Deserialize)]
-struct Limit {
+struct Entry {
     kind: Option<String>,
     #[serde(alias = "utilization")]
     percent: Option<f32>,
     resets_at: Option<String>,
 }
 
-/// Reads the 5-hour and weekly limits from an endpoint response. Every field is
-/// optional and entries that do not parse are skipped, since the format is unofficial.
+/// Reads every limit from an endpoint response, in its order; the pill follows the
+/// session limit. Every field is optional and entries that do not parse are skipped,
+/// since the format is unofficial.
 fn parse_usage(body: &str) -> anyhow::Result<Usage> {
     let response: Value = serde_json::from_str(body).context("the usage response is not JSON")?;
-    let limit = |kind: &str, older: &str| {
-        let listed = response["limits"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| Limit::deserialize(entry).ok())
-            .find(|limit| limit.kind.as_deref() == Some(kind));
-        listed.or_else(|| Limit::deserialize(&response[older]).ok())
+    let listed: Vec<Entry> = response["limits"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| Entry::deserialize(entry).ok())
+        .filter(|entry| entry.percent.is_some())
+        .collect();
+    let entries = if listed.is_empty() {
+        let older = |kind: &str, field: &str| {
+            let entry = Entry::deserialize(&response[field]).ok()?;
+            let kind = Some(kind.to_owned());
+            entry.percent.is_some().then_some(Entry { kind, ..entry })
+        };
+        [
+            older("session", "five_hour"),
+            older("weekly_all", "seven_day"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    } else {
+        listed
     };
-    let session = limit("session", "five_hour").filter(|limit| limit.percent.is_some());
-    let weekly = limit("weekly_all", "seven_day").filter(|limit| limit.percent.is_some());
-    if session.is_none() && weekly.is_none() {
-        bail!("the usage response holds no limits");
-    }
+    let main = entries
+        .iter()
+        .find(|entry| entry.kind.as_deref() == Some("session"))
+        .or(entries.first())
+        .context("the usage response holds no limits")?;
     Ok(Usage {
-        used: session.as_ref().and_then(Limit::share),
-        resets_at: session.as_ref().and_then(Limit::reset),
-        weekly_used: weekly.as_ref().and_then(Limit::share),
-        weekly_resets_at: weekly.as_ref().and_then(Limit::reset),
+        used: Some(main.share()),
+        resets_at: main.reset(),
+        limits: entries
+            .iter()
+            .map(|entry| Limit {
+                group: None,
+                name: limit_name(entry.kind.as_deref()),
+                used: entry.share(),
+                resets_at: entry.reset(),
+            })
+            .collect(),
         ..Usage::default()
     })
 }
 
-impl Limit {
+impl Entry {
     /// The share used, from 0 to 1.
-    fn share(&self) -> Option<f32> {
-        self.percent.map(|percent| percent / 100.0)
+    fn share(&self) -> f32 {
+        self.percent.unwrap_or(0.0) / 100.0
     }
 
     fn reset(&self) -> Option<DateTime<Utc>> {
         let at = DateTime::parse_from_rfc3339(self.resets_at.as_deref()?).ok()?;
         Some(at.to_utc())
+    }
+}
+
+/// What claude.ai calls a limit: "Current session", "Weekly (all models)", and for a
+/// per-model weekly limit such as `weekly_opus`, "Weekly (Opus)".
+fn limit_name(kind: Option<&str>) -> String {
+    let capitalized = |text: &str| {
+        let mut chars = text.chars();
+        chars.next().map_or_else(String::new, |first| {
+            first.to_uppercase().chain(chars).collect()
+        })
+    };
+    match kind {
+        Some("session") => "Current session".to_owned(),
+        Some("weekly_all") => "Weekly (all models)".to_owned(),
+        Some(kind) => match kind.strip_prefix("weekly_") {
+            Some(model) => format!("Weekly ({})", capitalized(&model.replace('_', " "))),
+            None => capitalized(&kind.replace('_', " ")),
+        },
+        None => "Limit".to_owned(),
     }
 }
 
@@ -313,17 +355,29 @@ mod tests {
             .to_utc()
     }
 
+    fn names_and_shares(usage: &Usage) -> Vec<(&str, f32)> {
+        usage
+            .limits
+            .iter()
+            .map(|limit| (limit.name.as_str(), limit.used))
+            .collect()
+    }
+
     #[test]
     fn fixture_gives_the_session_and_weekly_limits() {
         let usage = parse_usage(FIXTURE).expect("fixture parses");
         assert_eq!(usage.used, Some(0.0));
         // The session window is not open, so it has no reset time.
         assert_eq!(usage.resets_at, None);
-        assert_eq!(usage.weekly_used, Some(0.02));
         assert_eq!(
-            usage.weekly_resets_at,
+            names_and_shares(&usage),
+            [("Current session", 0.0), ("Weekly (all models)", 0.02)]
+        );
+        assert_eq!(
+            usage.limits[1].resets_at,
             Some(time("2026-10-29T23:00:00.114010Z"))
         );
+        assert!(usage.limits.iter().all(|limit| limit.group.is_none()));
         assert!(!usage.estimated);
     }
 
@@ -336,7 +390,33 @@ mod tests {
         let usage = parse_usage(body).expect("older format parses");
         assert_eq!(usage.used, Some(0.41));
         assert_eq!(usage.resets_at, Some(time("2026-10-27T05:00:00.5Z")));
-        assert_eq!(usage.weekly_used, Some(0.075));
+        assert_eq!(
+            names_and_shares(&usage),
+            [("Current session", 0.41), ("Weekly (all models)", 0.075)]
+        );
+    }
+
+    #[test]
+    fn per_model_limits_are_named_after_their_model() {
+        let body = r#"{"limits": [
+            { "kind": "weekly_all", "percent": 23 },
+            { "kind": "weekly_opus", "percent": 40 },
+            { "kind": "daily_cowork_runs", "percent": 5 }
+        ]}"#;
+        let usage = parse_usage(body).expect("limits parse");
+        assert_eq!(
+            names_and_shares(&usage),
+            [
+                ("Weekly (all models)", 0.23),
+                ("Weekly (Opus)", 0.4),
+                ("Daily cowork runs", 0.05)
+            ]
+        );
+        assert_eq!(
+            usage.used,
+            Some(0.23),
+            "without a session limit, the first leads"
+        );
     }
 
     #[test]
@@ -349,7 +429,7 @@ mod tests {
         let usage = parse_usage(body).expect("one good entry is enough");
         assert_eq!(usage.used, Some(0.12));
         assert_eq!(usage.resets_at, None);
-        assert_eq!(usage.weekly_used, None);
+        assert_eq!(names_and_shares(&usage), [("Current session", 0.12)]);
 
         assert!(parse_usage(r#"{"five_hour": null, "limits": []}"#).is_err());
         assert!(parse_usage("<html>").is_err());

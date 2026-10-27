@@ -1,42 +1,72 @@
-//! Gemini usage counted from the Gemini CLI's session logs in `~/.gemini/tmp`.
+//! Gemini usage: exact limits per model group from the Antigravity CLI when it is
+//! installed, otherwise counted from the Gemini CLI's session logs in `~/.gemini/tmp`.
 //!
-//! The logs hold no quota, so the share used is today's request count against the
-//! daily limit set in the config, and every reading is an estimate.
+//! The Gemini CLI's logs hold no quota, so that share is today's request count against
+//! the daily limit set in the config, and every such reading is an estimate.
 
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::Context;
 use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, TimeDelta, Utc, Weekday};
 use serde::Deserialize;
 
+use super::antigravity::Antigravity;
 use super::{Provider, Source, Usage};
 use crate::config::Config;
 
-/// Counts today's Gemini CLI requests across all projects, against the daily limit
-/// in the config.
+/// How often the Antigravity CLI is asked. Each run takes several seconds and starts the
+/// CLI's own helpers, so it is asked rarely; its limits change slowly.
+const ANTIGRAVITY_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// Reads Antigravity's limits every [`ANTIGRAVITY_INTERVAL`], or counts today's Gemini
+/// CLI requests across all projects against the daily limit in the config.
 #[derive(Debug)]
 pub struct Gemini {
     /// `~/.gemini/tmp`, holding one folder per project.
     projects: PathBuf,
+    antigravity: Option<Antigravity>,
+    /// When Antigravity was last asked, and its answer if that worked.
+    antigravity_checked: Option<(Instant, Option<Usage>)>,
 }
 
 impl Gemini {
-    /// Reads the current Windows user's Gemini CLI logs.
+    /// Reads the current Windows user's Antigravity CLI, or Gemini CLI logs.
     ///
     /// # Errors
     ///
     /// Fails when `USERPROFILE` is not set.
     pub fn try_new() -> anyhow::Result<Self> {
         let home = env::var_os("USERPROFILE").context("USERPROFILE is not set")?;
-        Ok(Self::at(Path::new(&home).join(".gemini").join("tmp")))
+        Ok(Self {
+            antigravity: Antigravity::find(),
+            ..Self::at(Path::new(&home).join(".gemini").join("tmp"))
+        })
     }
 
     fn at(projects: PathBuf) -> Self {
-        Self { projects }
+        Self {
+            projects,
+            antigravity: None,
+            antigravity_checked: None,
+        }
+    }
+
+    /// Antigravity's latest limits, asking again once [`ANTIGRAVITY_INTERVAL`] has
+    /// passed. A failed run counts as asked, so a signed-out CLI is not run every poll.
+    fn antigravity(&mut self) -> Option<&Usage> {
+        let antigravity = self.antigravity.as_ref()?;
+        let due = self
+            .antigravity_checked
+            .as_ref()
+            .is_none_or(|(checked, _)| checked.elapsed() >= ANTIGRAVITY_INTERVAL);
+        if due {
+            self.antigravity_checked = Some((Instant::now(), antigravity.fetch().ok()));
+        }
+        self.antigravity_checked.as_ref()?.1.as_ref()
     }
 
     fn usage(&self, now: DateTime<Utc>, daily_limit: u32) -> anyhow::Result<Usage> {
@@ -73,6 +103,7 @@ impl Gemini {
         Ok(Usage {
             used: Some(used),
             resets_at: Some(next_day),
+            via: Some("Gemini CLI"),
             tokens: Some(tokens),
             estimated: true,
             ..Usage::default()
@@ -86,6 +117,9 @@ impl Source for Gemini {
     }
 
     fn read(&mut self) -> anyhow::Result<Usage> {
+        if let Some(usage) = self.antigravity() {
+            return Ok(usage.clone());
+        }
         self.usage(Utc::now(), Config::load().gemini_daily_requests())
     }
 }

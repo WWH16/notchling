@@ -23,8 +23,14 @@ export global Theme {
     out property <color> claude: #d97757;
     out property <color> chatgpt: #10a37f;
     out property <color> gemini: #4c8df6;
+    out property <color> good: #30d158;
     out property <color> warn: #ff9f0a;
     out property <color> bad: #ff453a;
+    // A limit's colour: green while there is room, amber from 80% used, red from 95%,
+    // where the usage alerts fire by default.
+    public pure function level(fraction: float) -> color {
+        return fraction >= 0.95 ? self.bad : fraction >= 0.8 ? self.warn : self.good;
+    }
     // Segoe UI digits are tabular by default, so numbers don't jitter.
     out property <string> font: "Segoe UI Variable";
     // Cascadia Mono where it is installed, else Consolas, which every Windows has; Rust
@@ -55,6 +61,28 @@ export enum NotchEdge { top, bottom, left, right }
 
 // Why the notch is asking for attention.
 export enum AlertKind { done, needs-input, usage-high, usage-critical }
+
+// One limit as the hover panel shows it; Rust formats the texts. `used` is a fraction
+// in 0..1, or below 0 when unknown.
+export struct LimitView {
+    name: string,
+    used: float,
+    // "Resets at 10:59 PM", "Resets Fri 6:59 AM" or "Resets Nov 3".
+    reset: string,
+    // "23% used" and "77% left", or an empty used text and why the share is missing.
+    used-text: string,
+    left-text: string,
+}
+
+// A line of the hover panel's limits: a model group's title, or up to two limits side
+// by side. A lone limit on a wide line keeps half the width, so columns stay aligned.
+export struct LimitLine {
+    title: string,
+    left: LimitView,
+    right: LimitView,
+    paired: bool,
+    half: bool,
+}
 
 component Label inherits Text {
     color: Theme.muted;
@@ -185,7 +213,7 @@ component Bar inherits Rectangle {
     in property <float> fraction;
     in property <color> fill: Theme.text;
     height: 2px;
-    border-radius: 1px;
+    border-radius: self.height / 2;
     background: Theme.track;
 
     Rectangle {
@@ -237,42 +265,70 @@ component StackedPair inherits VerticalLayout {
     }
 }
 
-// One usage limit: a ring, the share used, the window's name and when it resets.
-component Gauge inherits HorizontalLayout {
-    in property <float> fraction;
-    in property <color> fill;
-    in property <string> value;
-    in property <string> label;
-    in property <string> detail;
-    spacing: 9px;
+// One limit: its name and share used over a bar in the colour of that share, then when
+// it resets and what is left. The name gets the full first line, so it rarely elides.
+component LimitBar inherits VerticalLayout {
+    in property <LimitView> limit;
+    spacing: 6px;
     accessible-role: progress-indicator;
-    accessible-label: self.label;
-    accessible-value: self.value;
-    accessible-description: self.detail;
+    accessible-label: self.limit.name;
+    accessible-value: self.limit.used-text;
+    accessible-description: "\{self.limit.left-text}. \{self.limit.reset}";
 
-    Ring {
-        width: 26px * Theme.text-scale;
-        thickness: 3px;
-        fraction: root.fraction;
-        fill: root.fill;
-        y: (parent.height - self.height) / 2;
+    HorizontalLayout {
+        spacing: 10px;
+        Value {
+            text: root.limit.name;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Value {
+            text: root.limit.used-text;
+            horizontal-alignment: right;
+        }
     }
-    VerticalLayout {
-        alignment: center;
-        spacing: 1px;
-        HorizontalLayout {
-            alignment: start;
-            spacing: 5px;
-            Value {
-                text: root.value;
-                font-size: Theme.size-large;
-            }
-            Label {
-                text: root.label;
-            }
+    Bar {
+        height: 4px;
+        fraction: max(root.limit.used, 0);
+        fill: Theme.level(root.limit.used);
+    }
+    HorizontalLayout {
+        spacing: 10px;
+        Label {
+            text: root.limit.reset;
+            overflow: elide;
+            horizontal-stretch: 1;
         }
         Label {
-            text: root.detail;
+            text: root.limit.left-text;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+// A line of limits: a model group's title, or one or two limits side by side.
+component LimitRow inherits VerticalLayout {
+    in property <LimitLine> line;
+
+    if root.line.title != "": Value {
+        // More room above a group's title than below it.
+        height: self.preferred-height + 6px;
+        vertical-alignment: bottom;
+        text: root.line.title;
+        font-size: Theme.size-large;
+    }
+    if root.line.title == "": HorizontalLayout {
+        spacing: 24px;
+        LimitBar {
+            limit: root.line.left;
+            horizontal-stretch: 1;
+        }
+        if root.line.paired: LimitBar {
+            limit: root.line.right;
+            horizontal-stretch: 1;
+        }
+        if root.line.half: Rectangle {
+            horizontal-stretch: 1;
         }
     }
 }
@@ -429,31 +485,28 @@ export component Notch inherits Window {
     // AI usage of the selected provider; texts are formatted by Rust. Shares are
     // fractions in 0..1, or below 0 when unknown.
     in property <Provider> usage-provider;
-    // The main limit (5-hour, plan or daily window).
+    // The limit the pill follows.
     in property <float> usage-fraction: -1;
     in property <string> usage-short: "-";
-    in property <string> usage-label;
-    in property <string> usage-reset;
-    // The weekly limit; its gauge shows only when the share is known.
-    in property <float> weekly-fraction: -1;
-    in property <string> weekly-short;
-    in property <string> weekly-reset;
+    // Every limit the provider reported, laid out two to a line for the wide panel and
+    // one to a line for the upright one, with each model group's title on its own line.
+    in property <[LimitLine]> wide-lines;
+    in property <[LimitLine]> tall-lines;
     // Tokens and burn rate from local logs, e.g. "1.2M tokens" and "3.4k/min"; empty
     // when there are none.
     in property <string> usage-tokens;
     in property <string> usage-rate;
+    // "via Antigravity" when a provider has more than one source; empty otherwise.
+    in property <string> usage-via;
     in property <Health> status;
     in property <bool> usage-estimated;
     // How long the longest-working Claude session has been at it, e.g. "3m", and how many
     // sessions are working; empty and 0 while Claude rests.
     in property <string> activity;
     in property <int> activity-sessions;
+    // The provider's colour, for its logo.
     private property <color> accent: self.usage-provider == Provider.chatgpt ? Theme.chatgpt
         : self.usage-provider == Provider.gemini ? Theme.gemini : Theme.claude;
-    // The provider's colour, turning amber and then red as a limit runs out.
-    pure function level(fraction: float) -> color {
-        return fraction >= 0.95 ? Theme.bad : fraction >= 0.8 ? Theme.warn : self.accent;
-    }
     private property <string> provider-name: self.usage-provider == Provider.chatgpt ? "ChatGPT"
         : self.usage-provider == Provider.gemini ? "Gemini" : "Claude";
 
@@ -553,9 +606,9 @@ export component Notch inherits Window {
     callback dragged();
     callback drag-ended();
 
-    // Opens after a hover of a moment and closes after a short absence, so grazing the
-    // edge or passing over it does not open it. A click opens it at once and keeps it
-    // open until the next click, which closes it until the pointer leaves.
+    // Opens the moment the pointer arrives and closes after a short absence, so slipping
+    // off the edge for an instant does not shut it. A click keeps it open until the next
+    // click, which closes it until the pointer leaves.
     private property <bool> expanded;
     private property <bool> pinned;
     private property <bool> dismissed;
@@ -563,13 +616,8 @@ export component Notch inherits Window {
     changed hovered => {
         if !self.hovered {
             self.dismissed = false;
-        }
-    }
-    Timer {
-        interval: 300ms;
-        running: root.hovered && !root.expanded && !root.dismissed;
-        triggered => {
-            root.expanded = true;
+        } else if !self.dismissed {
+            self.expanded = true;
         }
     }
     Timer {
@@ -579,8 +627,10 @@ export component Notch inherits Window {
             root.expanded = false;
         }
     }
+    // Hovering opens the panel first, so a click pins it, and a click on a pinned panel
+    // closes it.
     function toggle-panel() {
-        if self.expanded {
+        if self.pinned {
             self.expanded = false;
             self.pinned = false;
             self.dismissed = true;
@@ -606,9 +656,11 @@ export component Notch inherits Window {
         : (self.vertical ? 56px : self.working ? 312px : 236px) * Theme.text-scale;
     private property <length> idle-height: self.tucked ? 96px
         : (self.vertical ? (self.working ? 196px : 148px) : 32px) * Theme.text-scale;
-    // Wide enough for "ChatGPT", "Outage" and "estimated" on one line.
+    // Wide enough for "ChatGPT", "Outage" and "estimated" on one line, and as tall as
+    // the provider's limits need, within the window less its shoulders.
     private property <length> open-width: (self.vertical ? 230px : 460px) * Theme.text-scale;
-    private property <length> open-height: (self.vertical ? 306px : 146px) * Theme.text-scale;
+    private property <length> open-height: min(panel.preferred-height,
+        self.fixed-height - 2 * self.shoulder-radius);
     // The idle and open sizes as drawn, easing into the other orientation when the notch
     // moves between a side edge and the top or bottom. The window region follows the
     // targets above instead, since re-clipping on every frame made the notch flicker.
@@ -644,7 +696,7 @@ export component Notch inherits Window {
     // Fixed size large enough for the biggest state and its shoulders; only the shape is
     // drawn. Exposed because Rust positions the window before Slint knows its size.
     out property <length> fixed-width: 520px * Theme.text-scale;
-    out property <length> fixed-height: 380px * Theme.text-scale;
+    out property <length> fixed-height: 600px * Theme.text-scale;
     // Runs when the text size changes the window's size, so Rust can place it again.
     callback size-changed();
     changed fixed-width => {
@@ -743,7 +795,7 @@ export component Notch inherits Window {
             width: 2px;
             height: 24px;
             border-radius: 1px;
-            background: root.usage-fraction >= 0 ? root.level(root.usage-fraction) : Theme.muted;
+            background: root.usage-fraction >= 0 ? Theme.level(root.usage-fraction) : Theme.muted;
         }
 
         idle-row := Rectangle {
@@ -756,7 +808,7 @@ export component Notch inherits Window {
                     MarkRing {
                         provider: root.usage-provider;
                         fraction: root.usage-fraction;
-                        level: root.level(root.usage-fraction);
+                        level: Theme.level(root.usage-fraction);
                         mark: root.accent;
                     }
                     Value {
@@ -807,7 +859,7 @@ export component Notch inherits Window {
                             size: 26px * Theme.text-scale;
                             provider: root.usage-provider;
                             fraction: root.usage-fraction;
-                            level: root.level(root.usage-fraction);
+                            level: Theme.level(root.usage-fraction);
                             mark: root.accent;
                         }
                     }
@@ -851,12 +903,14 @@ export component Notch inherits Window {
             opacity: 0;
 
             // The provider and its limits first, then the system readings under a hairline.
-            if !root.vertical: VerticalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
+            // Its height sets the open panel's, so each provider gets the room it needs.
+            panel := VerticalLayout {
+                alignment: start;
+                padding-left: root.vertical ? 18px : 20px;
+                padding-right: root.vertical ? 18px : 20px;
                 padding-top: 16px;
                 padding-bottom: 18px;
-                spacing: 14px;
+                spacing: root.vertical ? 12px : 14px;
 
                 HorizontalLayout {
                     spacing: 12px;
@@ -870,31 +924,32 @@ export component Notch inherits Window {
                     Rectangle {
                         horizontal-stretch: 1;
                     }
+                    if !root.vertical && root.usage-tokens != "": Label {
+                        text: root.usage-tokens;
+                    }
+                    if !root.vertical && root.usage-rate != "": Label {
+                        text: root.usage-rate;
+                    }
+                    if !root.vertical && root.usage-via != "": Label {
+                        text: root.usage-via;
+                    }
+                }
+                if root.vertical && (root.usage-tokens != "" || root.usage-rate != "" || root.usage-via != ""): HorizontalLayout {
+                    alignment: start;
+                    spacing: 12px;
                     if root.usage-tokens != "": Label {
                         text: root.usage-tokens;
                     }
                     if root.usage-rate != "": Label {
                         text: root.usage-rate;
                     }
+                    if root.usage-via != "": Label {
+                        text: root.usage-via;
+                    }
                 }
 
-                HorizontalLayout {
-                    alignment: start;
-                    spacing: 32px;
-                    Gauge {
-                        fraction: root.usage-fraction;
-                        fill: root.level(root.usage-fraction);
-                        value: root.usage-short;
-                        label: root.usage-label;
-                        detail: root.usage-reset;
-                    }
-                    if root.weekly-fraction >= 0: Gauge {
-                        fraction: root.weekly-fraction;
-                        fill: root.level(root.weekly-fraction);
-                        value: root.weekly-short;
-                        label: "week";
-                        detail: root.weekly-reset;
-                    }
+                for limit-line in root.vertical ? root.tall-lines : root.wide-lines: LimitRow {
+                    line: limit-line;
                 }
 
                 Rectangle {
@@ -902,7 +957,7 @@ export component Notch inherits Window {
                     background: Theme.rule;
                 }
 
-                HorizontalLayout {
+                if !root.vertical: HorizontalLayout {
                     spacing: 18px;
                     Stat {
                         label: "CPU";
@@ -925,71 +980,32 @@ export component Notch inherits Window {
                         fraction: root.vram;
                     }
                 }
-            }
-
-            // The same, stacked.
-            if root.vertical: VerticalLayout {
-                alignment: start;
-                padding-left: 18px;
-                padding-right: 18px;
-                padding-top: 18px;
-                padding-bottom: 18px;
-                spacing: 12px;
-
-                ProviderName {
-                    provider: root.usage-provider;
-                    accent: root.accent;
-                    name: root.provider-name;
-                    status: root.status;
-                    estimated: root.usage-estimated;
-                }
-                Gauge {
-                    fraction: root.usage-fraction;
-                    fill: root.level(root.usage-fraction);
-                    value: root.usage-short;
-                    label: root.usage-label;
-                    detail: root.usage-reset;
-                }
-                if root.weekly-fraction >= 0: Gauge {
-                    fraction: root.weekly-fraction;
-                    fill: root.level(root.weekly-fraction);
-                    value: root.weekly-short;
-                    label: "week";
-                    detail: root.weekly-reset;
-                }
-                if root.usage-tokens != "" || root.usage-rate != "": HorizontalLayout {
-                    spacing: 12px;
-                    alignment: start;
-                    Label {
-                        text: root.usage-tokens;
+                // Upright, the readings pair up so the panel stays short.
+                if root.vertical: HorizontalLayout {
+                    spacing: 16px;
+                    Stat {
+                        label: "CPU";
+                        value: "\{round(root.cpu * 100)}%";
+                        fraction: root.cpu;
                     }
-                    Label {
-                        text: root.usage-rate;
+                    Stat {
+                        label: "GPU";
+                        value: "\{round(root.gpu * 100)}%";
+                        fraction: root.gpu;
                     }
                 }
-                Rectangle {
-                    height: 1px;
-                    background: Theme.rule;
-                }
-                Stat {
-                    label: "CPU";
-                    value: "\{round(root.cpu * 100)}%";
-                    fraction: root.cpu;
-                }
-                Stat {
-                    label: "GPU";
-                    value: "\{round(root.gpu * 100)}%";
-                    fraction: root.gpu;
-                }
-                Stat {
-                    label: "RAM";
-                    value: root.ram-text;
-                    fraction: root.ram;
-                }
-                Stat {
-                    label: "VRAM";
-                    value: root.vram-text;
-                    fraction: root.vram;
+                if root.vertical: HorizontalLayout {
+                    spacing: 16px;
+                    Stat {
+                        label: "RAM";
+                        value: root.ram-text;
+                        fraction: root.ram;
+                    }
+                    Stat {
+                        label: "VRAM";
+                        value: root.vram-text;
+                        fraction: root.vram;
+                    }
                 }
             }
         }
@@ -1196,9 +1212,9 @@ export component Notch inherits Window {
                 idle-row.opacity: 0;
                 detail.opacity: 1;
                 in {
-                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; delay: Theme.reduce-motion ? 0ms : 80ms; }
+                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
                     animate idle-row.opacity { duration: 80ms; }
-                    animate detail.opacity { duration: 140ms; delay: 180ms; }
+                    animate detail.opacity { duration: 140ms; delay: 100ms; }
                 }
                 out {
                     animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }

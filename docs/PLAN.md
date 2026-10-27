@@ -254,6 +254,17 @@ sessions (needs the user, since it changes the global settings).
   publishers' paths: Simple Icons 16.36.0 (Claude, Gemini) and LobeHub Icons 1.101.0
   (OpenAI). Checked offscreen in every state and edge. Commit
   `feat: redesign the notch with provider logos`.
+- [x] **8.12** The hover panel follows each provider's own limits. `Usage` carries a
+  list of named limits, grouped by model where the provider groups them: Claude every
+  limit its endpoint reports ("Current session", "Weekly (all models)", per-model
+  weekly ones); Codex each window named by its length (5-hour, weekly, monthly);
+  Gemini the Antigravity CLI's `/usage` (each model group's 5-hour and weekly limits,
+  every 5 minutes), with the Gemini CLI estimate as the fallback. Each limit is a bar,
+  green below 80% used, amber to 95%, red above, with its share used and left and its
+  reset; the idle ring uses the same colours. The panel sizes to its content, wide
+  lines pair limits up. Hover opens the panel at once; a click pins it. Checked
+  offscreen for all three providers on the top and left edges. Commit
+  `feat: per-provider limits in the hover panel`.
 
 ## Deviations from SPEC.md
 

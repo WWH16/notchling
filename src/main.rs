@@ -41,7 +41,7 @@ use pipe::Listener;
 use protocol::{Decision, Event};
 use requests::{RequestId, Requests};
 use server::Update;
-use slint::{ComponentHandle, Timer, TimerMode, Weak};
+use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel, Weak};
 use status::Health;
 use system::SystemLoad;
 use ui::{AlertKind, Choice, Notch};
@@ -663,14 +663,84 @@ fn percent_text(used: Option<f32>) -> String {
     used.map_or_else(|| "-".to_owned(), |used| format!("{:.0}%", used * 100.0))
 }
 
-/// The main window's name for each provider: Claude's 5 hours, the Codex plan's own
-/// window, and Gemini's day.
+/// The name of the one limit a source knows when it reports no list of them: Claude's
+/// 5-hour session from the local logs, the Codex plan, and Gemini CLI's day.
 fn window_label(provider: Provider) -> &'static str {
     match provider {
-        Provider::Claude => "5h",
-        Provider::ChatGpt => "plan",
-        Provider::Gemini => "today",
+        Provider::Claude => "Current session",
+        Provider::ChatGpt => "Plan limit",
+        Provider::Gemini => "Today",
     }
+}
+
+/// The limits the hover panel lists: every one the provider reported, or the one the
+/// pill follows when the source knows no others. Without a reading, one empty limit.
+fn panel_limits(provider: Provider, usage: Option<&Usage>) -> Vec<usage::Limit> {
+    match usage {
+        Some(usage) if !usage.limits.is_empty() => usage.limits.clone(),
+        _ => vec![usage::Limit {
+            group: None,
+            name: window_label(provider).to_owned(),
+            used: usage.and_then(|usage| usage.used).unwrap_or(-1.0),
+            resets_at: usage.and_then(|usage| usage.resets_at),
+        }],
+    }
+}
+
+/// The panel's lines: each model group's title on a line of its own, then its limits
+/// `per_line` at a time.
+fn limit_lines(
+    limits: &[usage::Limit],
+    per_line: usize,
+    no_data: bool,
+    now: &DateTime<Local>,
+) -> Vec<ui::LimitLine> {
+    let view = |limit: &usage::Limit| {
+        let (used_text, left_text) = limit_texts(limit.used, no_data);
+        ui::LimitView {
+            name: limit.name.as_str().into(),
+            used: limit.used,
+            reset: limit
+                .resets_at
+                .map(|at| usage::reset_label(at.with_timezone(&Local), now))
+                .unwrap_or_default()
+                .into(),
+            used_text: used_text.into(),
+            left_text: left_text.into(),
+        }
+    };
+    let mut lines = Vec::new();
+    for group in limits.chunk_by(|a, b| a.group == b.group) {
+        if let Some(title) = &group[0].group {
+            lines.push(ui::LimitLine {
+                title: title.as_str().into(),
+                ..ui::LimitLine::default()
+            });
+        }
+        for chunk in group.chunks(per_line) {
+            lines.push(ui::LimitLine {
+                left: view(&chunk[0]),
+                right: chunk.get(1).map(view).unwrap_or_default(),
+                paired: chunk.len() > 1,
+                half: per_line > 1 && chunk.len() == 1,
+                ..ui::LimitLine::default()
+            });
+        }
+    }
+    lines
+}
+
+/// "23% used" and "77% left", or nothing used and why the share is missing.
+fn limit_texts(used: f32, no_data: bool) -> (String, String) {
+    if no_data {
+        return (String::new(), "No data".to_owned());
+    }
+    if used < 0.0 {
+        return (String::new(), "Share unknown".to_owned());
+    }
+    // A share in 0..=1, so the percentage fits easily; rounding is intended.
+    let used = (used * 100.0).round().clamp(0.0, 100.0) as u32;
+    (format!("{used}% used"), format!("{}% left", 100 - used))
 }
 
 /// Amber for the lower thresholds, red for the last one.
@@ -683,32 +753,31 @@ fn alert_kind(crossing: Crossing) -> AlertKind {
 }
 
 /// Puts a provider's usage on the notch, or "no data" when there is no good reading.
-/// The rings show shares only; tokens and burn rate are details on hover.
+/// The pill shows one share; the hover panel lists every limit, with tokens and burn
+/// rate when the source counts them.
 fn show_usage(notch: &Notch, provider: Provider, usage: Option<&Usage>) {
     notch.set_usage_provider(provider.into());
-    notch.set_usage_label(window_label(provider).into());
+    let limits = panel_limits(provider, usage);
+    let now = Local::now();
+    let lines = |per_line| {
+        let lines = limit_lines(&limits, per_line, usage.is_none(), &now);
+        ModelRc::new(VecModel::from(lines))
+    };
+    notch.set_wide_lines(lines(2));
+    notch.set_tall_lines(lines(1));
     let Some(usage) = usage else {
         notch.set_usage_fraction(-1.0);
         notch.set_usage_short("-".into());
-        notch.set_usage_reset("no data".into());
-        notch.set_weekly_fraction(-1.0);
         notch.set_usage_tokens("".into());
         notch.set_usage_rate("".into());
+        notch.set_usage_via("".into());
         notch.set_usage_estimated(false);
         return;
     };
     notch.set_usage_fraction(usage.used.unwrap_or(-1.0));
     notch.set_usage_short(percent_text(usage.used).into());
-    let reset = reset_text(usage.resets_at).unwrap_or_else(|| "not started".to_owned());
-    notch.set_usage_reset(reset.into());
-
-    notch.set_weekly_fraction(usage.weekly_used.unwrap_or(-1.0));
-    notch.set_weekly_short(percent_text(usage.weekly_used).into());
-    notch.set_weekly_reset(
-        reset_text(usage.weekly_resets_at)
-            .unwrap_or_default()
-            .into(),
-    );
+    let via = usage.via.map(|via| format!("via {via}"));
+    notch.set_usage_via(via.unwrap_or_default().into());
 
     let tokens = usage
         .tokens
@@ -1013,6 +1082,105 @@ mod tests {
         for (secs, want) in cases {
             assert_eq!(working_time(Duration::from_secs(secs)), want, "{secs} s");
         }
+    }
+
+    fn limit(group: Option<&str>, name: &str, used: f32) -> usage::Limit {
+        usage::Limit {
+            group: group.map(str::to_owned),
+            name: name.to_owned(),
+            used,
+            resets_at: None,
+        }
+    }
+
+    /// Each line as text: a group's title, or its limits' names joined by "|", with "_"
+    /// for the empty half of a wide line.
+    fn layout(lines: &[ui::LimitLine]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|line| {
+                if !line.title.is_empty() {
+                    return format!("# {}", line.title);
+                }
+                let mut names = vec![line.left.name.to_string()];
+                if line.paired {
+                    names.push(line.right.name.to_string());
+                }
+                if line.half {
+                    names.push("_".to_owned());
+                }
+                names.join("|")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn grouped_limits_get_titles_and_pair_up_when_wide() {
+        let limits = [
+            limit(Some("Gemini Models"), "5-hour limit", 0.6),
+            limit(Some("Gemini Models"), "Weekly limit", 0.2),
+            limit(Some("Gemini 4 Argon"), "Weekly limit", 0.0),
+        ];
+        let now = Local::now();
+        assert_eq!(
+            layout(&limit_lines(&limits, 2, false, &now)),
+            [
+                "# Gemini Models",
+                "5-hour limit|Weekly limit",
+                "# Gemini 4 Argon",
+                "Weekly limit|_"
+            ]
+        );
+        assert_eq!(
+            layout(&limit_lines(&limits, 1, false, &now)),
+            [
+                "# Gemini Models",
+                "5-hour limit",
+                "Weekly limit",
+                "# Gemini 4 Argon",
+                "Weekly limit"
+            ]
+        );
+    }
+
+    #[test]
+    fn ungrouped_limits_have_no_title() {
+        let limits = [
+            limit(None, "Current session", 1.0),
+            limit(None, "Weekly (all models)", 0.23),
+        ];
+        let lines = limit_lines(&limits, 2, false, &Local::now());
+        assert_eq!(layout(&lines), ["Current session|Weekly (all models)"]);
+        assert_eq!(
+            (
+                lines[0].left.used_text.as_str(),
+                lines[0].left.left_text.as_str()
+            ),
+            ("100% used", "0% left")
+        );
+        assert_eq!(
+            (
+                lines[0].right.used_text.as_str(),
+                lines[0].right.left_text.as_str()
+            ),
+            ("23% used", "77% left")
+        );
+    }
+
+    #[test]
+    fn a_source_without_a_list_shows_its_one_limit() {
+        let estimate = Usage {
+            used: None,
+            ..Usage::default()
+        };
+        let limits = panel_limits(Provider::Claude, Some(&estimate));
+        assert_eq!(limits, [limit(None, "Current session", -1.0)]);
+        assert_eq!(limit_texts(-1.0, false).1, "Share unknown");
+        assert_eq!(
+            limit_texts(-1.0, true),
+            (String::new(), "No data".to_owned())
+        );
+        assert_eq!(panel_limits(Provider::Gemini, None)[0].name, "Today");
     }
 
     #[test]

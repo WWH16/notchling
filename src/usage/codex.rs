@@ -15,10 +15,15 @@ use chrono::{DateTime, Utc};
 use ruzstd::decoding::StreamingDecoder;
 use serde::Deserialize;
 
-use super::{Provider, Source, Usage};
+use super::{Limit, Provider, Source, Usage};
+
+const DAY_MINUTES: u64 = 24 * 60;
 
 /// Length of a weekly window, as Codex reports it.
-const WEEK_MINUTES: u64 = 7 * 24 * 60;
+const WEEK_MINUTES: u64 = 7 * DAY_MINUTES;
+
+/// Length of the ChatGPT Go plan's only window, as Codex reports it (FINDINGS V2).
+const MONTH_MINUTES: u64 = 30 * DAY_MINUTES;
 
 /// Reads the rate limits from the newest Codex session that logged any.
 #[derive(Debug)]
@@ -159,21 +164,45 @@ fn last_limits(text: &str) -> Option<RateLimits> {
         })
 }
 
-/// The share used of each window at `now`.
+/// The share used of each window at `now`, each named after its length; the pill
+/// follows the primary window.
 fn usage(limits: &RateLimits, now: DateTime<Utc>) -> Usage {
     let primary = limits.primary.as_ref().map(|window| window.at(now));
-    let weekly = limits
-        .secondary
-        .as_ref()
-        .filter(|window| window.window_minutes == Some(WEEK_MINUTES))
-        .map(|window| window.at(now));
+    let windows = [limits.primary.as_ref(), limits.secondary.as_ref()];
     Usage {
         used: primary.map(|(used, _)| used),
         resets_at: primary.and_then(|(_, resets_at)| resets_at),
-        weekly_used: weekly.map(|(used, _)| used),
-        weekly_resets_at: weekly.and_then(|(_, resets_at)| resets_at),
+        limits: windows
+            .into_iter()
+            .flatten()
+            .map(|window| {
+                let (used, resets_at) = window.at(now);
+                Limit {
+                    group: None,
+                    name: window_name(window.window_minutes),
+                    used,
+                    resets_at,
+                }
+            })
+            .collect(),
+        via: Some("Codex CLI"),
         estimated: primary.is_some_and(|(_, resets_at)| resets_at.is_none()),
         ..Usage::default()
+    }
+}
+
+/// "5-hour limit", "Weekly limit" or "Monthly limit", after how long a window lasts.
+fn window_name(minutes: Option<u64>) -> String {
+    match minutes {
+        Some(WEEK_MINUTES) => "Weekly limit".to_owned(),
+        Some(MONTH_MINUTES) => "Monthly limit".to_owned(),
+        Some(minutes) if minutes > 0 && minutes % DAY_MINUTES == 0 => {
+            format!("{}-day limit", minutes / DAY_MINUTES)
+        }
+        Some(minutes) if minutes > 0 && minutes % 60 == 0 => {
+            format!("{}-hour limit", minutes / 60)
+        }
+        _ => "Plan limit".to_owned(),
     }
 }
 
@@ -238,30 +267,34 @@ mod tests {
         let usage_before = usage(&limits, time("2026-10-27T04:00:00Z"));
         assert_eq!(usage_before.used, Some(0.41));
         assert_eq!(usage_before.resets_at, Some(time("2026-10-27T05:00:00Z")));
-        assert_eq!(usage_before.weekly_used, Some(0.07));
-        assert_eq!(
-            usage_before.weekly_resets_at,
-            Some(time("2026-10-30T00:00:00Z"))
-        );
+        let weekly = &usage_before.limits[1];
+        assert_eq!((weekly.name.as_str(), weekly.used), ("Weekly limit", 0.07));
+        assert_eq!(weekly.resets_at, Some(time("2026-10-30T00:00:00Z")));
         assert!(!usage_before.estimated);
 
         let usage_after = usage(&limits, time("2026-10-27T05:00:00Z"));
         assert_eq!(usage_after.used, Some(0.0));
         assert_eq!(usage_after.resets_at, None);
-        assert_eq!(usage_after.weekly_used, Some(0.07));
+        assert_eq!(usage_after.limits[1].used, 0.07);
         assert!(usage_after.estimated);
     }
 
     #[test]
-    fn only_a_weekly_secondary_window_counts_as_weekly() {
-        let limits = RateLimits {
-            primary: Some(window(10.0, 43_200, "2026-11-14T00:00:00Z")),
-            secondary: Some(window(3.0, 60, "2026-10-27T05:00:00Z")),
+    fn windows_are_named_after_their_length() {
+        let names = |primary: u64, secondary: u64| {
+            let limits = RateLimits {
+                primary: Some(window(10.0, primary, "2026-11-14T00:00:00Z")),
+                secondary: Some(window(3.0, secondary, "2026-11-14T00:00:00Z")),
+            };
+            usage(&limits, time("2026-10-27T04:00:00Z"))
+                .limits
+                .into_iter()
+                .map(|limit| limit.name)
+                .collect::<Vec<_>>()
         };
-        assert_eq!(
-            usage(&limits, time("2026-10-27T04:00:00Z")).weekly_used,
-            None
-        );
+        assert_eq!(names(300, WEEK_MINUTES), ["5-hour limit", "Weekly limit"]);
+        assert_eq!(names(MONTH_MINUTES, 60), ["Monthly limit", "1-hour limit"]);
+        assert_eq!(names(2 * DAY_MINUTES, 0), ["2-day limit", "Plan limit"]);
     }
 
     #[test]

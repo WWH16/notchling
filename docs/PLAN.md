@@ -198,6 +198,12 @@ sessions (needs the user, since it changes the global settings).
   stands upright: CPU, GPU and the usage ring stacked in the idle pill, and a tall hover
   panel. Requests and alerts stay wide. Commit `feat: glide onto the edge, upright on
   the sides`.
+- [x] **7.9** Follow the account the Claude desktop app is signed in to. Switching
+  accounts there left `.credentials.json` alone, so the notch kept showing the old
+  account. The account source now reads the desktop app's own login first (read only,
+  never refreshed) and falls back to Claude Code's; a switch is noticed on the next
+  30 s poll instead of after 5 minutes. Checked live after a switch: 9% on the new
+  account. Commit `fix: follow the claude desktop app's account`.
 
 ## Deviations from SPEC.md
 

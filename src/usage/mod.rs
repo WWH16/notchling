@@ -2,6 +2,7 @@
 
 mod claude;
 mod claude_account;
+mod claude_desktop;
 mod claude_local;
 mod codex;
 mod gemini;

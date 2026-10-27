@@ -139,6 +139,21 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   refresh worked and kept every other field. The local 5-hour estimate had been 17
   minutes off the account's reset time (2:03 PM against 2:20 PM), because the logs do
   not see usage from claude.ai.
+- Account switch (2026-10-27, evening): switching accounts in the desktop app left
+  `.credentials.json` as it was, so the notch kept the old account's limits. The app
+  (Microsoft Store package) keeps its data in
+  `%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc`; it moved there around 2026-10-20.
+  `config.json` names the signed-in account in `lastKnownAccountUuid` and holds the
+  tokens in `oauth:tokenCacheV2`: base64 of `v10`, a 12-byte nonce, AES-256-GCM
+  ciphertext and a 16-byte tag (Chromium `os_crypt`). The key is
+  `os_crypt.encrypted_key` in `Local State`: base64 of `DPAPI` and a DPAPI blob for the
+  current user. The opened cache is a JSON object keyed
+  `acct:<account>|<client>:<org>:https://api.anthropic.com:<scopes>`, each value with
+  `token`, `refreshToken` and `expiresAt` (ms). After the switch it held only the new
+  account: two Claude Code client logins and one `user:profile`-only login, and all
+  three read the usage endpoint. With the user's approval, ai-notch reads this login
+  first and never refreshes or writes it. Claude Code also copies the account into
+  `~/.claude.json` (`oauthAccount`) when the desktop app starts a session.
 
 ## Status pages (checked at step 6.1, 2026-10-27)
 

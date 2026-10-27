@@ -1,10 +1,11 @@
 //! Claude's exact usage limits from the account endpoint behind Claude Code's `/usage`
-//! screen, signed in with Claude Code's own login.
+//! screen, signed in with the Claude desktop app's login or else Claude Code's own.
 //!
-//! The endpoint is unofficial. The login lives in `~/.claude/.credentials.json`, which
-//! only the Claude Code CLI refreshes; the desktop app keeps its own login. So once the
-//! stored token expires, ai-notch refreshes it the way Claude Code does and writes the
-//! new tokens back, and the CLI carries on with them.
+//! The endpoint is unofficial. The desktop app's login comes first, so the notch
+//! follows the account the app is signed in to; it is read, never refreshed. Claude
+//! Code's login lives in `~/.claude/.credentials.json`, which only the Claude Code CLI
+//! refreshes. So once that token expires, ai-notch refreshes it the way Claude Code does
+//! and writes the new tokens back, and the CLI carries on with them.
 
 use std::env;
 use std::fmt;
@@ -18,6 +19,7 @@ use serde_json::{Map, Value, json};
 use ureq::Agent;
 
 use super::Usage;
+use super::claude_desktop::ClaudeDesktop;
 use crate::http;
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -32,38 +34,51 @@ const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
 const CLAUDE_CODE_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 
 /// A token this close to expiry is refreshed first, so it cannot lapse mid-request.
-const REFRESH_MARGIN_MS: i64 = 60_000;
+pub(super) const REFRESH_MARGIN_MS: i64 = 60_000;
 
 /// Reads Claude's usage limits from the account endpoint.
 #[derive(Debug)]
 pub struct ClaudeAccount {
+    desktop: ClaudeDesktop,
     credentials: PathBuf,
     agent: Agent,
 }
 
 impl ClaudeAccount {
-    /// Uses the login of the current Windows user's Claude Code.
+    /// Uses the login of the current Windows user's Claude desktop app or Claude Code.
     ///
     /// # Errors
     ///
-    /// Fails when `USERPROFILE` is not set.
+    /// Fails when `USERPROFILE` or `LOCALAPPDATA` is not set.
     pub fn try_new() -> anyhow::Result<Self> {
         let home = env::var_os("USERPROFILE").context("USERPROFILE is not set")?;
         Ok(Self {
+            desktop: ClaudeDesktop::try_new()?,
             credentials: Path::new(&home).join(".claude").join(".credentials.json"),
             agent: http::agent(),
         })
     }
 
-    /// Asks the account endpoint for the current limits, refreshing the login first
-    /// when it has expired.
+    /// The account the desktop app is signed in to, cheap enough to check on every
+    /// poll; when it changes, the limits [`fetch`](Self::fetch) gave are another
+    /// account's.
+    pub fn signed_in(&self) -> Option<String> {
+        self.desktop.account()
+    }
+
+    /// Asks the account endpoint for the current limits with the desktop app's login,
+    /// or else with Claude Code's, refreshing that one first when it has expired.
     ///
     /// # Errors
     ///
-    /// Fails when Claude Code is not signed in, when the login cannot be refreshed,
+    /// Fails when neither is signed in, when Claude Code's login cannot be refreshed,
     /// when the request fails, or when the response holds no limits.
     pub fn fetch(&self) -> anyhow::Result<Usage> {
-        let token = self.access_token(Utc::now())?;
+        let now = Utc::now();
+        let token = match self.desktop.access_token(now) {
+            Ok(token) => token,
+            Err(_) => self.access_token(now)?,
+        };
         let body = self
             .agent
             .get(USAGE_URL)
@@ -77,7 +92,8 @@ impl ClaudeAccount {
         parse_usage(&body)
     }
 
-    /// A valid access token: the stored one, or a refreshed one once it has expired.
+    /// A valid access token of Claude Code's login: the stored one, or a refreshed one
+    /// once it has expired.
     /// A refresh is written back to the credentials file unless Claude Code changed
     /// the file meanwhile, in which case its tokens win.
     fn access_token(&self, now: DateTime<Utc>) -> anyhow::Result<Secret> {
@@ -128,7 +144,7 @@ impl ClaudeAccount {
 /// An OAuth token. `Debug` hides it, so it never reaches a log or an error.
 #[derive(Clone, Deserialize)]
 #[serde(transparent)]
-struct Secret(String);
+pub(super) struct Secret(pub(super) String);
 
 impl fmt::Debug for Secret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

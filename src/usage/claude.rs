@@ -13,13 +13,22 @@ use crate::config::Config;
 const ACCOUNT_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// Reads the local logs on every poll and the account endpoint every
-/// [`ACCOUNT_INTERVAL`].
+/// [`ACCOUNT_INTERVAL`], or at once after the user switches accounts.
 #[derive(Debug)]
 pub struct Claude {
     local: ClaudeLocal,
     account: ClaudeAccount,
-    /// When the account was last asked, and its answer if that worked.
-    account_checked: Option<(Instant, Option<Usage>)>,
+    account_checked: Option<AccountCheck>,
+}
+
+/// The last time the account endpoint was asked.
+#[derive(Debug)]
+struct AccountCheck {
+    at: Instant,
+    /// Who was signed in then, per [`ClaudeAccount::signed_in`].
+    signed_in: Option<String>,
+    /// The answer, if the request worked.
+    usage: Option<Usage>,
 }
 
 impl Claude {
@@ -36,22 +45,27 @@ impl Claude {
         })
     }
 
-    /// The account's latest limits, asking again once [`ACCOUNT_INTERVAL`] has passed.
-    /// A failed request counts as asked, so a broken endpoint is not hammered. Turned
-    /// off in the config, nothing is asked and the local estimate shows.
+    /// The account's latest limits, asking again once [`ACCOUNT_INTERVAL`] has passed
+    /// or someone else has signed in. A failed request counts as asked, so a broken
+    /// endpoint is not hammered. Turned off in the config, nothing is asked and the
+    /// local estimate shows.
     fn account(&mut self) -> Option<&Usage> {
         if !Config::load().claude_account() {
             self.account_checked = None;
             return None;
         }
-        let due = self
-            .account_checked
-            .as_ref()
-            .is_none_or(|(checked, _)| checked.elapsed() >= ACCOUNT_INTERVAL);
+        let signed_in = self.account.signed_in();
+        let due = self.account_checked.as_ref().is_none_or(|checked| {
+            checked.at.elapsed() >= ACCOUNT_INTERVAL || checked.signed_in != signed_in
+        });
         if due {
-            self.account_checked = Some((Instant::now(), self.account.fetch().ok()));
+            self.account_checked = Some(AccountCheck {
+                at: Instant::now(),
+                signed_in,
+                usage: self.account.fetch().ok(),
+            });
         }
-        self.account_checked.as_ref()?.1.as_ref()
+        self.account_checked.as_ref()?.usage.as_ref()
     }
 }
 

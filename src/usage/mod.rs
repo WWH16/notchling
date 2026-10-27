@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::thread;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 
 /// An AI provider the notch can show usage for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -76,11 +76,69 @@ pub fn spawn(
     });
 }
 
+/// Formats a count briefly, e.g. "950", "1.2k", "171k" or "3.4M". Digits are cut,
+/// not rounded, so a value never shows as more than it is.
+#[must_use]
+pub fn compact(count: u64) -> String {
+    match count {
+        0..1_000 => count.to_string(),
+        1_000..10_000 => format!("{}.{}k", count / 1_000, count % 1_000 / 100),
+        10_000..1_000_000 => format!("{}k", count / 1_000),
+        1_000_000..10_000_000 => {
+            format!("{}.{}M", count / 1_000_000, count % 1_000_000 / 100_000)
+        }
+        _ => format!("{}M", count / 1_000_000),
+    }
+}
+
+/// Formats the time left until a reset, e.g. "4h 25m" or "25m". Rounds up to the
+/// minute, so a reset never shows as due before it is.
+#[must_use]
+pub fn countdown(left: TimeDelta) -> String {
+    let minutes = (left.num_seconds().max(0) + 59) / 60;
+    match (minutes / 60, minutes % 60) {
+        (0, minutes) => format!("{minutes}m"),
+        (hours, minutes) => format!("{hours}h {minutes}m"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;
 
     use super::*;
+
+    #[test]
+    fn compact_cuts_to_at_most_two_digits_and_a_unit() {
+        let cases = [
+            (0, "0"),
+            (999, "999"),
+            (1_000, "1.0k"),
+            (9_999, "9.9k"),
+            (171_072, "171k"),
+            (999_999, "999k"),
+            (3_456_789, "3.4M"),
+            (42_000_000, "42M"),
+        ];
+        for (count, want) in cases {
+            assert_eq!(compact(count), want, "count {count}");
+        }
+    }
+
+    #[test]
+    fn countdown_rounds_up_to_the_minute() {
+        let cases = [
+            (TimeDelta::seconds(-5), "0m"),
+            (TimeDelta::seconds(0), "0m"),
+            (TimeDelta::seconds(1), "1m"),
+            (TimeDelta::minutes(59), "59m"),
+            (TimeDelta::minutes(60), "1h 0m"),
+            (TimeDelta::seconds(4 * 3600 + 24 * 60 + 10), "4h 25m"),
+        ];
+        for (left, want) in cases {
+            assert_eq!(countdown(left), want, "left {left}");
+        }
+    }
 
     /// Fails on the first read, then reports 40% used.
     #[derive(Debug, Default)]

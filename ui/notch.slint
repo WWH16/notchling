@@ -140,8 +140,47 @@ component LinkButton inherits Rectangle {
     }
 }
 
+component Dot inherits Rectangle {
+    in property <color> fill;
+    width: 6px;
+
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: root.fill;
+    }
+}
+
+component Badge inherits Rectangle {
+    in property <string> label;
+    width: badge-text.preferred-width + 10px;
+
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: 15px;
+        border-width: 1px;
+        border-color: #3a3a3c;
+        border-radius: 4px;
+
+        badge-text := Text {
+            text: root.label;
+            color: Theme.muted;
+            font-family: Theme.font;
+            font-size: 9px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
 // What the user picked on a permission request.
 export enum Choice { allow, deny, ask-in-app }
+
+// Whose usage the notch shows.
+export enum Provider { claude, chatgpt, gemini }
 
 // Why the notch is asking for attention.
 export enum AlertKind { done, needs-input }
@@ -154,6 +193,20 @@ export component Notch inherits Window {
     in property <float> vram;
     in property <string> ram-text: "-";
     in property <string> vram-text: "-";
+
+    // AI usage; texts are formatted by Rust. Hidden until the first good reading.
+    in property <bool> has-usage;
+    in property <Provider> usage-provider;
+    // The idle pill's value: the share used, or the token count when no limit is known.
+    in property <string> usage-short;
+    in property <string> usage-tokens;
+    in property <string> usage-rate;
+    in property <string> usage-reset;
+    in property <bool> usage-estimated;
+    private property <color> accent: self.usage-provider == Provider.chatgpt ? Theme.chatgpt
+        : self.usage-provider == Provider.gemini ? Theme.gemini : Theme.claude;
+    private property <string> provider-name: self.usage-provider == Provider.chatgpt ? "ChatGPT"
+        : self.usage-provider == Provider.gemini ? "Gemini" : "Claude";
 
     // The permission request on screen, if any. Rust keeps the queue.
     in property <bool> has-request;
@@ -193,10 +246,10 @@ export component Notch inherits Window {
     private property <length> target-height: self.has-request ? request-height
         : self.alert-active ? alert-height
         : self.expanded ? open-height : idle-height;
-    private property <length> idle-width: 190px;
+    private property <length> idle-width: self.has-usage ? 250px : 190px;
     private property <length> idle-height: 30px;
-    private property <length> open-width: 380px;
-    private property <length> open-height: 64px;
+    private property <length> open-width: self.has-usage ? 420px : 380px;
+    private property <length> open-height: self.has-usage ? 92px : 64px;
     private property <length> request-width: 460px;
     private property <length> request-height: 196px;
     private property <length> alert-width: 290px;
@@ -241,34 +294,94 @@ export component Notch inherits Window {
                 label: "GPU";
                 value: "\{round(root.gpu * 100)}%";
             }
+            if root.has-usage: HorizontalLayout {
+                spacing: 6px;
+                Dot {
+                    fill: root.accent;
+                }
+                Text {
+                    text: root.usage-short;
+                    color: Theme.text;
+                    font-family: Theme.font;
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
         }
 
-        detail := HorizontalLayout {
+        detail := VerticalLayout {
             opacity: 0;
             padding-left: 20px;
             padding-right: 20px;
             padding-top: 14px;
             padding-bottom: 18px;
-            spacing: 18px;
-            Stat {
-                label: "CPU";
-                value: "\{round(root.cpu * 100)}%";
-                fraction: root.cpu;
+            spacing: 14px;
+
+            HorizontalLayout {
+                spacing: 18px;
+                Stat {
+                    label: "CPU";
+                    value: "\{round(root.cpu * 100)}%";
+                    fraction: root.cpu;
+                }
+                Stat {
+                    label: "GPU";
+                    value: "\{round(root.gpu * 100)}%";
+                    fraction: root.gpu;
+                }
+                Stat {
+                    label: "RAM";
+                    value: root.ram-text;
+                    fraction: root.ram;
+                }
+                Stat {
+                    label: "VRAM";
+                    value: root.vram-text;
+                    fraction: root.vram;
+                }
             }
-            Stat {
-                label: "GPU";
-                value: "\{round(root.gpu * 100)}%";
-                fraction: root.gpu;
-            }
-            Stat {
-                label: "RAM";
-                value: root.ram-text;
-                fraction: root.ram;
-            }
-            Stat {
-                label: "VRAM";
-                value: root.vram-text;
-                fraction: root.vram;
+
+            if root.has-usage: HorizontalLayout {
+                spacing: 10px;
+                Dot {
+                    fill: root.accent;
+                }
+                Text {
+                    text: root.provider-name;
+                    color: Theme.text;
+                    font-family: Theme.font;
+                    font-size: 11px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.usage-tokens;
+                    color: Theme.muted;
+                    font-family: Theme.font;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.usage-rate;
+                    color: Theme.muted;
+                    font-family: Theme.font;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.usage-reset;
+                    color: Theme.text;
+                    font-family: Theme.font;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+                if root.usage-estimated: Badge {
+                    label: "ESTIMATED";
+                }
             }
         }
 

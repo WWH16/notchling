@@ -159,6 +159,7 @@ name = "ai-notch"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "raw-window-handle",
  "serde",
  "serde_json",

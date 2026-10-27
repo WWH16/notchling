@@ -1,7 +1,14 @@
 //! Usage limits of the AI providers, read from each source on a background thread.
 
+mod claude_local;
+
+pub use claude_local::ClaudeLocal;
+
+use std::collections::BTreeMap;
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+
+use chrono::{DateTime, Utc};
 
 /// An AI provider the notch can show usage for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -17,9 +24,13 @@ pub struct Usage {
     /// Share of the current limit in use, from 0 to 1, when the limit is known.
     pub used: Option<f32>,
     /// When the current limit window resets.
-    pub resets_at: Option<SystemTime>,
+    pub resets_at: Option<DateTime<Utc>>,
     /// Tokens used in the current window, when the source counts them.
     pub tokens: Option<u64>,
+    /// `tokens` split by model name, when the source knows the models.
+    pub tokens_by_model: BTreeMap<String, u64>,
+    /// Tokens per minute since the window's first message, when the source counts them.
+    pub burn_rate: Option<f32>,
     /// `used` was worked out locally instead of reported by the provider.
     pub estimated: bool,
 }

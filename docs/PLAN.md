@@ -104,7 +104,7 @@ sessions (needs the user, since it changes the global settings).
 - [x] **3.1** `usage/mod.rs`: shared `Usage` struct, `Provider` enum, background poller. A
   broken source returns an error and never crashes the app.
   Commit `feat: usage model and poller`.
-- [ ] **3.2** `claude_local.rs`: incremental reads (per-file offsets), message dedupe,
+- [x] **3.2** `claude_local.rs`: incremental reads (per-file offsets), message dedupe,
   tokens per model, 5-hour window, burn rate. Synthetic fixtures only, never real logs.
   Commit `feat: claude code log parser`.
 - [ ] **3.3** UI: reset countdown, tokens, burn rate, "estimated" badge.

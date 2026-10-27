@@ -166,6 +166,9 @@ sessions (needs the user, since it changes the global settings).
   Result: 12.97 MB exe; 35.1 MB working set and 13.6 MB private when idle, 0.18% CPU
   over 30 s. Startup peaks at 97.9 MB while the first scan reads the last day of Claude
   Code logs whole. The live hook test from Phase 2 is still open.
+- [x] **7.2** Read Claude Code logs line by line instead of whole files. Startup peak
+  97.9 MB to 35.2 MB working set; idle unchanged at about 35 MB, and the first scan
+  went from 174 ms to 96 ms. Commit `fix: read claude logs line by line`.
 
 ## Deviations from SPEC.md
 

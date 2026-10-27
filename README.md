@@ -156,10 +156,8 @@ It writes:
 ## Footprint
 
 Release build on the development machine: a 13 MB exe, about 35 MB of RAM (14 MB
-private) and under 0.2% CPU when idle. Right after starting it briefly uses more,
-around 100 MB, while it reads the last day of Claude Code logs. Slint's software
-renderer is used, since the OpenGL renderer took three times the memory for the same
-look.
+private) and under 0.2% CPU when idle, startup included. Slint's software renderer is
+used, since the OpenGL renderer took three times the memory for the same look.
 
 ## Development
 

@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::fs::{self, File};
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -90,19 +90,22 @@ impl ClaudeLocal {
             return Ok(());
         }
         file.seek(SeekFrom::Start(offset))?;
-        let mut appended = Vec::new();
-        file.take(len - offset).read_to_end(&mut appended)?;
-
-        // The last line may still be being written; it is read once it is complete.
-        let Some(end) = appended.iter().rposition(|&byte| byte == b'\n') else {
-            return Ok(());
-        };
-        for line in appended[..end].split(|&byte| byte == b'\n') {
-            if let Some((key, message)) = parse_line(line).filter(|(_, m)| m.at >= cutoff) {
+        // One line at a time, so a large log never sits in memory whole.
+        let mut reader = BufReader::new(file.take(len - offset));
+        let mut line = Vec::new();
+        let mut read = 0;
+        loop {
+            line.clear();
+            let line_len = reader.read_until(b'\n', &mut line)?;
+            // The last line may still be being written; it is read once it is complete.
+            let Some(text) = line.strip_suffix(b"\n") else {
+                break;
+            };
+            if let Some((key, message)) = parse_line(text).filter(|(_, m)| m.at >= cutoff) {
                 self.messages.entry(key).or_insert(message);
             }
+            read += u64::try_from(line_len).expect("a line length fits in u64");
         }
-        let read = u64::try_from(end + 1).expect("a read chunk fits in u64");
         self.offsets.insert(path, offset + read);
         Ok(())
     }

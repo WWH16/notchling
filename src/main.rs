@@ -11,6 +11,8 @@ mod protocol;
 mod requests;
 mod server;
 mod system;
+#[expect(dead_code, reason = "sources and the UI arrive in steps 3.2 and 3.3")]
+mod usage;
 mod window;
 
 #[allow(missing_debug_implementations, reason = "slint-generated types")]

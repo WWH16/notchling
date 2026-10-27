@@ -101,7 +101,7 @@ sessions (needs the user, since it changes the global settings).
 
 ## Phase 3: Claude usage, local source
 
-- [ ] **3.1** `usage/mod.rs`: shared `Usage` struct, `Provider` enum, background poller. A
+- [x] **3.1** `usage/mod.rs`: shared `Usage` struct, `Provider` enum, background poller. A
   broken source returns an error and never crashes the app.
   Commit `feat: usage model and poller`.
 - [ ] **3.2** `claude_local.rs`: incremental reads (per-file offsets), message dedupe,

@@ -35,7 +35,7 @@ use server::Update;
 use slint::{ComponentHandle, Timer, TimerMode, Weak};
 use system::SystemLoad;
 use ui::{AlertKind, Choice, Notch};
-use usage::{ClaudeLocal, Reading};
+use usage::{Claude, Reading};
 use window::{MenuChoice, MessageKind, NotchWindow};
 
 /// One frame at 60 Hz; how often to check whether the native window exists yet.
@@ -57,7 +57,8 @@ const NEEDS_INPUT_ALERT: Duration = Duration::from_secs(15);
 const AWAKE_CHECK: Duration = Duration::from_secs(60);
 
 /// How often Claude Code's logs are checked; each check parses only appended lines.
-/// Also how often the reset countdown ticks, which shows whole minutes.
+/// Also how often the reset countdown ticks, which shows whole minutes. The account
+/// endpoint is asked less often; see `usage::Claude`.
 const USAGE_INTERVAL: Duration = Duration::from_secs(30);
 
 fn main() -> anyhow::Result<()> {
@@ -171,10 +172,10 @@ fn start_stats(notch: &Notch) -> Timer {
     timer
 }
 
-/// Polls Claude usage from the local logs and shows it on the notch.
+/// Polls Claude usage and shows it on the notch.
 fn start_usage(notch: &Notch) {
-    // Without a user profile there are no logs to read, so the usage stays hidden.
-    let Ok(source) = ClaudeLocal::try_new() else {
+    // Without a user profile there are no logs or login to read, so the usage stays hidden.
+    let Ok(source) = Claude::try_new() else {
         return;
     };
     let weak = notch.as_weak();
@@ -214,6 +215,10 @@ fn show_usage(notch: &Notch, reading: Reading) {
             .into(),
     );
     notch.set_usage_rate(rate.unwrap_or_default().into());
+    let weekly = usage
+        .weekly_used
+        .map(|used| format!("week {:.0}%", used * 100.0));
+    notch.set_usage_weekly(weekly.unwrap_or_default().into());
     notch.set_usage_reset(reset.into());
     notch.set_usage_estimated(usage.estimated);
     notch.set_has_usage(true);

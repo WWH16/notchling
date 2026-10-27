@@ -117,7 +117,7 @@ sessions (needs the user, since it changes the global settings).
 - [x] **4.2** Dropped: the account source works with Claude Code's own login (V4), so
   no pasted claude.ai session token and no Credential Manager. When that login is
   expired the local estimate covers it. No commit of its own.
-- [ ] **4.3** Merge sources: account % first, local for details, estimated badge on
+- [x] **4.3** Merge sources: account % first, local for details, estimated badge on
   fallback, with a test. Commit `feat: merge claude usage sources`.
 
 ## Phase 5: ChatGPT, Gemini, provider selector

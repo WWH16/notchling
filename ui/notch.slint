@@ -201,6 +201,8 @@ export component Notch inherits Window {
     in property <string> usage-short;
     in property <string> usage-tokens;
     in property <string> usage-rate;
+    // The weekly limit, when the provider reports one; empty otherwise.
+    in property <string> usage-weekly;
     in property <string> usage-reset;
     in property <bool> usage-estimated;
     private property <color> accent: self.usage-provider == Provider.chatgpt ? Theme.chatgpt
@@ -371,6 +373,13 @@ export component Notch inherits Window {
                 }
                 Rectangle {
                     horizontal-stretch: 1;
+                }
+                if root.usage-weekly != "": Text {
+                    text: root.usage-weekly;
+                    color: Theme.muted;
+                    font-family: Theme.font;
+                    font-size: 11px;
+                    vertical-alignment: center;
                 }
                 Text {
                     text: root.usage-reset;

@@ -1,10 +1,10 @@
 //! Usage limits of the AI providers, read from each source on a background thread.
 
-#[expect(dead_code, reason = "merged with the local source in step 4.3")]
+mod claude;
 mod claude_account;
 mod claude_local;
 
-pub use claude_local::ClaudeLocal;
+pub use claude::Claude;
 
 use std::collections::BTreeMap;
 use std::thread;

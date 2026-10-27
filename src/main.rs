@@ -45,7 +45,7 @@ use server::Update;
 use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel, Weak};
 use status::Health;
 use system::SystemLoad;
-use ui::{AlertKind, Choice, Notch};
+use ui::{AlertKind, Choice, Notch, RequestKind};
 use usage::{Claude, Codex, Crossing, Gemini, Provider, Reading, Thresholds, Usage};
 use window::{Edge, MenuChoice, MessageKind, NotchWindow, Placement, Shortcut};
 use windows::Win32::Foundation::POINT;
@@ -165,6 +165,8 @@ fn main() -> anyhow::Result<()> {
             notch.on_shape_changed(move || shape_clip());
             drag_and_stick(&notch, &placement, &clip);
             answer_with_shortcuts(&notch, &native);
+            let typing = Rc::clone(&native);
+            notch.on_reply_focus_requested(move || typing.activate());
             let weak = notch.as_weak();
             let resized = Rc::clone(&placement);
             let settled = Rc::clone(&clip);
@@ -823,6 +825,40 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
         }
     });
 
+    let weak = notch.as_weak();
+    let replied = Arc::clone(&requests);
+    notch.on_reply_sent(move |id, text| {
+        let message = text.trim();
+        let Some(notch) = weak.upgrade().filter(|_| !message.is_empty()) else {
+            return;
+        };
+        let mut requests = replied.lock().expect("requests lock poisoned");
+        let decision = Decision::Replied {
+            message: message.to_owned(),
+        };
+        requests.decide(RequestId::from_ui(id), decision);
+        show_requests(&notch, &mut requests);
+    });
+    let weak = notch.as_weak();
+    let opened = Arc::clone(&requests);
+    notch.on_reply_opened(move |id| {
+        let Some(notch) = weak.upgrade() else {
+            return;
+        };
+        let mut requests = opened.lock().expect("requests lock poisoned");
+        let ancestors = match requests.front() {
+            Some(front) if front.id == RequestId::from_ui(id) => match &front.request.ask {
+                Ask::Reply { ancestors, .. } => ancestors.clone(),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+        requests.decide(RequestId::from_ui(id), Decision::AskInApp);
+        show_requests(&notch, &mut requests);
+        drop(requests);
+        process::focus_first_window(&ancestors);
+    });
+
     let clicked = Arc::clone(alert);
     let weak = notch.as_weak();
     notch.on_alert_clicked(move || {
@@ -861,19 +897,27 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
                     &mut requests.lock().expect("requests lock poisoned"),
                 );
             }
-            Update::Session(Event::TaskDone { origin }) => {
+            Update::Session(Event::TaskDone { origin, .. }) => {
                 let mut awake = lock_awake(&awake);
                 awake.stopped(&origin.session_id);
                 show_activity(&notch, &awake);
-                let text = session_alert_text(AlertKind::Done, &origin.project);
-                show_alert(
-                    &notch,
-                    &alert,
-                    AlertKind::Done,
-                    Provider::Claude,
-                    text,
-                    origin.ancestors,
-                );
+                // The reply card says it is done; behind a fullscreen app nobody can
+                // reply, so Claude stops at once and a toast says so instead.
+                let hidden = alert.lock().expect("alert lock poisoned").hidden;
+                if hidden {
+                    let mut requests = requests.lock().expect("requests lock poisoned");
+                    requests.settle_session(&origin.session_id);
+                    show_requests(&notch, &mut requests);
+                    let text = session_alert_text(AlertKind::Done, &origin.project);
+                    show_alert(
+                        &notch,
+                        &alert,
+                        AlertKind::Done,
+                        Provider::Claude,
+                        text,
+                        origin.ancestors,
+                    );
+                }
             }
             Update::Session(Event::NeedsInput { origin, .. }) => {
                 let mut awake = lock_awake(&awake);
@@ -1011,7 +1055,7 @@ fn show_requests(notch: &Notch, requests: &mut Requests) {
             description,
             detail,
         } => {
-            notch.set_request_is_question(false);
+            notch.set_request_kind(RequestKind::Permission);
             notch.set_request_tool(tool.as_str().into());
             notch.set_request_description(description.as_str().into());
             notch.set_request_detail(detail.as_str().into());
@@ -1022,8 +1066,13 @@ fn show_requests(notch: &Notch, requests: &mut Requests) {
                 .filter(|progress| progress.id == front.id)
                 .unwrap_or_else(|| Answering::new(front.id, questions));
             show_question(notch, questions, &progress);
-            notch.set_request_is_question(true);
+            notch.set_request_kind(RequestKind::Question);
             Some(progress)
+        }
+        Ask::Reply { message, .. } => {
+            notch.set_reply_message(message.as_str().into());
+            notch.set_request_kind(RequestKind::Reply);
+            None
         }
     };
     notch.set_has_request(true);
@@ -1071,7 +1120,7 @@ fn answer_question(
         Some(front) if front.id == id => match &front.request.ask {
             // Cloned so the progress can change while the questions are read.
             Ask::Questions(questions) => questions.clone(),
-            Ask::Permission { .. } => return,
+            Ask::Permission { .. } | Ask::Reply { .. } => return,
         },
         _ => return,
     };

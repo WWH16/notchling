@@ -277,6 +277,18 @@ sessions (needs the user, since it changes the global settings).
   describe. "Open in app", a timeout or no notch leave the question to Claude Code;
   free-text "Other" answers stay there too. Options share the 500 ms arming delay.
   Needs `--install-hooks` again. Commit `feat: answer claude's questions on the notch`.
+- [x] **8.15** Reply to Claude from the notch. The Stop hook forwards
+  `last_assistant_message` and waits; the card shows Claude's last message, scrolling
+  when long, with a reply box. Enter or Send returns the reply as
+  `hookSpecificOutput.additionalContext`, which keeps the conversation going without a
+  hook error; Claude Code's 8-continuation cap still applies. A card nobody touches
+  closes after 8 s and Claude stops as before; Dismiss does the same, and "Open in app"
+  also brings that Claude window to the front. A prompt typed in Claude Code closes the
+  card. Behind a fullscreen app, Claude stops at once and a toast says so. Clicking the
+  box activates the notch window, which otherwise never takes the keyboard.
+  Permission requests and questions from other sessions go ahead of waiting reply
+  cards. Stop now has the permission wait as its timeout, so this needs
+  `--install-hooks` again. Commit `feat: reply to claude from the notch`.
 
 ## Deviations from SPEC.md
 

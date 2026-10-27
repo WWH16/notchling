@@ -62,6 +62,9 @@ export enum NotchEdge { top, bottom, left, right }
 // Why the notch is asking for attention.
 export enum AlertKind { done, needs-input, usage-high, usage-critical }
 
+// What the card on screen asks: allow a tool, answer a question, or reply to Claude.
+export enum RequestKind { permission, question, reply }
+
 // One limit as the hover panel shows it; Rust formats the texts. `used` is a fraction
 // in 0..1, or below 0 when unknown.
 export struct LimitView {
@@ -589,9 +592,9 @@ export component Notch inherits Window {
     in property <int> request-more;
     // Whether Ctrl+Alt+Y and Ctrl+Alt+N answer the request; Rust claims the keys.
     in property <bool> shortcuts;
-    // The request is a question Claude asks, not a tool to allow: Rust shows the one the
-    // answers have reached, with its options.
-    in property <bool> request-is-question;
+    // What the card asks. For a question, Rust shows the one the answers have reached,
+    // with its options; for a reply, Claude's last message of the turn.
+    in property <RequestKind> request-kind;
     in property <string> question-text;
     // A short label for the question, such as "Framework".
     in property <string> question-header;
@@ -603,6 +606,32 @@ export component Notch inherits Window {
     // one, which `question-confirmed` then answers.
     callback option-picked(int, int);
     callback question-confirmed(int);
+
+    // Claude finished its turn: its last message, and a box to answer it from the notch.
+    in property <string> reply-message;
+    in-out property <string> reply-text;
+    // The reply typed; Claude takes it as the next message.
+    callback reply-sent(int, string);
+    // "Open in app": brings that Claude window to the front and lets Claude stop.
+    callback reply-opened(int);
+    // The reply box was clicked; Rust activates the window so it takes typing.
+    callback reply-focus-requested();
+    function send-reply() {
+        if self.reply-text != "" {
+            self.reply-sent(self.request-id, self.reply-text);
+        }
+    }
+    // A reply card nobody touches closes after a few seconds and lets Claude stop; the
+    // pointer reaching it keeps it.
+    private property <bool> reply-touched;
+    Timer {
+        interval: 8s;
+        running: root.has-request && root.request-kind == RequestKind.reply && !root.reply-touched
+            && root.reply-text == "" && !reply-input.has-focus;
+        triggered => {
+            root.decide(root.request-id, Choice.ask-in-app);
+        }
+    }
     callback decide(int, Choice);
     // Runs when a request card appears or goes, so Rust can claim or release the keys.
     callback request-shown-changed();
@@ -614,6 +643,8 @@ export component Notch inherits Window {
     }
     changed request-id => {
         self.arm();
+        self.reply-text = "";
+        self.reply-touched = false;
     }
 
     // Allow and Deny ignore clicks for a moment after a card appears, so a click meant
@@ -703,6 +734,9 @@ export component Notch inherits Window {
         } else if !self.dismissed {
             self.expanded = true;
         }
+        if self.hovered && self.has-request && self.request-kind == RequestKind.reply {
+            self.reply-touched = true;
+        }
     }
     Timer {
         interval: 250ms;
@@ -757,9 +791,12 @@ export component Notch inherits Window {
         easing: ease-out;
     }
     private property <length> request-width: 460px * Theme.text-scale;
-    // Taller by a line when Claude explains the call; a question is as tall as its options.
-    private property <length> request-height: self.request-is-question
-        ? min(question-view.preferred-height, self.fixed-height - 2 * self.shoulder-radius)
+    // Taller by a line when Claude explains the call; a question is as tall as its
+    // options, a reply as Claude's message, up to the window less its shoulders.
+    private property <length> card-room: self.fixed-height - 2 * self.shoulder-radius;
+    private property <length> request-height: self.request-kind == RequestKind.question
+        ? min(question-view.preferred-height, self.card-room)
+        : self.request-kind == RequestKind.reply ? min(reply-view.preferred-height, self.card-room)
         : (self.request-description != "" ? 222px : 196px) * Theme.text-scale;
     private property <length> alert-width: 290px * Theme.text-scale;
     private property <length> alert-height: 36px * Theme.text-scale;
@@ -1313,6 +1350,131 @@ export component Notch inherits Window {
             }
         }
 
+        reply-view := VerticalLayout {
+            opacity: 0;
+            visible: self.opacity > 0;
+            alignment: start;
+            padding-left: 18px;
+            padding-right: 18px;
+            padding-top: 13px;
+            padding-bottom: 14px;
+            spacing: 10px;
+            accessible-role: groupbox;
+            accessible-label: "Claude finished in \{root.request-project}";
+            accessible-description: root.reply-message;
+
+            HorizontalLayout {
+                spacing: 8px;
+                Logo {
+                    provider: Provider.claude;
+                    fill: Theme.claude;
+                }
+                Value {
+                    text: "Claude finished";
+                }
+                Label {
+                    text: root.request-project;
+                    overflow: elide;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                if root.request-more > 0: Label {
+                    text: "\{root.request-more} more";
+                    color: Theme.text;
+                }
+                LinkButton {
+                    label: "Open in app";
+                    clicked => {
+                        root.reply-opened(root.request-id);
+                    }
+                }
+                LinkButton {
+                    label: "Dismiss";
+                    clicked => {
+                        root.decide(root.request-id, Choice.ask-in-app);
+                    }
+                }
+            }
+
+            // Claude's last message, scrolling when long.
+            if root.reply-message != "": Rectangle {
+                height: min(message.preferred-height + 16px, 132px * Theme.text-scale);
+                background: Theme.code-surface;
+                border-radius: 10px;
+                clip: true;
+
+                Flickable {
+                    x: 12px;
+                    y: 8px;
+                    width: parent.width - 24px;
+                    height: parent.height - 16px;
+                    content-height: max(self.height, message.preferred-height);
+
+                    message := Text {
+                        // Slint centres a shorter child; the message starts at the top.
+                        y: 0;
+                        width: parent.width;
+                        height: self.preferred-height;
+                        text: root.reply-message;
+                        color: Theme.code-text;
+                        font-family: Theme.font;
+                        font-size: Theme.size-value;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 30px * Theme.text-scale;
+                    border-radius: self.height / 2;
+                    border-width: 1px;
+                    border-color: reply-input.has-focus ? Theme.muted : Theme.outline;
+
+                    if root.reply-text == "": Label {
+                        x: 14px;
+                        text: "Reply to Claude";
+                    }
+                    reply-input := TextInput {
+                        x: 14px;
+                        width: parent.width - 28px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        single-line: true;
+                        text <=> root.reply-text;
+                        color: Theme.text;
+                        selection-background-color: Theme.outline;
+                        font-family: Theme.font;
+                        font-size: Theme.size-value;
+                        accessible-label: "Reply to Claude";
+                        accepted => {
+                            root.send-reply();
+                        }
+                    }
+                    // The notch does not take the keyboard by itself; a click on the
+                    // box asks Rust for it first.
+                    if !reply-input.has-focus: TouchArea {
+                        mouse-cursor: MouseCursor.text;
+                        clicked => {
+                            root.reply-focus-requested();
+                            reply-input.focus();
+                        }
+                    }
+                }
+                PillButton {
+                    label: "Send";
+                    primary: true;
+                    armed: root.reply-text != "";
+                    clicked => {
+                        root.send-reply();
+                    }
+                }
+            }
+        }
+
         alert-view := HorizontalLayout {
             opacity: 0;
             visible: self.opacity > 0;
@@ -1350,16 +1512,17 @@ export component Notch inherits Window {
                 pill.height: root.request-height;
                 idle-row.opacity: 0;
                 detail.opacity: 0;
-                request-view.opacity: root.request-is-question ? 0 : 1;
-                question-view.opacity: root.request-is-question ? 1 : 0;
+                request-view.opacity: root.request-kind == RequestKind.permission ? 1 : 0;
+                question-view.opacity: root.request-kind == RequestKind.question ? 1 : 0;
+                reply-view.opacity: root.request-kind == RequestKind.reply ? 1 : 0;
                 in {
                     animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 220ms; easing: ease-out; }
                     animate idle-row.opacity, detail.opacity { duration: 80ms; }
-                    animate request-view.opacity, question-view.opacity { duration: 140ms; delay: 160ms; }
+                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: 140ms; delay: 160ms; }
                 }
                 out {
                     animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
-                    animate request-view.opacity, question-view.opacity { duration: 80ms; }
+                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: 80ms; }
                     animate idle-row.opacity { duration: 140ms; delay: 120ms; }
                 }
             }

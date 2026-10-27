@@ -17,7 +17,8 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey, VIRTUAL_KEY, VK_N, VK_Y,
+    MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, SetFocus, UnregisterHotKey, VIRTUAL_KEY,
+    VK_N, VK_Y,
 };
 use windows::Win32::UI::Shell::{
     QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
@@ -595,6 +596,17 @@ impl NotchWindow {
         for shortcut in Shortcut::ALL {
             // SAFETY: `hwnd` is a live window of this thread.
             let _ = unsafe { UnregisterHotKey(Some(self.hwnd), shortcut.id()) };
+        }
+    }
+
+    /// Makes the notch the foreground window with the keyboard focus, so a text box on it
+    /// takes typing. Clicks never do this, because the window does not activate on its
+    /// own; call it from a click on the notch, which Windows then allows.
+    pub fn activate(&self) {
+        // SAFETY: `hwnd` is a live window of this thread, the one SetFocus requires.
+        unsafe {
+            let _ = SetForegroundWindow(self.hwnd);
+            let _ = SetFocus(Some(self.hwnd));
         }
     }
 

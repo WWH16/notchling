@@ -27,6 +27,11 @@ const DENY_MESSAGE: &str = "The user denied this from the ai-notch overlay.";
 /// The tool Claude uses to ask the user to pick among options.
 const ASK_USER_QUESTION: &str = "AskUserQuestion";
 
+/// Put in front of a reply typed on the notch, so Claude takes it as the user's next
+/// message rather than as a note from a hook.
+const REPLY_PREFIX: &str =
+    "The user replied from the ai-notch overlay. Treat this as their next message: ";
+
 /// The fields of a Claude Code hook payload that the notch uses.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -38,6 +43,8 @@ struct HookInput {
     tool_input: Value,
     message: String,
     notification_type: String,
+    /// Claude's final reply of the turn, sent with Stop.
+    last_assistant_message: String,
 }
 
 /// Runs hook mode to completion. Prints the decision JSON when there is one.
@@ -57,7 +64,7 @@ fn handle_stdin() -> Option<String> {
     let event = to_event(&input, process::ancestors())?;
     let wants_reply = matches!(
         event,
-        Event::PermissionRequest { .. } | Event::Question { .. }
+        Event::PermissionRequest { .. } | Event::Question { .. } | Event::TaskDone { .. }
     );
 
     let connection = pipe::connect(&pipe::pipe_name().ok()?).ok()?;
@@ -119,7 +126,10 @@ fn to_event(input: &HookInput, ancestors: Vec<u32>) -> Option<Event> {
             }),
             _ => None,
         },
-        "Stop" => Some(Event::TaskDone { origin }),
+        "Stop" => Some(Event::TaskDone {
+            origin,
+            message: input.last_assistant_message.trim().to_owned(),
+        }),
         "UserPromptSubmit" => Some(Event::PromptSubmitted { origin }),
         // Claude Code does not cancel a waiting PermissionRequest hook when the user
         // answers in its own dialog; these tell the notch the call was settled.
@@ -173,6 +183,12 @@ fn decision_output(input: &HookInput, decision: Decision) -> Option<String> {
             "hookSpecificOutput": {
                 "hookEventName": "PermissionRequest",
                 "decision": { "behavior": "deny", "message": DENY_MESSAGE },
+            }
+        }),
+        ("Stop", Decision::Replied { message }) => json!({
+            "hookSpecificOutput": {
+                "hookEventName": "Stop",
+                "additionalContext": format!("{REPLY_PREFIX}{message}"),
             }
         }),
         ("PreToolUse", Decision::Answered { answers }) => {
@@ -257,7 +273,10 @@ mod tests {
     #[test]
     fn stop_and_prompt_map_to_their_events() {
         let stop = event_for(include_str!("../tests/fixtures/hooks/stop.json"));
-        assert!(matches!(stop, Some(Event::TaskDone { .. })), "{stop:?}");
+        let Some(Event::TaskDone { message, .. }) = stop else {
+            panic!("expected a finished turn, got {stop:?}");
+        };
+        assert_eq!(message, "Done. All tests pass.");
         let prompt = event_for(include_str!(
             "../tests/fixtures/hooks/user_prompt_submit.json"
         ));
@@ -385,6 +404,28 @@ mod tests {
         );
         assert_eq!(decision_output(&input, Decision::AskInApp), None);
         assert_eq!(decision_output(&input, Decision::Allow), None);
+    }
+
+    #[test]
+    fn a_reply_keeps_the_conversation_going() {
+        let stop = fixture(include_str!("../tests/fixtures/hooks/stop.json"));
+        let reply = Decision::Replied {
+            message: "Now add a test for it.".to_owned(),
+        };
+        let text = decision_output(&stop, reply).expect("replied");
+        let output: Value = serde_json::from_str(&text).expect("valid JSON");
+        let specific = &output["hookSpecificOutput"];
+        assert_eq!(specific["hookEventName"], "Stop");
+        let context = specific["additionalContext"]
+            .as_str()
+            .expect("context is text");
+        assert!(context.ends_with("Now add a test for it."), "{context}");
+        assert!(output.get("decision").is_none(), "not a hook error");
+        assert_eq!(
+            decision_output(&stop, Decision::AskInApp),
+            None,
+            "no reply lets Claude stop"
+        );
     }
 
     #[test]

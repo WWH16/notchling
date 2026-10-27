@@ -285,6 +285,7 @@ mod tests {
                 project: "p".to_owned(),
                 ancestors: vec![1],
             },
+            message: String::new(),
         };
         protocol::write_line(&mut &client, &sent).expect("send");
         let reply: Decision = protocol::read_line(&mut BufReader::new(&client))

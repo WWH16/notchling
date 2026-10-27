@@ -48,6 +48,13 @@ pub enum Ask {
     /// Claude asks the user to pick among options, answered with
     /// [`Decision::Answered`].
     Questions(Vec<Question>),
+    /// Claude finished its turn and the user may reply, with [`Decision::Replied`].
+    Reply {
+        /// Claude's final reply of the turn.
+        message: String,
+        /// Process ids above the hook, to bring that Claude window to the front.
+        ancestors: Vec<u32>,
+    },
 }
 
 /// One request shown on the notch.
@@ -58,7 +65,9 @@ pub struct Pending {
     reply: Sender<Decision>,
 }
 
-/// Requests in arrival order; the front one is on screen.
+/// Requests in arrival order, except that a session waiting on a permission or a
+/// question goes ahead of reply cards that are not on screen yet; the front one is on
+/// screen.
 #[derive(Debug, Default)]
 pub struct Requests {
     queue: VecDeque<Pending>,
@@ -68,11 +77,20 @@ pub struct Requests {
 }
 
 impl Requests {
-    /// Queues a request; `reply` receives the decision when the user clicks.
+    /// Queues a request; `reply` receives the decision when the user clicks. A blocked
+    /// session matters more than a finished one, so a permission or a question goes
+    /// ahead of the reply cards behind the one on screen.
     pub fn push(&mut self, request: Request, reply: Sender<Decision>) -> RequestId {
         let id = RequestId(self.next_id);
         self.next_id = (self.next_id + 1) % (1 << 31);
-        self.queue.push_back(Pending { id, request, reply });
+        let blocking = !matches!(request.ask, Ask::Reply { .. });
+        let at = self
+            .queue
+            .iter()
+            .skip(1)
+            .position(|pending| blocking && matches!(pending.request.ask, Ask::Reply { .. }))
+            .map_or(self.queue.len(), |behind_front| behind_front + 1);
+        self.queue.insert(at, Pending { id, request, reply });
         id
     }
 
@@ -115,14 +133,14 @@ impl Requests {
                     ..
                 } => asked_tool == tool && asked_detail == detail,
                 // Answered before the tool runs, so a settled call is never one waiting here.
-                Ask::Questions(_) => false,
+                Ask::Questions(_) | Ask::Reply { .. } => false,
             };
             request.session_id == session_id && same_call
         })
     }
 
-    /// Hands back every request from a session whose turn has ended. Returns how many
-    /// there were.
+    /// Hands back every request from a session whose turn has ended, or that the user
+    /// sent a new prompt to in Claude Code. Returns how many there were.
     pub fn settle_session(&mut self, session_id: &str) -> usize {
         self.release(|request| request.session_id == session_id)
     }
@@ -272,6 +290,38 @@ mod tests {
         assert_eq!(
             answering.confirm(&questions),
             Some(Decision::Answered { answers })
+        );
+    }
+
+    fn reply(session_id: &str) -> Request {
+        Request {
+            session_id: session_id.to_owned(),
+            project: "proj".to_owned(),
+            ask: Ask::Reply {
+                message: "Done.".to_owned(),
+                ancestors: Vec::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn blocked_sessions_go_ahead_of_waiting_replies() {
+        let mut requests = Requests::default();
+        let mut queue = |request: Request| requests.push(request, mpsc::channel().0);
+        let shown = queue(reply("s1"));
+        let waiting = queue(reply("s2"));
+        let permission = queue(request("s3", "Bash", "cargo test"));
+        let later = queue(reply("s4"));
+        let order: Vec<RequestId> = requests.queue.iter().map(|pending| pending.id).collect();
+        assert_eq!(
+            order,
+            [shown, permission, waiting, later],
+            "the reply on screen stays"
+        );
+        assert_eq!(
+            requests.settle("s2", "Bash", "cargo test"),
+            0,
+            "replies never settle"
         );
     }
 

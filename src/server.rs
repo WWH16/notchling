@@ -2,14 +2,14 @@
 
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use crate::pipe::{self, Listener};
-use crate::protocol::{self, Event, Origin};
-use crate::requests::{Ask, Request, Requests};
+use crate::protocol::{self, Decision, Event, Origin};
+use crate::requests::{Ask, Request, RequestId, Requests};
 
 /// How often a waiting request checks whether its hook process is still there.
 const DISCONNECT_CHECK: Duration = Duration::from_millis(250);
@@ -84,8 +84,23 @@ fn handle(connection: &File, requests: &Mutex<Requests>, notify: &impl Fn(Update
                 notify(Update::Requests);
             }
         }
-        Event::TaskDone { ref origin } => {
-            // The turn is over, so nothing from it can still be waiting for an answer.
+        Event::TaskDone { origin, message } => {
+            // The turn is over, so nothing else from it can still be waiting for an
+            // answer; what is left is the user's chance to reply.
+            lock(requests).settle_session(&origin.session_id);
+            let ask = Ask::Reply {
+                message: message.clone(),
+                ancestors: origin.ancestors.clone(),
+            };
+            let (id, decision) = queue(requests, origin.clone(), ask);
+            notify(Update::Requests);
+            // After queueing, so the UI finds the card, such as to drop it while the
+            // notch hides behind a fullscreen app.
+            notify(Update::Session(Event::TaskDone { origin, message }));
+            wait(connection, requests, notify, id, &decision);
+        }
+        Event::PromptSubmitted { ref origin } => {
+            // A prompt typed in Claude Code answers the session's reply card.
             if lock(requests).settle_session(&origin.session_id) > 0 {
                 notify(Update::Requests);
             }
@@ -104,14 +119,31 @@ fn wait_for_answer(
     origin: Origin,
     ask: Ask,
 ) {
+    let (id, decision) = queue(requests, origin, ask);
+    notify(Update::Requests);
+    wait(connection, requests, notify, id, &decision);
+}
+
+/// Queues `ask`, returning its id and where its answer arrives.
+fn queue(requests: &Mutex<Requests>, origin: Origin, ask: Ask) -> (RequestId, Receiver<Decision>) {
     let (reply, decision) = mpsc::channel();
     let request = Request {
         session_id: origin.session_id,
         project: origin.project,
         ask,
     };
-    let id = lock(requests).push(request, reply);
-    notify(Update::Requests);
+    (lock(requests).push(request, reply), decision)
+}
+
+/// Writes the answer to request `id` back to its hook, or drops the request once the
+/// hook goes away.
+fn wait(
+    connection: &File,
+    requests: &Mutex<Requests>,
+    notify: &impl Fn(Update),
+    id: RequestId,
+    decision: &Receiver<Decision>,
+) {
     loop {
         match decision.recv_timeout(DISCONNECT_CHECK) {
             Ok(decision) => {

@@ -29,8 +29,9 @@ const EVENTS: [&str; 8] = [
 const BACKGROUND_EVENTS: [&str; 3] = ["PostToolUse", "PostToolUseFailure", "PermissionDenied"];
 
 /// Events that wait for the user to answer on the notch, so they get the permission
-/// wait as their timeout.
-const WAITING_EVENTS: [&str; 2] = ["PermissionRequest", "PreToolUse"];
+/// wait as their timeout. Stop waits for a reply to Claude, or only a few seconds when
+/// the user leaves the card alone.
+const WAITING_EVENTS: [&str; 3] = ["PermissionRequest", "PreToolUse", "Stop"];
 
 /// The only tool the notch hooks before it runs: Claude's multiple-choice questions,
 /// which the notch can answer. Every other tool call passes PreToolUse untouched.
@@ -227,7 +228,14 @@ mod tests {
             "a question waits too"
         );
         assert!(settings["hooks"]["Stop"][0].get("matcher").is_none());
-        assert_eq!(settings["hooks"]["Stop"][0]["hooks"][0]["timeout"], 10);
+        assert_eq!(
+            settings["hooks"]["Stop"][0]["hooks"][0]["timeout"], 130,
+            "a reply to Claude waits too"
+        );
+        assert_eq!(
+            settings["hooks"]["Notification"][0]["hooks"][0]["timeout"],
+            10
+        );
         assert_eq!(
             settings["hooks"]["PostToolUse"][0]["hooks"][0]["async"],
             true

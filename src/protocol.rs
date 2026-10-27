@@ -43,8 +43,14 @@ pub enum Event {
     },
     /// Claude is waiting for the user, e.g. idle or asking a question.
     NeedsInput { origin: Origin, message: String },
-    /// Claude finished its turn.
-    TaskDone { origin: Origin },
+    /// Claude finished its turn; the hook waits for a [`Decision::Replied`] that keeps
+    /// the conversation going, or anything else to let Claude stop.
+    TaskDone {
+        origin: Origin,
+        /// Claude's final reply of the turn; empty when Claude Code sent none.
+        #[serde(default)]
+        message: String,
+    },
     /// The user sent a prompt, so Claude is now working.
     PromptSubmitted { origin: Origin },
     /// Claude Code ran a tool, saw it fail, or denied it. A request for that call was
@@ -92,6 +98,10 @@ pub enum Decision {
     /// question are joined with ", ", as Claude Code expects.
     Answered {
         answers: BTreeMap<String, String>,
+    },
+    /// The user's reply to a finished turn, which Claude takes as its next message.
+    Replied {
+        message: String,
     },
 }
 
@@ -165,7 +175,10 @@ mod tests {
                 origin: origin(),
                 message: "Claude is waiting".to_owned(),
             },
-            Event::TaskDone { origin: origin() },
+            Event::TaskDone {
+                origin: origin(),
+                message: "Done. All tests pass.".to_owned(),
+            },
             Event::PromptSubmitted { origin: origin() },
             Event::ToolSettled {
                 origin: origin(),

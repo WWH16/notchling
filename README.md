@@ -49,8 +49,7 @@ mark shows how long, such as "12m", with "×2" when two sessions are.
   settings and, on a side edge, it waits as a thin sliver until you point at it.
 - **Right-click** it to pick the provider shown (Claude, ChatGPT or Gemini), open the
   settings, or quit.
-- **Click** a "Done" or "Needs your input" alert to bring that Claude Code window to
-  the front.
+- **Click** a "Needs your input" alert to bring that Claude Code window to the front.
 
 The notch grows with Windows' text size (Settings, Accessibility, Text size).
 
@@ -94,6 +93,10 @@ How a permission request works:
   options as buttons, one question at a time; tick several and press Done where Claude
   allows more than one. "Open in app" hands the question back to Claude Code, which is
   also where you type an answer of your own.
+- When Claude finishes a turn, the notch shows its last message with a reply box.
+  Type and press Enter, and Claude carries on with your reply as its next message,
+  without you switching to Claude Code. Leave the card alone and it closes after
+  8 seconds; "Open in app" brings that Claude window to the front instead.
 - ai-notch never approves anything by itself. If the notch is not running, if you do
   not answer within the permission wait (120 s by default), or if anything goes wrong,
   Claude Code shows its normal dialog.

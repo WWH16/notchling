@@ -126,7 +126,7 @@ sessions (needs the user, since it changes the global settings).
 - [x] **5.2** Gemini parser: requests per day against a configured daily limit, always
   estimated. The day runs midnight to midnight Pacific time, when Google's daily quotas
   reset; the limit is `gemini_daily_requests` in the config (default 1000). Commit `feat: gemini usage source`.
-- [ ] **5.3** Provider selector in the right-click menu and config, accent color per
+- [x] **5.3** Provider selector in the right-click menu and config, accent color per
   provider. Commit `feat: provider selector`.
 
 ## Phase 6: Extras

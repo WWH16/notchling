@@ -194,8 +194,7 @@ export component Notch inherits Window {
     in property <string> ram-text: "-";
     in property <string> vram-text: "-";
 
-    // AI usage; texts are formatted by Rust. Hidden until the first good reading.
-    in property <bool> has-usage;
+    // AI usage of the selected provider; texts are formatted by Rust.
     in property <Provider> usage-provider;
     // The idle pill's value: the share used, or the token count when no limit is known.
     in property <string> usage-short;
@@ -248,10 +247,10 @@ export component Notch inherits Window {
     private property <length> target-height: self.has-request ? request-height
         : self.alert-active ? alert-height
         : self.expanded ? open-height : idle-height;
-    private property <length> idle-width: self.has-usage ? 250px : 190px;
+    private property <length> idle-width: 250px;
     private property <length> idle-height: 30px;
-    private property <length> open-width: self.has-usage ? 420px : 380px;
-    private property <length> open-height: self.has-usage ? 92px : 64px;
+    private property <length> open-width: 420px;
+    private property <length> open-height: 92px;
     private property <length> request-width: 460px;
     private property <length> request-height: 196px;
     private property <length> alert-width: 290px;
@@ -296,7 +295,7 @@ export component Notch inherits Window {
                 label: "GPU";
                 value: "\{round(root.gpu * 100)}%";
             }
-            if root.has-usage: HorizontalLayout {
+            HorizontalLayout {
                 spacing: 6px;
                 Dot {
                     fill: root.accent;
@@ -344,7 +343,7 @@ export component Notch inherits Window {
                 }
             }
 
-            if root.has-usage: HorizontalLayout {
+            HorizontalLayout {
                 spacing: 10px;
                 Dot {
                     fill: root.accent;

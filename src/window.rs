@@ -12,18 +12,24 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, DestroyMenu, GWL_EXSTYLE, GetCursorPos, GetWindowLongPtrW,
-    MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_STRING, MessageBoxW, SW_HIDE, SW_SHOWNOACTIVATE,
-    SetForegroundWindow, SetWindowLongPtrW, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenu, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    AppendMenuW, CheckMenuRadioItem, CreatePopupMenu, DestroyMenu, GWL_EXSTYLE, GetCursorPos,
+    GetWindowLongPtrW, HMENU, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND, MF_SEPARATOR,
+    MF_STRING, MessageBoxW, SW_HIDE, SW_SHOWNOACTIVATE, SetForegroundWindow, SetWindowLongPtrW,
+    ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW,
 };
-use windows::core::{HSTRING, w};
+use windows::core::{HSTRING, PCWSTR, w};
+
+use crate::usage::Provider;
 
 /// DPI that Windows treats as 100% scaling.
 const BASE_DPI: f32 = 96.0;
 
 /// Menu command id for [`MenuChoice::Quit`]; 0 is reserved for "dismissed".
 const MENU_QUIT: usize = 1;
+
+/// Menu command id of the first provider; the others follow in [`Provider::ALL`] order.
+const MENU_FIRST_PROVIDER: usize = 10;
 
 /// The icon of a [`message_box`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +58,8 @@ pub fn message_box(title: &str, text: &str, kind: MessageKind) {
 /// An item picked from the notch's right-click menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuChoice {
+    /// Show this provider's usage on the notch.
+    Show(Provider),
     Quit,
 }
 
@@ -139,30 +147,33 @@ impl NotchWindow {
         }
     }
 
-    /// Shows the right-click menu at the cursor and waits for a pick.
+    /// Shows the right-click menu at the cursor, with `shown` marked as the provider on
+    /// the notch, and waits for a pick.
     ///
     /// Returns `None` when the menu is dismissed or cannot be shown.
-    pub fn show_menu(&self) -> Option<MenuChoice> {
+    pub fn show_menu(&self, shown: Provider) -> Option<MenuChoice> {
         // SAFETY: the menu is created, used and destroyed here; `hwnd` is live and owns
         // the menu while it tracks.
-        unsafe {
+        let picked = unsafe {
             let menu = CreatePopupMenu().ok()?;
-            let picked = AppendMenuW(menu, MF_STRING, MENU_QUIT, w!("Quit ai-notch"))
-                .ok()
-                .and_then(|()| {
-                    let mut cursor = POINT::default();
-                    GetCursorPos(&mut cursor).ok()?;
-                    // Without this the menu does not close when clicking elsewhere.
-                    let _ = SetForegroundWindow(self.hwnd);
-                    let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
-                    let id = TrackPopupMenu(menu, flags, cursor.x, cursor.y, None, self.hwnd, None);
-                    usize::try_from(id.0).ok()
-                });
+            let picked = fill_menu(menu, shown).ok().and_then(|()| {
+                let mut cursor = POINT::default();
+                GetCursorPos(&mut cursor).ok()?;
+                // Without this the menu does not close when clicking elsewhere.
+                let _ = SetForegroundWindow(self.hwnd);
+                let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
+                let id = TrackPopupMenu(menu, flags, cursor.x, cursor.y, None, self.hwnd, None);
+                usize::try_from(id.0).ok()
+            });
             let _ = DestroyMenu(menu);
-            match picked? {
-                MENU_QUIT => Some(MenuChoice::Quit),
-                _ => None,
-            }
+            picked?
+        };
+        match picked {
+            MENU_QUIT => Some(MenuChoice::Quit),
+            id => id
+                .checked_sub(MENU_FIRST_PROVIDER)
+                .and_then(|index| Provider::ALL.get(index))
+                .map(|&provider| MenuChoice::Show(provider)),
         }
     }
 
@@ -176,6 +187,36 @@ impl NotchWindow {
                 let _ = DeleteObject(region.into());
             }
         }
+    }
+}
+
+/// Adds the provider choices, with `shown` marked, and Quit to an empty popup menu.
+///
+/// # Safety
+///
+/// `menu` must be a live menu handle.
+unsafe fn fill_menu(menu: HMENU, shown: Provider) -> windows::core::Result<()> {
+    let id = |index: usize| MENU_FIRST_PROVIDER + index;
+    let check_id = |index: usize| u32::try_from(id(index)).expect("menu ids are small");
+    let shown = Provider::ALL
+        .iter()
+        .position(|&provider| provider == shown)
+        .expect("Provider::ALL lists every provider");
+    let last = Provider::ALL.len() - 1;
+    // SAFETY: the caller guarantees `menu` is live; every string outlives its call.
+    unsafe {
+        for (index, provider) in Provider::ALL.iter().enumerate() {
+            AppendMenuW(menu, MF_STRING, id(index), &HSTRING::from(provider.name()))?;
+        }
+        CheckMenuRadioItem(
+            menu,
+            check_id(0),
+            check_id(last),
+            check_id(shown),
+            MF_BYCOMMAND.0,
+        )?;
+        AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        AppendMenuW(menu, MF_STRING, MENU_QUIT, w!("Quit ai-notch"))
     }
 }
 

@@ -3,31 +3,43 @@
 mod claude;
 mod claude_account;
 mod claude_local;
-#[expect(
-    dead_code,
-    reason = "shown once the provider selector lands in step 5.3"
-)]
 mod codex;
-#[expect(
-    dead_code,
-    reason = "shown once the provider selector lands in step 5.3"
-)]
 mod gemini;
 
 pub use claude::Claude;
+pub use codex::Codex;
+pub use gemini::Gemini;
 
 use std::collections::BTreeMap;
 use std::thread;
 use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, Utc};
+use serde::{Deserialize, Serialize};
 
-/// An AI provider the notch can show usage for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// An AI provider the notch can show usage for. Written in the config in lowercase.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Provider {
+    #[default]
     Claude,
     ChatGpt,
     Gemini,
+}
+
+impl Provider {
+    /// Every provider, in menu order.
+    pub const ALL: [Self; 3] = [Self::Claude, Self::ChatGpt, Self::Gemini];
+
+    /// The name people know the provider's assistant by.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Claude => "Claude",
+            Self::ChatGpt => "ChatGPT",
+            Self::Gemini => "Gemini",
+        }
+    }
 }
 
 /// How much of a provider's limit is in use. Each source fills in what it knows.

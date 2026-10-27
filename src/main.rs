@@ -19,6 +19,7 @@ mod ui {
     slint::include_modules!();
 }
 
+use std::collections::HashMap;
 use std::env;
 use std::mem;
 use std::rc::Rc;
@@ -27,6 +28,7 @@ use std::time::{Duration, Instant};
 
 use awake::KeepAwake;
 use chrono::Utc;
+use config::Config;
 use gpu::GpuLoad;
 use pipe::Listener;
 use protocol::{Decision, Event, Origin};
@@ -35,7 +37,7 @@ use server::Update;
 use slint::{ComponentHandle, Timer, TimerMode, Weak};
 use system::SystemLoad;
 use ui::{AlertKind, Choice, Notch};
-use usage::{Claude, Reading};
+use usage::{Claude, Codex, Gemini, Provider, Reading, Usage};
 use window::{MenuChoice, MessageKind, NotchWindow};
 
 /// One frame at 60 Hz; how often to check whether the native window exists yet.
@@ -57,9 +59,13 @@ const NEEDS_INPUT_ALERT: Duration = Duration::from_secs(15);
 const AWAKE_CHECK: Duration = Duration::from_secs(60);
 
 /// How often Claude Code's logs are checked; each check parses only appended lines.
-/// Also how often the reset countdown ticks, which shows whole minutes. The account
+/// Also how often Claude's reset countdown ticks, which shows whole minutes. The account
 /// endpoint is asked less often; see `usage::Claude`.
-const USAGE_INTERVAL: Duration = Duration::from_secs(30);
+const CLAUDE_INTERVAL: Duration = Duration::from_secs(30);
+
+/// How often the Codex and Gemini CLI logs are checked. Their limits reset over days,
+/// so a minute is fresh enough.
+const CLI_LOG_INTERVAL: Duration = Duration::from_secs(60);
 
 fn main() -> anyhow::Result<()> {
     match env::args().nth(1).as_deref() {
@@ -81,40 +87,59 @@ fn main() -> anyhow::Result<()> {
     // Claiming the pipe first also stops a second notch from starting.
     let listener = Listener::bind(&pipe::pipe_name()?)?;
 
+    let config = Config::load();
+    let usages = Arc::new(Mutex::new(Usages::new(config.provider())));
+
     let notch = Notch::new()?;
     window::place_top_center(notch.window(), notch.get_fixed_width())?;
+    show_usage(&notch, config.provider(), None);
     notch.show()?;
 
-    on_native_window(notch.as_weak(), NATIVE_WINDOW_ATTEMPTS, |notch, native| {
-        native.apply_tool_styles();
-        let native = Rc::new(native);
+    let menu_usages = Arc::clone(&usages);
+    on_native_window(
+        notch.as_weak(),
+        NATIVE_WINDOW_ATTEMPTS,
+        move |notch, native| {
+            native.apply_tool_styles();
+            let native = Rc::new(native);
 
-        let menu_native = Rc::clone(&native);
-        notch.on_menu_requested(move || {
-            if menu_native.show_menu() == Some(MenuChoice::Quit) {
-                // Only fails when the loop already stopped, which is what we want anyway.
-                let _ = slint::quit_event_loop();
-            }
-        });
+            let menu_native = Rc::clone(&native);
+            let weak = notch.as_weak();
+            notch.on_menu_requested(move || {
+                let shown = lock_usages(&menu_usages).shown;
+                match menu_native.show_menu(shown) {
+                    Some(MenuChoice::Quit) => {
+                        // Only fails when the loop already stopped, which is what we want anyway.
+                        let _ = slint::quit_event_loop();
+                    }
+                    Some(MenuChoice::Show(provider)) => {
+                        if let Some(notch) = weak.upgrade() {
+                            select_provider(&notch, &menu_usages, provider);
+                        }
+                    }
+                    None => {}
+                }
+            });
 
-        let weak = notch.as_weak();
-        let clip = move || {
-            let Some(notch) = weak.upgrade() else {
-                return;
+            let weak = notch.as_weak();
+            let clip = move || {
+                let Some(notch) = weak.upgrade() else {
+                    return;
+                };
+                native.clip_to(window::shape_rect(
+                    notch.get_fixed_width(),
+                    notch.get_shape_width(),
+                    notch.get_shape_height(),
+                    notch.window().scale_factor(),
+                ));
             };
-            native.clip_to(window::shape_rect(
-                notch.get_fixed_width(),
-                notch.get_shape_width(),
-                notch.get_shape_height(),
-                notch.window().scale_factor(),
-            ));
-        };
-        clip();
-        notch.on_shape_changed(clip);
-    });
+            clip();
+            notch.on_shape_changed(clip);
+        },
+    );
 
     let _stats = start_stats(&notch);
-    start_usage(&notch);
+    start_usage(&notch, &usages, &config);
     let _awake_check = serve_hooks(&notch, listener);
 
     slint::run_event_loop()?;
@@ -172,24 +197,76 @@ fn start_stats(notch: &Notch) -> Timer {
     timer
 }
 
-/// Polls Claude usage and shows it on the notch.
-fn start_usage(notch: &Notch) {
-    // Without a user profile there are no logs or login to read, so the usage stays hidden.
-    let Ok(source) = Claude::try_new() else {
-        return;
-    };
-    let weak = notch.as_weak();
-    usage::spawn(source, USAGE_INTERVAL, move |reading| {
-        // Fails only once the event loop has quit, when nothing needs drawing.
-        let _ = weak.upgrade_in_event_loop(move |notch| show_usage(&notch, reading));
-    });
+/// The latest good usage reading of each provider, and which one the notch shows.
+#[derive(Debug)]
+struct Usages {
+    shown: Provider,
+    latest: HashMap<Provider, Usage>,
 }
 
-/// Puts a usage reading on the notch. A failed read hides the usage instead of
-/// leaving stale numbers up.
-fn show_usage(notch: &Notch, reading: Reading) {
-    let Ok(usage) = reading.usage else {
-        notch.set_has_usage(false);
+impl Usages {
+    fn new(shown: Provider) -> Self {
+        Self {
+            shown,
+            latest: HashMap::new(),
+        }
+    }
+}
+
+fn lock_usages(usages: &Mutex<Usages>) -> std::sync::MutexGuard<'_, Usages> {
+    usages.lock().expect("usages lock poisoned")
+}
+
+/// Polls every provider's usage in the background and keeps the notch showing the
+/// selected one. A provider whose source cannot start shows as "no data".
+fn start_usage(notch: &Notch, usages: &Arc<Mutex<Usages>>, config: &Config) {
+    let weak = notch.as_weak();
+    let usages = Arc::clone(usages);
+    let notify = move |reading: Reading| {
+        let usages = Arc::clone(&usages);
+        // Fails only once the event loop has quit, when nothing needs drawing.
+        let _ = weak.upgrade_in_event_loop(move |notch| {
+            let mut usages = lock_usages(&usages);
+            // A failed read drops the old numbers instead of leaving them up as current.
+            match reading.usage {
+                Ok(usage) => usages.latest.insert(reading.provider, usage),
+                Err(_) => usages.latest.remove(&reading.provider),
+            };
+            if reading.provider == usages.shown {
+                show_usage(&notch, usages.shown, usages.latest.get(&usages.shown));
+            }
+        });
+    };
+    if let Ok(source) = Claude::try_new() {
+        usage::spawn(source, CLAUDE_INTERVAL, notify.clone());
+    }
+    if let Ok(source) = Codex::try_new() {
+        usage::spawn(source, CLI_LOG_INTERVAL, notify.clone());
+    }
+    if let Ok(source) = Gemini::try_new(config.gemini_daily_requests()) {
+        usage::spawn(source, CLI_LOG_INTERVAL, notify);
+    }
+}
+
+/// Shows `provider` on the notch from now on, and remembers the choice in the config.
+fn select_provider(notch: &Notch, usages: &Mutex<Usages>, provider: Provider) {
+    let mut usages = lock_usages(usages);
+    usages.shown = provider;
+    show_usage(notch, provider, usages.latest.get(&provider));
+    // On failure the choice only lasts until the notch restarts.
+    let _ = Config::update(|config| config.set_provider(provider));
+}
+
+/// Puts a provider's usage on the notch, or "no data" when there is no good reading.
+fn show_usage(notch: &Notch, provider: Provider, usage: Option<&Usage>) {
+    notch.set_usage_provider(provider.into());
+    let Some(usage) = usage else {
+        notch.set_usage_short("-".into());
+        notch.set_usage_tokens("".into());
+        notch.set_usage_rate("".into());
+        notch.set_usage_weekly("".into());
+        notch.set_usage_reset("no data".into());
+        notch.set_usage_estimated(false);
         return;
     };
     let tokens = usage.tokens.map(usage::compact);
@@ -206,7 +283,6 @@ fn show_usage(notch: &Notch, reading: Reading) {
         || "no window open".to_owned(),
         |at| format!("resets in {}", usage::countdown(at - Utc::now())),
     );
-    notch.set_usage_provider(reading.provider.into());
     notch.set_usage_short(short.into());
     notch.set_usage_tokens(
         tokens
@@ -221,7 +297,6 @@ fn show_usage(notch: &Notch, reading: Reading) {
     notch.set_usage_weekly(weekly.unwrap_or_default().into());
     notch.set_usage_reset(reset.into());
     notch.set_usage_estimated(usage.estimated);
-    notch.set_has_usage(true);
 }
 
 /// Accepts hook connections and reacts to their events on the notch. Returns the

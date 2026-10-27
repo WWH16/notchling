@@ -22,6 +22,7 @@ mod ui {
     slint::include_modules!();
 }
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::env;
 use std::mem;
@@ -53,6 +54,9 @@ const NATIVE_WINDOW_ATTEMPTS: u32 = 60;
 
 /// How often the CPU, GPU and RAM readings refresh, matching Task Manager's default.
 const STATS_INTERVAL: Duration = Duration::from_secs(1);
+
+/// How often the notch checks for a fullscreen app to hide from.
+const FULLSCREEN_CHECK: Duration = Duration::from_secs(1);
 
 /// How long "task done" stays on the notch.
 const DONE_ALERT: Duration = Duration::from_secs(5);
@@ -112,6 +116,8 @@ fn main() -> anyhow::Result<()> {
     let status_switch = start_status(&notch, &usages);
 
     let menu_usages = Arc::clone(&usages);
+    let fullscreen_check = Rc::new(Timer::default());
+    let fullscreen_timer = Rc::clone(&fullscreen_check);
     on_native_window(
         notch.as_weak(),
         NATIVE_WINDOW_ATTEMPTS,
@@ -120,6 +126,18 @@ fn main() -> anyhow::Result<()> {
             let native = Rc::new(native);
 
             let menu_native = Rc::clone(&native);
+            let fullscreen_native = Rc::clone(&native);
+            let hidden = Cell::new(false);
+            fullscreen_timer.start(TimerMode::Repeated, FULLSCREEN_CHECK, move || {
+                let hide = window::fullscreen_app_in_front();
+                if hide != hidden.replace(hide) {
+                    if hide {
+                        fullscreen_native.hide();
+                    } else {
+                        fullscreen_native.show();
+                    }
+                }
+            });
             let weak = notch.as_weak();
             notch.on_menu_requested(move || {
                 let shown = lock_usages(&menu_usages).shown;

@@ -143,7 +143,9 @@ sessions (needs the user, since it changes the global settings).
   Any provider with a known share alerts, shown or not; amber below the last threshold,
   red at it. Thresholds are `usage_alerts` in the config. Only the main window (5-hour,
   30-day or daily) alerts, not the weekly one. Commit `feat: usage threshold alerts`.
-- [ ] **6.3** Hide during fullscreen apps via `SHQueryUserNotificationState`.
+- [x] **6.3** Hide during fullscreen apps via `SHQueryUserNotificationState`.
+  Checked every second; busy, D3D fullscreen and presentation mode hide the window
+  natively, since hiding Slint's last window would end its event loop.
   Commit `feat: hide during fullscreen`.
 - [ ] **6.4** Settings window: monitor picker, thresholds, hook timeout, account source
   toggle. Commit `feat: settings window`.

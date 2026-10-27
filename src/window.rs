@@ -11,6 +11,9 @@ use windows::Win32::Graphics::Gdi::{
     MonitorFromPoint, SetWindowRgn,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows::Win32::UI::Shell::{
+    QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CheckMenuRadioItem, CreatePopupMenu, DestroyMenu, GWL_EXSTYLE, GetCursorPos,
     GetWindowLongPtrW, HMENU, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND, MF_SEPARATOR,
@@ -61,6 +64,20 @@ pub enum MenuChoice {
     /// Show this provider's usage on the notch.
     Show(Provider),
     Quit,
+}
+
+/// Whether a fullscreen app, game or presentation is in front, so the notch should
+/// stay out of the way.
+#[must_use]
+pub fn fullscreen_app_in_front() -> bool {
+    // SAFETY: SHQueryUserNotificationState has no preconditions.
+    let state = unsafe { SHQueryUserNotificationState() };
+    state.is_ok_and(|state| {
+        matches!(
+            state,
+            QUNS_BUSY | QUNS_RUNNING_D3D_FULL_SCREEN | QUNS_PRESENTATION_MODE
+        )
+    })
 }
 
 /// Moves a not-yet-shown window to the top center of the primary monitor.
@@ -145,6 +162,19 @@ impl NotchWindow {
             SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, style);
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
         }
+    }
+
+    /// Hides the window behind Slint's back: hiding Slint's last window would end the
+    /// event loop.
+    pub fn hide(&self) {
+        // SAFETY: `hwnd` is a live window owned by this thread's Slint event loop.
+        let _ = unsafe { ShowWindow(self.hwnd, SW_HIDE) };
+    }
+
+    /// Shows the window again after [`NotchWindow::hide`], without taking focus.
+    pub fn show(&self) {
+        // SAFETY: `hwnd` is a live window owned by this thread's Slint event loop.
+        let _ = unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
     }
 
     /// Shows the right-click menu at the cursor, with `shown` marked as the provider on

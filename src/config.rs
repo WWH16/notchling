@@ -25,12 +25,17 @@ pub struct Config {
     /// Seconds a permission request waits for a click before Claude Code shows its
     /// own dialog.
     hook_timeout_secs: u64,
+    /// Gemini CLI requests allowed per day. The CLI logs no quota, so this is the
+    /// limit the Gemini share is estimated against.
+    gemini_daily_requests: u32,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             hook_timeout_secs: 120,
+            // The Gemini CLI's daily request limit for a free Google login.
+            gemini_daily_requests: 1000,
         }
     }
 }
@@ -62,6 +67,13 @@ impl Config {
             .hook_timeout_secs
             .clamp(MIN_HOOK_TIMEOUT_SECS, MAX_HOOK_TIMEOUT_SECS);
         Duration::from_secs(secs)
+    }
+
+    /// Gemini CLI requests allowed per day, at least 1.
+    #[expect(dead_code, reason = "read when the Gemini source starts in step 5.3")]
+    #[must_use]
+    pub fn gemini_daily_requests(&self) -> u32 {
+        self.gemini_daily_requests.max(1)
     }
 }
 

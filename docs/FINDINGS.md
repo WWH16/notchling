@@ -109,4 +109,4 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
 - 2.5: ignore `Notification` events whose type is `permission_prompt`.
 - 4.2: dropped at Phase 4.
 - 5.1: add the `zstd` dependency; Codex gives an exact %, not an estimate.
-- Plans: Claude Pro, ChatGPT Go. Update SPEC.md wording when Phase 5 starts.
+- Plans: Claude Pro, ChatGPT Go. SPEC.md updated at Phase 5.

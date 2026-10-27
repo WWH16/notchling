@@ -1,3 +1,7 @@
 {"sessionId":"00000000-0000-0000-0000-00000000000a","projectHash":"example","startTime":"2026-06-18T10:59:49.527Z","lastUpdated":"2026-06-18T11:05:33.475Z","kind":"main"}
 {"id":"m1","timestamp":"2026-06-18T10:59:49.527Z","type":"user","content":"example prompt"}
 {"id":"m2","timestamp":"2026-06-18T11:00:02.000Z","type":"gemini","content":"example reply","model":"gemini-3-flash-preview","tokens":{"input":12963,"output":22,"cached":7599,"thoughts":155,"tool":0,"total":13140}}
+{"id":"m3","timestamp":"2026-06-18T11:01:00.000Z","type":"gemini","content":"","thoughts":[],"toolCalls":[{"name":"example_tool"}]}
+{"id":"m3","timestamp":"2026-06-18T11:01:00.000Z","type":"gemini","content":"example reply","thoughts":[],"model":"gemini-3-flash-preview","tokens":{"input":100,"output":10,"cached":0,"thoughts":5,"tool":0,"total":115}}
+{"$set":{"lastUpdated":"2026-06-18T11:05:33.475Z"}}
+{"id":"m4","timestamp":"2026-06-17T23:00:00.000Z","type":"gemini","content":"example reply","thoughts":[],"model":"gemini-3-flash-preview","tokens":{"input":900,"output":99,"cached":0,"thoughts":0,"tool":0,"total":999}}

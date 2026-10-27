@@ -8,6 +8,11 @@ mod claude_local;
     reason = "shown once the provider selector lands in step 5.3"
 )]
 mod codex;
+#[expect(
+    dead_code,
+    reason = "shown once the provider selector lands in step 5.3"
+)]
+mod gemini;
 
 pub use claude::Claude;
 

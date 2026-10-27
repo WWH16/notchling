@@ -123,8 +123,9 @@ sessions (needs the user, since it changes the global settings).
 ## Phase 5: ChatGPT, Gemini, provider selector
 
 - [x] **5.1** Codex parser, per V2. Commit `feat: codex usage source`.
-- [ ] **5.2** Gemini parser: requests per day against a configured daily limit, always
-  estimated. Commit `feat: gemini usage source`.
+- [x] **5.2** Gemini parser: requests per day against a configured daily limit, always
+  estimated. The day runs midnight to midnight Pacific time, when Google's daily quotas
+  reset; the limit is `gemini_daily_requests` in the config (default 1000). Commit `feat: gemini usage source`.
 - [ ] **5.3** Provider selector in the right-click menu and config, accent color per
   provider. Commit `feat: provider selector`.
 

@@ -65,10 +65,10 @@ The app must never crash because a source broke.
     try the data Claude Code's own `/usage` screen uses, via its existing login.
     Fallback: user pastes a claude.ai session token, stored in Credential Manager.
     Never log tokens.
-- ChatGPT (Pro plan, no API key)
+- ChatGPT (Go plan, no API key)
   - Codex CLI logs in `~/.codex/sessions/`. Recent versions include 5h/weekly
     rate-limit % and reset times; use them if present, otherwise estimate.
-  - Skip ChatGPT app usage (no endpoint; Pro is near-unlimited).
+  - Skip ChatGPT app usage (no endpoint).
 - Gemini (Google AI Plus, no API key)
   - Gemini CLI logs in `~/.gemini/`: request/token counts today vs. known daily limit.
     Always marked estimated.

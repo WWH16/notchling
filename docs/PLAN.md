@@ -294,6 +294,12 @@ sessions (needs the user, since it changes the global settings).
   `/name arguments` into an instruction to invoke skill `name` with the Skill tool,
   then follow it with the arguments, or say no skill has that name. Commit
   `feat: run skills from notch replies`.
+- [x] **8.17** CPU and GPU are optional: `show_cpu` (CPU, and RAM in the panel) and
+  `show_gpu` (GPU and VRAM), both on by default, as checkboxes in Settings. The idle
+  pill sizes itself to what it shows instead of fixed widths, so turning readings off
+  shrinks it; the panel drops the hairline when neither shows, and upright it pairs
+  CPU with RAM and GPU with VRAM. GPU counters are not read while the GPU is hidden.
+  Commit `feat: optional cpu and gpu readings`.
 
 ## Deviations from SPEC.md
 

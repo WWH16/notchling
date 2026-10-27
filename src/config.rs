@@ -50,6 +50,10 @@ pub struct Config {
     /// Whether the idle notch tucks into a thin sliver on the left and right edges until
     /// the pointer reaches it.
     tuck: bool,
+    /// Whether the notch shows CPU load, and RAM in its panel.
+    show_cpu: bool,
+    /// Whether the notch shows GPU load, and VRAM in its panel.
+    show_gpu: bool,
     /// The screen edge the notch sticks to; set by dragging it.
     edge: Option<Edge>,
     /// Where along that edge the notch sits, from 0 to 1: left to right on the top and
@@ -73,6 +77,8 @@ impl Default for Config {
             claude_account: true,
             request_shortcuts: false,
             tuck: false,
+            show_cpu: true,
+            show_gpu: true,
             edge: None,
             position: 0.5,
             position_y: None,
@@ -181,6 +187,26 @@ impl Config {
 
     pub fn set_tuck(&mut self, enabled: bool) {
         self.tuck = enabled;
+    }
+
+    /// Whether the notch shows CPU load and RAM.
+    #[must_use]
+    pub fn show_cpu(&self) -> bool {
+        self.show_cpu
+    }
+
+    pub fn set_show_cpu(&mut self, shown: bool) {
+        self.show_cpu = shown;
+    }
+
+    /// Whether the notch shows GPU load and VRAM.
+    #[must_use]
+    pub fn show_gpu(&self) -> bool {
+        self.show_gpu
+    }
+
+    pub fn set_show_gpu(&mut self, shown: bool) {
+        self.show_gpu = shown;
     }
 
     /// The screen edge the notch sticks to.
@@ -323,6 +349,11 @@ mod tests {
         config.set_claude_account(false);
         config.set_request_shortcuts(true);
         config.set_tuck(true);
+        assert!(
+            config.show_cpu() && config.show_gpu(),
+            "both show by default"
+        );
+        config.set_show_gpu(false);
         let text = toml::to_string(&config).expect("config serializes");
         assert_eq!(Config::parse(&text), Ok(config));
         assert!(

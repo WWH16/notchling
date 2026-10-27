@@ -552,6 +552,9 @@ export component Notch inherits Window {
     in property <float> vram;
     in property <string> ram-text: "-";
     in property <string> vram-text: "-";
+    // Which system readings show: CPU with RAM, and GPU with VRAM.
+    in property <bool> show-cpu: true;
+    in property <bool> show-gpu: true;
 
     // AI usage of the selected provider; texts are formatted by Rust. Shares are
     // fractions in 0..1, or below 0 when unknown.
@@ -770,10 +773,13 @@ export component Notch inherits Window {
     private property <bool> tucked: self.tuck && self.vertical && !self.hovered && !self.expanded
         && !self.has-request && !self.alert-active && !self.floating;
     private property <bool> working: self.activity != "";
+    // The idle pill fits what it shows, so turning readings off shrinks it.
     private property <length> idle-width: self.tucked ? 6px
-        : (self.vertical ? 56px : self.working ? 312px : 236px) * Theme.text-scale;
+        : self.vertical ? 56px * Theme.text-scale
+        : max(idle-wide.preferred-width + 44px, 60px);
     private property <length> idle-height: self.tucked ? 96px
-        : (self.vertical ? (self.working ? 196px : 148px) : 32px) * Theme.text-scale;
+        : self.vertical ? max(idle-tall.preferred-height + 18px, 60px)
+        : 32px * Theme.text-scale;
     // Wide enough for "ChatGPT", "Outage" and "estimated" on one line, and as tall as
     // the provider's limits need, within the window less its shoulders.
     private property <length> open-width: (self.vertical ? 230px : 460px) * Theme.text-scale;
@@ -886,7 +892,9 @@ export component Notch inherits Window {
         clip: true;
         accessible-role: groupbox;
         accessible-label: "ai-notch";
-        accessible-description: "\{root.provider-name} \{root.usage-short}, CPU \{round(root.cpu * 100)}%, GPU \{round(root.gpu * 100)}%"
+        accessible-description: "\{root.provider-name} \{root.usage-short}"
+            + (root.show-cpu ? ", CPU \{round(root.cpu * 100)}%" : "")
+            + (root.show-gpu ? ", GPU \{round(root.gpu * 100)}%" : "")
             + (root.working ? ", Claude working \{root.activity}" : "");
 
         hover := TouchArea {
@@ -923,8 +931,10 @@ export component Notch inherits Window {
         }
 
         idle-row := Rectangle {
-            // The provider leads; the system readings follow, quieter.
-            if !root.vertical: HorizontalLayout {
+            // The provider leads; the system readings follow, quieter. Both layouts
+            // always exist, so the pill can size itself to the one that shows.
+            idle-wide := HorizontalLayout {
+                visible: !root.vertical;
                 alignment: center;
                 spacing: 16px;
                 HorizontalLayout {
@@ -939,7 +949,7 @@ export component Notch inherits Window {
                         text: root.usage-short;
                     }
                 }
-                HorizontalLayout {
+                if root.show-cpu: HorizontalLayout {
                     spacing: 5px;
                     Label {
                         text: "CPU";
@@ -948,7 +958,7 @@ export component Notch inherits Window {
                         text: "\{round(root.cpu * 100)}%";
                     }
                 }
-                HorizontalLayout {
+                if root.show-gpu: HorizontalLayout {
                     spacing: 5px;
                     Label {
                         text: "GPU";
@@ -972,7 +982,8 @@ export component Notch inherits Window {
                     }
                 }
             }
-            if root.vertical: VerticalLayout {
+            idle-tall := VerticalLayout {
+                visible: root.vertical;
                 alignment: center;
                 spacing: 12px;
                 VerticalLayout {
@@ -992,11 +1003,11 @@ export component Notch inherits Window {
                         horizontal-alignment: center;
                     }
                 }
-                StackedPair {
+                if root.show-cpu: StackedPair {
                     label: "CPU";
                     value: "\{round(root.cpu * 100)}%";
                 }
-                StackedPair {
+                if root.show-gpu: StackedPair {
                     label: "GPU";
                     value: "\{round(root.gpu * 100)}%";
                 }
@@ -1076,36 +1087,36 @@ export component Notch inherits Window {
                     line: limit-line;
                 }
 
-                Rectangle {
+                if root.show-cpu || root.show-gpu: Rectangle {
                     height: 1px;
                     background: Theme.rule;
                 }
 
-                if !root.vertical: HorizontalLayout {
+                if !root.vertical && (root.show-cpu || root.show-gpu): HorizontalLayout {
                     spacing: 18px;
-                    Stat {
+                    if root.show-cpu: Stat {
                         label: "CPU";
                         value: "\{round(root.cpu * 100)}%";
                         fraction: root.cpu;
                     }
-                    Stat {
+                    if root.show-gpu: Stat {
                         label: "GPU";
                         value: "\{round(root.gpu * 100)}%";
                         fraction: root.gpu;
                     }
-                    Stat {
+                    if root.show-cpu: Stat {
                         label: "RAM";
                         value: root.ram-text;
                         fraction: root.ram;
                     }
-                    Stat {
+                    if root.show-gpu: Stat {
                         label: "VRAM";
                         value: root.vram-text;
                         fraction: root.vram;
                     }
                 }
-                // Upright, the readings pair up so the panel stays short.
-                if root.vertical: HorizontalLayout {
+                // Upright, each device's readings pair up so the panel stays short.
+                if root.vertical && root.show-cpu: HorizontalLayout {
                     spacing: 16px;
                     Stat {
                         label: "CPU";
@@ -1113,17 +1124,17 @@ export component Notch inherits Window {
                         fraction: root.cpu;
                     }
                     Stat {
-                        label: "GPU";
-                        value: "\{round(root.gpu * 100)}%";
-                        fraction: root.gpu;
-                    }
-                }
-                if root.vertical: HorizontalLayout {
-                    spacing: 16px;
-                    Stat {
                         label: "RAM";
                         value: root.ram-text;
                         fraction: root.ram;
+                    }
+                }
+                if root.vertical && root.show-gpu: HorizontalLayout {
+                    spacing: 16px;
+                    Stat {
+                        label: "GPU";
+                        value: "\{round(root.gpu * 100)}%";
+                        fraction: root.gpu;
                     }
                     Stat {
                         label: "VRAM";

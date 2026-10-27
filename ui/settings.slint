@@ -28,6 +28,8 @@ export component Settings inherits Window {
     in-out property <bool> claude-account;
     in-out property <bool> request-shortcuts;
     in-out property <bool> tuck;
+    in-out property <bool> show-cpu;
+    in-out property <bool> show-gpu;
     // Why the last save failed; empty when it did not.
     in property <string> error;
     callback save();
@@ -88,6 +90,19 @@ export component Settings inherits Window {
                     step-size: 100;
                     value <=> root.gemini-limit;
                 }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 18px;
+            alignment: start;
+            CheckBox {
+                text: "Show CPU and RAM";
+                checked <=> root.show-cpu;
+            }
+            CheckBox {
+                text: "Show GPU and VRAM";
+                checked <=> root.show-gpu;
             }
         }
 

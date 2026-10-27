@@ -156,6 +156,8 @@ Right-click the notch and choose **Settings…**, or edit
 | `claude_account` | `true` | Read exact Claude usage from the account endpoint, refreshing Claude Code's login when needed |
 | `request_shortcuts` | `false` | Ctrl+Alt+Y allows and Ctrl+Alt+N denies the request on the notch |
 | `tuck` | `false` | On the left or right edge, the notch waits as a thin sliver until you point at it |
+| `show_cpu` | `true` | Show CPU load on the pill, and RAM in the panel |
+| `show_gpu` | `true` | Show GPU load on the pill, and VRAM in the panel |
 | `edge` | `"top"` | The screen edge the notch sticks to: `"top"`, `"bottom"`, `"left"` or `"right"`; set by dragging |
 | `position` | `0.5` | Where along that edge it sits, from 0 to 1 (left to right, or top to bottom on a side edge); set by dragging |
 | `monitor` | primary display | Display the notch sits on, as Windows names it: `monitor = '\\.\DISPLAY2'` (single quotes, so the backslashes stay as they are) |

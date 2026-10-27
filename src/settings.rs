@@ -45,6 +45,8 @@ pub fn open(
     settings.set_claude_account(config.claude_account());
     settings.set_request_shortcuts(config.request_shortcuts());
     settings.set_tuck(config.tuck());
+    settings.set_show_cpu(config.show_cpu());
+    settings.set_show_gpu(config.show_gpu());
     settings.set_error(SharedString::new());
 
     let weak = settings.as_weak();
@@ -74,6 +76,7 @@ pub fn open(
         let account = settings.get_claude_account();
         let shortcuts = settings.get_request_shortcuts();
         let tuck = settings.get_tuck();
+        let (show_cpu, show_gpu) = (settings.get_show_cpu(), settings.get_show_gpu());
         let updated = Config::update(|config| {
             config.set_monitor(monitor);
             config.set_usage_alerts(alerts);
@@ -82,6 +85,8 @@ pub fn open(
             config.set_claude_account(account);
             config.set_request_shortcuts(shortcuts);
             config.set_tuck(tuck);
+            config.set_show_cpu(show_cpu);
+            config.set_show_gpu(show_gpu);
         });
         match updated {
             Ok(config) => {

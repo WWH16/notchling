@@ -142,7 +142,7 @@ fn main() -> anyhow::Result<()> {
         .borrow_mut()
         .apply(notch.window(), window_size(&notch))?;
     show_placement(&notch, &placement.borrow());
-    notch.set_tuck(config.tuck());
+    show_preferences(&notch, &config);
     show_usage(&notch, config.provider(), None);
     notch.show()?;
     let status_switch = start_status(&notch, &usages);
@@ -461,8 +461,9 @@ fn glide_window(
     });
 }
 
-/// Applies saved settings to the running notch: its display, tucking and the usage
-/// alerts. The usage sources and hook mode read the rest from the config file themselves.
+/// Applies saved settings to the running notch: its display, tucking, the readings it
+/// shows and the usage alerts. The usage sources and hook mode read the rest from the
+/// config file themselves.
 fn apply_settings(
     notch: &Notch,
     usages: &Arc<Mutex<Usages>>,
@@ -478,7 +479,7 @@ fn apply_settings(
         let Some(notch) = weak.upgrade() else {
             return;
         };
-        notch.set_tuck(config.tuck());
+        show_preferences(&notch, config);
         let mut placement = placement.borrow_mut();
         placement.device = config.monitor().map(str::to_owned);
         replace(&notch, &mut placement, &clip);
@@ -517,6 +518,13 @@ fn follow_system_settings(notch: &Notch) -> Timer {
     timer
 }
 
+/// Applies the settings the notch reads directly: tucking and which readings show.
+fn show_preferences(notch: &Notch, config: &Config) {
+    notch.set_tuck(config.tuck());
+    notch.set_show_cpu(config.show_cpu());
+    notch.set_show_gpu(config.show_gpu());
+}
+
 /// Refreshes the CPU, GPU and RAM readings until the returned timer is dropped.
 fn start_stats(notch: &Notch) -> Timer {
     let timer = Timer::default();
@@ -533,7 +541,8 @@ fn start_stats(notch: &Notch) -> Timer {
         notch.set_ram(reading.ram_fraction());
         notch.set_ram_text(system::gigabytes(reading.ram_used_bytes).into());
 
-        if let Some(gpu) = gpu.as_mut() {
+        // GPU counters are the costlier read, so they rest while the GPU is hidden.
+        if let Some(gpu) = gpu.as_mut().filter(|_| notch.get_show_gpu()) {
             let reading = gpu.sample();
             notch.set_gpu(reading.utilization);
             if let Some(used) = reading.vram_used_bytes {

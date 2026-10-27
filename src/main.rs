@@ -979,6 +979,7 @@ fn show_requests(notch: &Notch, requests: &Requests) {
     };
     notch.set_request_id(front.id.to_ui());
     notch.set_request_tool(front.request.tool.as_str().into());
+    notch.set_request_description(front.request.description.as_str().into());
     notch.set_request_project(front.request.project.as_str().into());
     notch.set_request_detail(front.request.detail.as_str().into());
     notch.set_request_more(i32::try_from(requests.behind_front()).unwrap_or(i32::MAX));

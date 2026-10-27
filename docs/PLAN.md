@@ -265,6 +265,10 @@ sessions (needs the user, since it changes the global settings).
   lines pair limits up. Hover opens the panel at once; a click pins it. Checked
   offscreen for all three providers on the top and left edges. Commit
   `feat: per-provider limits in the hover panel`.
+- [x] **8.13** The request card shows what Claude says a call does, the tool input's
+  `description` that Claude Code puts above the command ("Read hook fixtures and
+  install config"), on its own line under the title. Commit
+  `feat: show claude's description on the request card`.
 
 ## Deviations from SPEC.md
 

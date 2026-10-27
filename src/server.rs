@@ -56,6 +56,7 @@ fn handle(connection: &File, requests: &Mutex<Requests>, notify: &impl Fn(Update
         Event::PermissionRequest {
             origin,
             tool,
+            description,
             detail,
         } => {
             let (reply, decision) = mpsc::channel();
@@ -63,6 +64,7 @@ fn handle(connection: &File, requests: &Mutex<Requests>, notify: &impl Fn(Update
                 session_id: origin.session_id,
                 project: origin.project,
                 tool,
+                description,
                 detail,
             };
             let id = lock(requests).push(request, reply);

@@ -514,6 +514,8 @@ export component Notch inherits Window {
     in property <bool> has-request;
     in property <int> request-id;
     in property <string> request-tool;
+    // What Claude says the call does, such as "Build release binary"; often empty.
+    in property <string> request-description;
     in property <string> request-project;
     in property <string> request-detail;
     in property <int> request-more;
@@ -673,7 +675,9 @@ export component Notch inherits Window {
         easing: ease-out;
     }
     private property <length> request-width: 460px * Theme.text-scale;
-    private property <length> request-height: 196px * Theme.text-scale;
+    // Taller by a line when Claude explains the call.
+    private property <length> request-height: (self.request-description != "" ? 222px : 196px)
+        * Theme.text-scale;
     private property <length> alert-width: 290px * Theme.text-scale;
     private property <length> alert-height: 36px * Theme.text-scale;
 
@@ -1020,7 +1024,8 @@ export component Notch inherits Window {
             spacing: 10px;
             accessible-role: groupbox;
             accessible-label: "Claude wants to use \{root.request-tool}";
-            accessible-description: root.request-detail;
+            accessible-description: root.request-description != ""
+                ? "\{root.request-description}: \{root.request-detail}" : root.request-detail;
 
             HorizontalLayout {
                 spacing: 8px;
@@ -1040,6 +1045,15 @@ export component Notch inherits Window {
                     text: "\{root.request-more} more";
                     color: Theme.text;
                 }
+            }
+
+            // What Claude says the call does, as Claude Code shows it above the command.
+            if root.request-description != "": Text {
+                text: root.request-description;
+                color: Theme.code-text;
+                font-family: Theme.font;
+                font-size: Theme.size-value;
+                overflow: elide;
             }
 
             code-box := Rectangle {

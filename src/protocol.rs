@@ -27,6 +27,10 @@ pub enum Event {
     PermissionRequest {
         origin: Origin,
         tool: String,
+        /// What Claude says the call does, as Claude Code shows it above the command,
+        /// such as "Build release binary"; empty when Claude gave none.
+        #[serde(default)]
+        description: String,
         /// The full command, or the full tool input for non-shell tools.
         detail: String,
     },
@@ -107,6 +111,7 @@ mod tests {
             Event::PermissionRequest {
                 origin: origin(),
                 tool: "Bash".to_owned(),
+                description: "Build release binary".to_owned(),
                 detail: "cargo build\n--release".to_owned(),
             },
             Event::NeedsInput {

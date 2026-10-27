@@ -87,6 +87,7 @@ fn to_event(input: &HookInput, ancestors: Vec<u32>) -> Option<Event> {
         "PermissionRequest" => Some(Event::PermissionRequest {
             origin,
             tool: input.tool_name.clone(),
+            description: tool_description(&input.tool_input),
             detail: tool_detail(&input.tool_input),
         }),
         // `permission_prompt` duplicates the PermissionRequest that came just before.
@@ -111,6 +112,17 @@ fn to_event(input: &HookInput, ancestors: Vec<u32>) -> Option<Event> {
         }),
         _ => None,
     }
+}
+
+/// What Claude says a call does, from the tool input's `description`, as Claude Code
+/// shows it above the command; empty when there is none.
+fn tool_description(tool_input: &Value) -> String {
+    tool_input
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_owned()
 }
 
 /// The full command for shell tools, otherwise the whole tool input as indented JSON.
@@ -165,12 +177,14 @@ mod tests {
         let Some(Event::PermissionRequest {
             origin,
             tool,
+            description,
             detail,
         }) = event
         else {
             panic!("expected a permission request, got {event:?}");
         };
         assert_eq!(tool, "Bash");
+        assert_eq!(description, "Build release binary");
         assert_eq!(detail, "cargo build --release");
         assert_eq!(origin.project, "example");
         assert_eq!(origin.ancestors, vec![42]);

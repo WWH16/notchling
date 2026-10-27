@@ -30,6 +30,8 @@ pub struct Request {
     pub session_id: String,
     pub project: String,
     pub tool: String,
+    /// What Claude says the call does; empty when it gave no description.
+    pub description: String,
     /// The full command, or the full tool input for non-shell tools.
     pub detail: String,
 }
@@ -130,6 +132,7 @@ mod tests {
             session_id: session_id.to_owned(),
             project: "proj".to_owned(),
             tool: tool.to_owned(),
+            description: String::new(),
             detail: detail.to_owned(),
         }
     }

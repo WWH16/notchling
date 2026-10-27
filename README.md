@@ -81,7 +81,8 @@ restart. After updating ai-notch, run it again so new events are added.
 
 How a permission request works:
 
-- The notch shows the tool and the **full** command or input, with Allow, Deny and
+- The notch shows the tool, what Claude says the call does (the line Claude Code shows
+  above the command) and the **full** command or input, with Allow, Deny and
   "Open in app". A command too long for the card fades out at the bottom with
   "+N lines"; scroll to read the rest.
 - Allow and Deny ignore clicks for half a second after a card appears, filling up

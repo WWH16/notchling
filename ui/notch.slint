@@ -9,6 +9,8 @@ export global Theme {
     out property <color> chatgpt: #10a37f;
     out property <color> gemini: #4c8df6;
     out property <color> good: #30d158;
+    out property <color> warn: #ff9f0a;
+    out property <color> bad: #ff453a;
     // Segoe UI digits are tabular by default, so numbers don't jitter.
     out property <string> font: "Segoe UI Variable";
 }
@@ -182,6 +184,9 @@ export enum Choice { allow, deny, ask-in-app }
 // Whose usage the notch shows.
 export enum Provider { claude, chatgpt, gemini }
 
+// The shown provider's status page; unknown until checked or when the check fails.
+export enum Health { unknown, operational, degraded, down }
+
 // Why the notch is asking for attention.
 export enum AlertKind { done, needs-input }
 
@@ -202,6 +207,7 @@ export component Notch inherits Window {
     in property <string> usage-rate;
     // The weekly limit, when the provider reports one; empty otherwise.
     in property <string> usage-weekly;
+    in property <Health> status;
     in property <string> usage-reset;
     in property <bool> usage-estimated;
     private property <color> accent: self.usage-provider == Provider.chatgpt ? Theme.chatgpt
@@ -249,7 +255,7 @@ export component Notch inherits Window {
         : self.expanded ? open-height : idle-height;
     private property <length> idle-width: 250px;
     private property <length> idle-height: 30px;
-    private property <length> open-width: 420px;
+    private property <length> open-width: 460px;
     private property <length> open-height: 92px;
     private property <length> request-width: 460px;
     private property <length> request-height: 196px;
@@ -355,6 +361,21 @@ export component Notch inherits Window {
                     font-size: 11px;
                     font-weight: 600;
                     vertical-alignment: center;
+                }
+                // Only incidents show; a healthy or unknown status takes no space.
+                if root.status == Health.degraded || root.status == Health.down: HorizontalLayout {
+                    spacing: 4px;
+                    Dot {
+                        fill: root.status == Health.down ? Theme.bad : Theme.warn;
+                    }
+                    Text {
+                        text: root.status == Health.down ? "Outage" : "Degraded";
+                        color: root.status == Health.down ? Theme.bad : Theme.warn;
+                        font-family: Theme.font;
+                        font-size: 11px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
                 }
                 Text {
                     text: root.usage-tokens;

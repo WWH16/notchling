@@ -1,0 +1,6 @@
+[
+  {"id":"example1","begin":"2026-10-20T06:00:00+00:00","end":"2026-10-20T12:10:00+00:00","external_desc":"Example ended outage","severity":"high","status_impact":"SERVICE_OUTAGE","affected_products":[{"title":"Vertex Gemini API","id":"example"}]},
+  {"id":"example2","begin":"2026-10-27T01:00:00+00:00","external_desc":"Example outage elsewhere","severity":"high","status_impact":"SERVICE_OUTAGE","affected_products":[{"title":"Cloud Storage","id":"example"}]},
+  {"id":"example3","begin":"2026-10-27T01:30:00+00:00","end":null,"external_desc":"Example notice","severity":"low","status_impact":"SERVICE_INFORMATION","affected_products":[{"title":"Gemini Code Assist","id":"example"}]},
+  {"id":"example4","begin":"2026-10-27T02:00:00+00:00","end":null,"external_desc":"Example disruption","severity":"medium","status_impact":"SERVICE_DISRUPTION","affected_products":[{"title":"Gemini Code Assist","id":"example"},{"title":"Vertex Gemini API","id":"example"}]}
+]

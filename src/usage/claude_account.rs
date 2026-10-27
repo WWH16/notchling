@@ -9,24 +9,20 @@ use std::env;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use anyhow::{Context, anyhow, bail};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 use ureq::Agent;
-use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 
 use super::Usage;
+use crate::http;
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 
 /// Beta flag the endpoint requires for OAuth logins.
 const OAUTH_BETA: &str = "oauth-2025-04-20";
-
-/// A slower request is dropped, so the poll thread moves on to the next reading.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Reads Claude's usage limits from the account endpoint.
 #[derive(Debug)]
@@ -43,21 +39,9 @@ impl ClaudeAccount {
     /// Fails when `USERPROFILE` is not set.
     pub fn try_new() -> anyhow::Result<Self> {
         let home = env::var_os("USERPROFILE").context("USERPROFILE is not set")?;
-        // Windows' own TLS and certificate store, so corporate proxies' roots work too.
-        let tls = TlsConfig::builder()
-            .provider(TlsProvider::NativeTls)
-            .root_certs(RootCerts::PlatformVerifier)
-            .build();
-        let agent = Agent::config_builder()
-            .tls_config(tls)
-            .https_only(true)
-            .timeout_global(Some(REQUEST_TIMEOUT))
-            .user_agent(concat!("ai-notch/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .into();
         Ok(Self {
             credentials: Path::new(&home).join(".claude").join(".credentials.json"),
-            agent,
+            agent: http::agent(),
         })
     }
 

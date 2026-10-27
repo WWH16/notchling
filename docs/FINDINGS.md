@@ -103,6 +103,19 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   is only there while the CLI login is fresh, and the local estimate covers the rest.
   Without a token the endpoint answers 401.
 
+## Status pages (checked at step 6.1, 2026-10-27)
+
+- Claude: `https://status.claude.com/api/v2/status.json` (Statuspage;
+  `status.anthropic.com` redirects there). `status.indicator` is `none`, `minor`,
+  `major` or `critical`.
+- OpenAI: `https://status.openai.com/api/v2/status.json`, the same format.
+- Google has no Gemini status JSON (`aistudio.google.com/status` is a web app). The
+  Cloud feed `https://status.cloud.google.com/incidents.json` lists incidents with
+  `end` (null while ongoing), `severity`, `status_impact` and `affected_products`. The
+  Gemini CLI depends on "Gemini Code Assist" and "Vertex Gemini API". The feed is
+  224 KB, 36 KB gzipped, and its `Last-Modified` changes every minute, so conditional
+  requests save nothing.
+
 ## Plan changes
 
 - 2.3: the hook output format is confirmed as above.

@@ -135,8 +135,10 @@ sessions (needs the user, since it changes the global settings).
   panic goes to `%LOCALAPPDATA%\ai-notch\crash.log`, and a panic that stops the notch
   also shows a message box. Hook mode writes the note only, so it never blocks Claude
   Code. Commit `feat: show and record panics`.
-- [ ] **6.1** Status dot from each provider's public status JSON every 5 minutes; verify
-  URLs at this step. Commit `feat: provider status dot`.
+- [x] **6.1** Status dot from each provider's public status JSON every 5 minutes; verify
+  URLs at this step. Only the shown provider is checked, and right away on a switch.
+  The hover row shows an amber "Degraded" or red "Outage" dot; a healthy status shows
+  nothing. URLs are in FINDINGS. Commit `feat: provider status dot`.
 - [ ] **6.2** Alerts at 80% and 95%, once per usage window.
   Commit `feat: usage threshold alerts`.
 - [ ] **6.3** Hide during fullscreen apps via `SHQueryUserNotificationState`.
@@ -155,7 +157,8 @@ sessions (needs the user, since it changes the global settings).
 
 - No `nvml-wrapper`: PDH provides VRAM, and the design shows no GPU temperature.
 - `ureq` instead of `reqwest` + `tokio`: a few blocking HTTP calls need no async runtime.
-  It uses Windows' own TLS (SChannel) and certificate store, not rustls and ring.
+  It uses Windows' own TLS (SChannel) and certificate store, not rustls and ring, with
+  gzip for Google's incident feed.
 - No `keyring`: step 4.2 was dropped, so ai-notch stores no secrets of its own.
 - `chrono` for timestamps: Slint already builds it, so it adds no crate.
 - `ruzstd` instead of `zstd` for Codex logs: a pure-Rust decoder, no C build.

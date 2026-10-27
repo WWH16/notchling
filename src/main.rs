@@ -5,12 +5,14 @@ mod config;
 mod crash;
 mod gpu;
 mod hook;
+mod http;
 mod install;
 mod pipe;
 mod process;
 mod protocol;
 mod requests;
 mod server;
+mod status;
 mod system;
 mod usage;
 mod window;
@@ -24,6 +26,7 @@ use std::collections::HashMap;
 use std::env;
 use std::mem;
 use std::rc::Rc;
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -36,6 +39,7 @@ use protocol::{Decision, Event, Origin};
 use requests::{RequestId, Requests};
 use server::Update;
 use slint::{ComponentHandle, Timer, TimerMode, Weak};
+use status::Health;
 use system::SystemLoad;
 use ui::{AlertKind, Choice, Notch};
 use usage::{Claude, Codex, Gemini, Provider, Reading, Usage};
@@ -98,6 +102,7 @@ fn main() -> anyhow::Result<()> {
     window::place_top_center(notch.window(), notch.get_fixed_width())?;
     show_usage(&notch, config.provider(), None);
     notch.show()?;
+    let status_switch = start_status(&notch, &usages);
 
     let menu_usages = Arc::clone(&usages);
     on_native_window(
@@ -118,7 +123,7 @@ fn main() -> anyhow::Result<()> {
                     }
                     Some(MenuChoice::Show(provider)) => {
                         if let Some(notch) = weak.upgrade() {
-                            select_provider(&notch, &menu_usages, provider);
+                            select_provider(&notch, &menu_usages, &status_switch, provider);
                         }
                     }
                     None => {}
@@ -252,11 +257,37 @@ fn start_usage(notch: &Notch, usages: &Arc<Mutex<Usages>>, config: &Config) {
     }
 }
 
+/// Checks the shown provider's status page in the background and shows incidents on
+/// the notch. Returns where to send the provider whenever the selection changes.
+fn start_status(notch: &Notch, usages: &Arc<Mutex<Usages>>) -> Sender<Provider> {
+    let weak = notch.as_weak();
+    let usages = Arc::clone(usages);
+    let shown = lock_usages(&usages).shown;
+    status::spawn(shown, move |provider, health| {
+        let usages = Arc::clone(&usages);
+        // Fails only once the event loop has quit, when nothing needs drawing.
+        let _ = weak.upgrade_in_event_loop(move |notch| {
+            // A status that arrives after a switch belongs to the old provider.
+            if lock_usages(&usages).shown == provider {
+                notch.set_status(health.map_or(ui::Health::Unknown, ui::Health::from));
+            }
+        });
+    })
+}
+
 /// Shows `provider` on the notch from now on, and remembers the choice in the config.
-fn select_provider(notch: &Notch, usages: &Mutex<Usages>, provider: Provider) {
+fn select_provider(
+    notch: &Notch,
+    usages: &Mutex<Usages>,
+    status_switch: &Sender<Provider>,
+    provider: Provider,
+) {
     let mut usages = lock_usages(usages);
     usages.shown = provider;
     show_usage(notch, provider, usages.latest.get(&provider));
+    notch.set_status(ui::Health::Unknown);
+    // Fails only if the status thread is gone, which leaves the status unknown.
+    let _ = status_switch.send(provider);
     // On failure the choice only lasts until the notch restarts.
     let _ = Config::update(|config| config.set_provider(provider));
 }
@@ -446,6 +477,16 @@ impl From<usage::Provider> for ui::Provider {
             usage::Provider::Claude => Self::Claude,
             usage::Provider::ChatGpt => Self::Chatgpt,
             usage::Provider::Gemini => Self::Gemini,
+        }
+    }
+}
+
+impl From<Health> for ui::Health {
+    fn from(health: Health) -> Self {
+        match health {
+            Health::Operational => Self::Operational,
+            Health::Degraded => Self::Degraded,
+            Health::Down => Self::Down,
         }
     }
 }

@@ -205,6 +205,20 @@ sessions (needs the user, since it changes the global settings).
   30 s poll instead of after 5 minutes. Checked live after a switch: 9% on the new
   account. Commit `fix: follow the claude desktop app's account`.
 
+## Phase 8: Audit fixes and features (see [AUDIT.md](AUDIT.md))
+
+- [ ] **8.1** Harden the permission card: an arming delay on Allow and Deny, the
+  overflow fade with "+N lines", accessible roles and labels, and a global shortcut.
+- [ ] **8.2** Click the pill to toggle the hover panel, and a longer hover delay.
+- [ ] **8.3** Follow Windows "Show animations".
+- [ ] **8.4** Tuck mode on the side edges; check and fix the upright panel width.
+- [ ] **8.5** Polish: colours into `Theme`, "2 more", the Consolas fallback, label sizes.
+- [ ] **8.6** Live Claude activity in the idle pill.
+- [ ] **8.7** Limit forecast in the hover panel.
+- [ ] **8.8** "Start at sign-in" toggle in Settings.
+- [ ] **8.9** Investigate "Always allow" through the hook API; build it if supported.
+- [ ] **8.10** All providers in the hover panel; double-click to reset placement.
+
 ## Deviations from SPEC.md
 
 - No `nvml-wrapper`: PDH provides VRAM, and the design shows no GPU temperature.

@@ -15,6 +15,7 @@ mod server;
 mod settings;
 mod status;
 mod system;
+mod toast;
 mod usage;
 mod window;
 
@@ -112,7 +113,11 @@ fn main() -> anyhow::Result<()> {
         config.provider(),
         Thresholds::new(config.usage_alerts()),
     )));
-    let alert = Arc::new(Mutex::new(Alert::default()));
+    // Known before any source runs, so an alert at startup during a game becomes a toast.
+    let alert = Arc::new(Mutex::new(Alert {
+        hidden: window::fullscreen_app_in_front(),
+        ..Alert::default()
+    }));
 
     let notch = Notch::new()?;
     window::place_top_center(notch.window(), notch.get_fixed_width(), config.monitor())?;
@@ -123,13 +128,14 @@ fn main() -> anyhow::Result<()> {
     let menu_usages = Arc::clone(&usages);
     let fullscreen_check = Rc::new(Timer::default());
     let fullscreen_timer = Rc::clone(&fullscreen_check);
+    let fullscreen_alert = Arc::clone(&alert);
     on_native_window(
         notch.as_weak(),
         NATIVE_WINDOW_ATTEMPTS,
         move |notch, native| {
             native.apply_tool_styles();
             let native = Rc::new(native);
-            hide_during_fullscreen(&fullscreen_timer, Rc::clone(&native));
+            hide_during_fullscreen(&fullscreen_timer, Rc::clone(&native), fullscreen_alert);
 
             let weak = notch.as_weak();
             let clip_native = Rc::clone(&native);
@@ -205,19 +211,23 @@ fn report_settings_change(verb: &str, outcome: anyhow::Result<install::Outcome>)
 }
 
 /// Hides the notch while a fullscreen app, game or presentation is in front, checking
-/// until `timer` is dropped.
-fn hide_during_fullscreen(timer: &Timer, native: Rc<NotchWindow>) {
+/// until `timer` is dropped. Meanwhile alerts become toasts.
+fn hide_during_fullscreen(timer: &Timer, native: Rc<NotchWindow>, alert: Arc<Mutex<Alert>>) {
     let hidden = Cell::new(false);
-    timer.start(TimerMode::Repeated, FULLSCREEN_CHECK, move || {
+    let check = move || {
         let hide = window::fullscreen_app_in_front();
         if hide != hidden.replace(hide) {
+            alert.lock().expect("alert lock poisoned").hidden = hide;
             if hide {
                 native.hide();
             } else {
                 native.show();
             }
         }
-    });
+    };
+    // Right away too, so a notch started during a game never shows.
+    check();
+    timer.start(TimerMode::Repeated, FULLSCREEN_CHECK, check);
 }
 
 /// Applies saved settings to the running notch: its display and the usage alerts. The
@@ -520,6 +530,8 @@ struct Alert {
     /// Bumped per alert, so an old alert's timer cannot hide a newer one.
     serial: u64,
     ancestors: Vec<u32>,
+    /// The notch hides behind a fullscreen app, so alerts go to toasts instead.
+    hidden: bool,
 }
 
 /// "Done · ai-notch", or just the label when the project is unknown.
@@ -532,7 +544,8 @@ fn session_alert_text(label: &str, project: &str) -> String {
 }
 
 /// Shows an attention message until it times out or is clicked. A click focuses the
-/// first window among `ancestors`, the processes above a Claude Code hook.
+/// first window among `ancestors`, the processes above a Claude Code hook. While the
+/// notch hides behind a fullscreen app, the message becomes a Windows toast.
 fn show_alert(
     notch: &Notch,
     alert: &Arc<Mutex<Alert>>,
@@ -542,6 +555,11 @@ fn show_alert(
 ) {
     let serial = {
         let mut current = alert.lock().expect("alert lock poisoned");
+        if current.hidden {
+            // A toast that fails to show is lost; the notch has nowhere to put it either.
+            let _ = toast::show(&text);
+            return;
+        }
         current.serial += 1;
         current.ancestors = ancestors;
         current.serial

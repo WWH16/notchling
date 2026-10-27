@@ -152,7 +152,11 @@ sessions (needs the user, since it changes the global settings).
   moves the notch and resets the alerts at once; the usage sources read their settings
   from the config on every poll. A longer hook timeout needs `--install-hooks` again.
   Commit `feat: settings window`.
-- [ ] **6.5** Windows toast only while the notch is hidden.
+- [x] **6.5** Windows toast only while the notch is hidden.
+  Done, needs-input and usage alerts become toasts while a fullscreen app hides the
+  notch. Toasts need an app identity, so the first one registers
+  `HKCU\Software\Classes\AppUserModelId\ai-notch` (remove it on uninstall). Windows'
+  own "do not disturb during games" may send them straight to the notification centre.
   Commit `feat: toast fallback when hidden`.
 
 ## Phase 7: Release

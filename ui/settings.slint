@@ -14,7 +14,7 @@ component Hint inherits Text {
 }
 
 export component Settings inherits Window {
-    title: "ai-notch settings";
+    title: "notchling settings";
     preferred-width: 440px;
     background: Palette.background;
 
@@ -139,7 +139,7 @@ export component Settings inherits Window {
         }
 
         Hint {
-            text: "A usage alert set to 0 is off. A longer permission wait reaches Claude Code only after running ai-notch --install-hooks again.";
+            text: "A usage alert set to 0 is off. A longer permission wait reaches Claude Code only after running notchling --install-hooks again.";
         }
 
         if root.error != "": Text {

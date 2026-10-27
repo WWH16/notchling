@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn newest_session_wins_and_compressed_logs_are_read() {
-        let dir = env::temp_dir().join(format!("ai-notch-codex-{}", process::id()));
+        let dir = env::temp_dir().join(format!("notchling-codex-{}", process::id()));
         let _ = fs::remove_dir_all(&dir);
         let day = dir.join("2026").join("10").join("15");
         fs::create_dir_all(&day).expect("temp dir is writable");
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn no_sessions_is_an_error() {
-        let dir = env::temp_dir().join(format!("ai-notch-codex-none-{}", process::id()));
+        let dir = env::temp_dir().join(format!("notchling-codex-none-{}", process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("temp dir is writable");
         assert!(Codex::at(dir.clone()).read().is_err());

@@ -38,13 +38,13 @@ const CONNECT_ATTEMPTS: u32 = 3;
 const BUSY_WAIT_MS: u32 = 500;
 
 /// The notch's pipe name for the current Windows user, e.g.
-/// `\\.\pipe\ai-notch-S-1-5-21-...`.
+/// `\\.\pipe\notchling-S-1-5-21-...`.
 ///
 /// # Errors
 ///
 /// Fails when the current user's SID cannot be read.
 pub fn pipe_name() -> anyhow::Result<String> {
-    Ok(format!(r"\\.\pipe\ai-notch-{}", current_user_sid()?))
+    Ok(format!(r"\\.\pipe\notchling-{}", current_user_sid()?))
 }
 
 /// The current user's SID as a string, e.g. `S-1-5-21-...`.
@@ -143,7 +143,7 @@ impl Listener {
         let next = match create_instance(&name, &sddl, Instance::First) {
             Ok(handle) => handle,
             Err(err) if err.raw_os_error() == Some(ERROR_ACCESS_DENIED.0 as i32) => {
-                bail!("another ai-notch is already running ({name} is taken)")
+                bail!("another notchling is already running ({name} is taken)")
             }
             Err(err) => return Err(err).with_context(|| format!("creating pipe {name}")),
         };
@@ -254,7 +254,7 @@ mod tests {
     fn unique_name() -> String {
         static NEXT: AtomicU32 = AtomicU32::new(0);
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
-        format!(r"\\.\pipe\ai-notch-test-{}-{n}", std::process::id())
+        format!(r"\\.\pipe\notchling-test-{}-{n}", std::process::id())
     }
 
     #[test]

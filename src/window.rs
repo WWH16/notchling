@@ -750,7 +750,7 @@ unsafe fn fill_menu(
             AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         }
         AppendMenuW(menu, MF_STRING, MENU_SETTINGS, w!("Settings…"))?;
-        AppendMenuW(menu, MF_STRING, MENU_QUIT, w!("Quit ai-notch"))
+        AppendMenuW(menu, MF_STRING, MENU_QUIT, w!("Quit notchling"))
     }
 }
 

@@ -1,4 +1,4 @@
-//! `--install-hooks` / `--uninstall-hooks`: adds or removes ai-notch's entries in
+//! `--install-hooks` / `--uninstall-hooks`: adds or removes notchling's entries in
 //! `~/.claude/settings.json`, leaving every other setting and hook untouched.
 
 use std::env;
@@ -54,7 +54,7 @@ pub struct Outcome {
 ///
 /// Fails when the settings file is not valid JSON, or cannot be backed up or written.
 pub fn install_hooks() -> anyhow::Result<Outcome> {
-    let exe = env::current_exe().context("locating ai-notch.exe")?;
+    let exe = env::current_exe().context("locating notchling.exe")?;
     let command = hook_command(&exe);
     let permission_timeout = Config::load().hook_timeout().as_secs() + HOOK_ENTRY_MARGIN_SECS;
     update_settings(|settings| install(settings, &command, permission_timeout))
@@ -97,14 +97,14 @@ fn update_settings(
     })
 }
 
-/// Copies the settings next to themselves as `settings.json.ai-notch-backup-<unix time>`.
+/// Copies the settings next to themselves as `settings.json.notchling-backup-<unix time>`.
 fn back_up(path: &Path, text: &str) -> anyhow::Result<PathBuf> {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs())
         .unwrap_or_default();
     let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".ai-notch-backup-{stamp}"));
+    name.push(format!(".notchling-backup-{stamp}"));
     let backup = path.with_file_name(name);
     fs::write(&backup, text).with_context(|| format!("writing backup {}", backup.display()))?;
     Ok(backup)
@@ -119,15 +119,19 @@ fn hook_command(exe: &Path) -> String {
     )
 }
 
-/// Whether a hook handler is one of ours.
+/// Whether a hook handler is one of ours, including those from before the rename, when
+/// the exe was `ai-notch.exe`.
 fn is_ours(handler: &Value) -> bool {
     handler
         .get("command")
         .and_then(Value::as_str)
-        .is_some_and(|command| command.contains("ai-notch") && command.ends_with(" --hook"))
+        .is_some_and(|command| {
+            (command.contains("notchling") || command.contains("ai-notch"))
+                && command.ends_with(" --hook")
+        })
 }
 
-/// Adds one ai-notch entry per event, replacing any earlier ones.
+/// Adds one notchling entry per event, replacing any earlier ones.
 fn install(settings: &mut Value, command: &str, permission_timeout: u64) -> anyhow::Result<()> {
     uninstall(settings)?;
     let hooks = hooks_object(settings)?;
@@ -154,7 +158,7 @@ fn install(settings: &mut Value, command: &str, permission_timeout: u64) -> anyh
     Ok(())
 }
 
-/// Removes every ai-notch handler, and any group or event list left empty by that.
+/// Removes every notchling handler, and any group or event list left empty by that.
 fn uninstall(settings: &mut Value) -> anyhow::Result<()> {
     let hooks = hooks_object(settings)?;
     for event in EVENTS {
@@ -198,14 +202,14 @@ fn hooks_object(settings: &mut Value) -> anyhow::Result<&mut Map<String, Value>>
 mod tests {
     use super::*;
 
-    const COMMAND: &str = "\"C:/tools/ai-notch.exe\" --hook";
+    const COMMAND: &str = "\"C:/tools/notchling.exe\" --hook";
 
     #[test]
     fn command_quotes_the_path_with_forward_slashes() {
-        let command = hook_command(Path::new(r"S:\PERSONAL PROJECTS\ai-notch\ai-notch.exe"));
+        let command = hook_command(Path::new(r"S:\PERSONAL PROJECTS\notchling\notchling.exe"));
         assert_eq!(
             command,
-            "\"S:/PERSONAL PROJECTS/ai-notch/ai-notch.exe\" --hook"
+            "\"S:/PERSONAL PROJECTS/notchling/notchling.exe\" --hook"
         );
     }
 
@@ -285,6 +289,16 @@ mod tests {
         install(&mut settings, COMMAND, 130).expect("valid settings");
         uninstall(&mut settings).expect("valid settings");
         assert_eq!(settings, original);
+    }
+
+    #[test]
+    fn install_replaces_hooks_from_before_the_rename() {
+        let mut settings = json!({});
+        install(&mut settings, "\"C:/tools/ai-notch.exe\" --hook", 130).expect("valid settings");
+        install(&mut settings, COMMAND, 130).expect("valid settings");
+        let stop = &settings["hooks"]["Stop"];
+        assert_eq!(stop.as_array().map(Vec::len), Some(1), "{stop}");
+        assert_eq!(stop[0]["hooks"][0]["command"], COMMAND);
     }
 
     #[test]

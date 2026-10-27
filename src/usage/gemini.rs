@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn usage_is_an_estimate_against_the_daily_limit() {
-        let dir = env::temp_dir().join(format!("ai-notch-gemini-{}", process::id()));
+        let dir = env::temp_dir().join(format!("notchling-gemini-{}", process::id()));
         let _ = fs::remove_dir_all(&dir);
         let chats = dir.join("project").join("chats");
         fs::create_dir_all(&chats).expect("temp dir is writable");

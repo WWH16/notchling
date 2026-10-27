@@ -45,7 +45,7 @@ Allow:
 Deny, with a reason shown to Claude:
 
 ```json
-{"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "Denied from ai-notch"}}}
+{"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "Denied from notchling"}}}
 ```
 
 No decision: exit 0 with no stdout. Exit code 2 is not a deny on this event.
@@ -111,7 +111,7 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   7 seconds; the CLI fetches `retrieveUserQuotaSummary` from
   `daily-cloudcode-pa.googleapis.com` with its own login. Another app on this machine
   (codenotch) already reads Antigravity's quota this way, from a workspace folder of its
-  own. ai-notch now does the same and keeps the Gemini CLI estimate as the fallback.
+  own. notchling now does the same and keeps the Gemini CLI estimate as the fallback.
 
 ## V4: Claude account usage (confirmed, exact %)
 
@@ -119,7 +119,7 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   `Authorization: Bearer <claudeAiOauth.accessToken>` and
   `anthropic-beta: oauth-2025-04-20` returned 200.
 - Token source: `~/.claude/.credentials.json`, key `claudeAiOauth`. It also holds
-  `expiresAt` (ms), `subscriptionType` (`pro` here) and a `refreshToken`. ai-notch
+  `expiresAt` (ms), `subscriptionType` (`pro` here) and a `refreshToken`. notchling
   never uses the refresh token. An expired token means "estimated" until Claude Code
   refreshes it.
 - Use the `limits` array: `kind` (`session`, `weekly_all`), `percent`, `resets_at`
@@ -144,7 +144,7 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   `refresh_token`, `client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e"` and `scope` (the
   stored scopes joined by spaces). The reply has `access_token`, optionally a new
   `refresh_token`, `expires_in` and `refresh_token_expires_in` (seconds) and `scope`.
-  The file is one line of compact JSON. With the user's approval, ai-notch now
+  The file is one line of compact JSON. With the user's approval, notchling now
   refreshes an expired login this way and writes the new tokens back; the first live
   refresh worked and kept every other field. The local 5-hour estimate had been 17
   minutes off the account's reset time (2:03 PM against 2:20 PM), because the logs do
@@ -161,7 +161,7 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   `acct:<account>|<client>:<org>:https://api.anthropic.com:<scopes>`, each value with
   `token`, `refreshToken` and `expiresAt` (ms). After the switch it held only the new
   account: two Claude Code client logins and one `user:profile`-only login, and all
-  three read the usage endpoint. With the user's approval, ai-notch reads this login
+  three read the usage endpoint. With the user's approval, notchling reads this login
   first and never refreshes or writes it. Claude Code also copies the account into
   `~/.claude.json` (`oauthAccount`) when the desktop app starts a session.
 

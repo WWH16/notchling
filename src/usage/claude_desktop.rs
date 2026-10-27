@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn signed_in_account_is_read_from_the_config() {
-        let dir = env::temp_dir().join(format!("ai-notch-desktop-{}", process::id()));
+        let dir = env::temp_dir().join(format!("notchling-desktop-{}", process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("temp dir is writable");
         let desktop = ClaudeDesktop::at(dir.clone());

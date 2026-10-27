@@ -4,7 +4,7 @@
 //! The endpoint is unofficial. The desktop app's login comes first, so the notch
 //! follows the account the app is signed in to; it is read, never refreshed. Claude
 //! Code's login lives in `~/.claude/.credentials.json`, which only the Claude Code CLI
-//! refreshes. So once that token expires, ai-notch refreshes it the way Claude Code does
+//! refreshes. So once that token expires, notchling refreshes it the way Claude Code does
 //! and writes the new tokens back, and the CLI carries on with them.
 
 use std::env;
@@ -158,7 +158,7 @@ struct Credentials {
     claude_ai_oauth: Option<OAuth>,
 }
 
-/// The login fields ai-notch uses; everything else in the file is left as it is.
+/// The login fields notchling uses; everything else in the file is left as it is.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OAuth {
@@ -241,7 +241,7 @@ fn updated_credentials(
 /// Replaces `path` in one step, so a reader never sees a half-written login.
 fn write_atomically(path: &Path, text: &str) -> anyhow::Result<()> {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(".ai-notch-tmp");
+    name.push(".notchling-tmp");
     let temp = path.with_file_name(name);
     fs::write(&temp, text).with_context(|| format!("writing {}", temp.display()))?;
     if let Err(err) = fs::rename(&temp, path) {
@@ -498,7 +498,7 @@ mod tests {
 
     #[test]
     fn written_login_replaces_the_file() {
-        let dir = env::temp_dir().join(format!("ai-notch-credentials-{}", std::process::id()));
+        let dir = env::temp_dir().join(format!("notchling-credentials-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("temp dir is writable");
         let path = dir.join(".credentials.json");

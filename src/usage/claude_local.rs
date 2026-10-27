@@ -264,7 +264,7 @@ mod tests {
 
     /// A fresh `projects` folder holding one project folder, unique to `test`.
     fn projects_dir(test: &str) -> PathBuf {
-        let dir = env::temp_dir().join(format!("ai-notch-{test}-{}", process::id()));
+        let dir = env::temp_dir().join(format!("notchling-{test}-{}", process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("project")).expect("temp dir is writable");
         dir
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn missing_projects_folder_is_an_error() {
-        let dir = env::temp_dir().join(format!("ai-notch-missing-{}", process::id()));
+        let dir = env::temp_dir().join(format!("notchling-missing-{}", process::id()));
         assert!(ClaudeLocal::at(dir).read().is_err());
     }
 }

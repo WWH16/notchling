@@ -1,4 +1,4 @@
-# ai-notch
+# Notchling
 
 A "Dynamic Island" style notch for Windows 11. A small black pill sits against an
 edge of the screen, the top one to start with, and shows:
@@ -21,13 +21,13 @@ You need the Rust toolchain for Windows (`stable-x86_64-pc-windows-msvc`).
 cargo build --release
 ```
 
-The program is `target\release\ai-notch.exe`. Copy it to a folder where it will stay,
-for example `%LOCALAPPDATA%\Programs\ai-notch\`. The Claude Code hooks point at the
+The program is `target\release\notchling.exe`. Copy it to a folder where it will stay,
+for example `%LOCALAPPDATA%\Programs\notchling\`. The Claude Code hooks point at the
 exe's path, so moving it later means installing the hooks again.
 
 ## Run
 
-Start `ai-notch.exe`. Only one copy runs at a time.
+Start `notchling.exe`. Only one copy runs at a time.
 
 The notch flows out of its screen edge in concave curves. It shows the selected
 provider's logo inside a ring with the share of its limit, then CPU and GPU. The ring
@@ -67,17 +67,17 @@ the exe in `shell:startup` (type that into the Run dialog, Win+R).
 Permission requests and task alerts come from Claude Code hooks. To add them:
 
 ```powershell
-ai-notch.exe --install-hooks
+notchling.exe --install-hooks
 ```
 
 This backs up `%USERPROFILE%\.claude\settings.json` to
-`settings.json.ai-notch-backup-<time>` in the same folder, then adds ai-notch to the
+`settings.json.notchling-backup-<time>` in the same folder, then adds notchling to the
 `PermissionRequest`, `Notification`, `Stop` and `UserPromptSubmit` events, to
 `PreToolUse` for Claude's multiple-choice questions (`AskUserQuestion`) only, plus
 `PostToolUse`, `PostToolUseFailure` and `PermissionDenied` as background hooks that
 never slow a tool call down. Your other settings and hooks are left as they are, and
 running it twice adds nothing twice. Claude Code picks up the change without a
-restart. After updating ai-notch, run it again so new events are added.
+restart. After updating notchling, run it again so new events are added.
 
 How a permission request works:
 
@@ -100,7 +100,7 @@ How a permission request works:
   that skill first. Built-in commands such as `/clear` only work in the app. Leave the
   card alone and it closes after 8 seconds; "Open in app" brings that Claude window to
   the front instead.
-- ai-notch never approves anything by itself. If the notch is not running, if you do
+- notchling never approves anything by itself. If the notch is not running, if you do
   not answer within the permission wait (120 s by default), or if anything goes wrong,
   Claude Code shows its normal dialog.
 - Requests from several sessions queue up on the notch.
@@ -109,7 +109,7 @@ How a permission request works:
 
 The notch talks to the hooks over a named pipe that only your Windows user can open.
 
-While Claude Code is working, ai-notch keeps the PC from going to sleep. It lets go
+While Claude Code is working, notchling keeps the PC from going to sleep. It lets go
 when Claude finishes or waits for you, and after two hours at the latest.
 
 ## Usage data
@@ -129,7 +129,7 @@ About the Claude account source:
   it. Switch accounts in the app and the notch follows within 30 seconds.
 - Without the desktop app it uses the login in `%USERPROFILE%\.claude\.credentials.json`.
   Only the Claude Code CLI refreshes that file. So when the stored token has expired,
-  ai-notch refreshes it the same way Claude Code does (`platform.claude.com`, Claude
+  notchling refreshes it the same way Claude Code does (`platform.claude.com`, Claude
   Code's client id) and writes the new tokens back, leaving every other field as it
   was. The CLI then carries on with them.
 - If the CLI refreshes at the very same moment, the CLI may ask you to sign in once
@@ -145,7 +145,7 @@ Usage alerts appear at 80% and 95% of a limit, once per usage window.
 ## Settings
 
 Right-click the notch and choose **Settings…**, or edit
-`%APPDATA%\ai-notch\config.toml`. Every key is optional:
+`%APPDATA%\notchling\config.toml`. Every key is optional:
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -168,7 +168,7 @@ ignored, and the settings window will not overwrite it.
 
 ## Network and files
 
-ai-notch sends no telemetry. It connects to:
+notchling sends no telemetry. It connects to:
 
 - `api.anthropic.com`, for the Claude account usage, and `platform.claude.com`, to
   refresh Claude Code's login when it has expired (only while Claude is tracked);
@@ -177,19 +177,19 @@ ai-notch sends no telemetry. It connects to:
 
 It also runs `agy -p /usage` every 5 minutes when the Antigravity CLI is installed and
 Gemini is tracked. The
-CLI asks Google for your quota with its own login, in an empty folder of ai-notch's
-own, `%LOCALAPPDATA%\ai-notch\antigravity`, so it never touches a project.
+CLI asks Google for your quota with its own login, in an empty folder of notchling's
+own, `%LOCALAPPDATA%\notchling\antigravity`, so it never touches a project.
 
 It writes:
 
-- `%APPDATA%\ai-notch\config.toml`, when you save settings, pick a provider or move
+- `%APPDATA%\notchling\config.toml`, when you save settings, pick a provider or move
   the notch;
 - `%USERPROFILE%\.claude\.credentials.json`, the new tokens only, when it refreshes
   Claude Code's expired login;
-- `%LOCALAPPDATA%\ai-notch\crash.log`, only if it crashes;
+- `%LOCALAPPDATA%\notchling\crash.log`, only if it crashes;
 - `%USERPROFILE%\.claude\settings.json` and its backups, when you install or remove
   the hooks;
-- the registry key `HKCU\Software\Classes\AppUserModelId\ai-notch`, the first time it
+- the registry key `HKCU\Software\Classes\AppUserModelId\notchling`, the first time it
   shows a Windows notification. Windows only shows notifications from apps it knows.
 
 ## Logos
@@ -205,24 +205,24 @@ shown only to name whose usage is on the notch.
 1. Remove the hooks while the exe is still there:
 
    ```powershell
-   ai-notch.exe --uninstall-hooks
+   notchling.exe --uninstall-hooks
    ```
 
-2. Quit ai-notch (right-click, **Quit ai-notch**) and delete the exe, plus its
+2. Quit notchling (right-click, **Quit notchling**) and delete the exe, plus its
    shortcut in `shell:startup` if you made one.
 3. Delete the settings and the crash log:
 
    ```powershell
-   Remove-Item -Recurse -ErrorAction SilentlyContinue "$env:APPDATA\ai-notch", "$env:LOCALAPPDATA\ai-notch"
+   Remove-Item -Recurse -ErrorAction SilentlyContinue "$env:APPDATA\notchling", "$env:LOCALAPPDATA\notchling"
    ```
 
 4. Remove the notification registration:
 
    ```powershell
-   reg delete "HKCU\Software\Classes\AppUserModelId\ai-notch" /f
+   reg delete "HKCU\Software\Classes\AppUserModelId\notchling" /f
    ```
 
-5. Optionally delete the `settings.json.ai-notch-backup-*` files in
+5. Optionally delete the `settings.json.notchling-backup-*` files in
    `%USERPROFILE%\.claude`.
 
 ## Footprint

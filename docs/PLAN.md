@@ -1,4 +1,4 @@
-# ai-notch build plan
+# notchling build plan
 
 Implementation plan for [SPEC.md](SPEC.md). Each numbered step ends in one commit.
 
@@ -20,7 +20,7 @@ Status: `[x]` done, `[ ]` not done. Updated at the end of every step.
 - [x] **0.1** Install Rust (rustup, `stable-x86_64-pc-windows-msvc`). No commit.
 - [x] **0.2** Git identity: global config (John Ansley Rocel). No commit.
 - [x] **0.3** `cargo new`, own git repo, `.gitignore`, `docs/SPEC.md`, `docs/PLAN.md`.
-  Commit `chore: scaffold ai-notch project`.
+  Commit `chore: scaffold notchling project`.
 
 ## Phase 0.5: Early checks (done, see [FINDINGS.md](FINDINGS.md))
 
@@ -70,7 +70,7 @@ software renderer. The OpenGL renderer used 95 MB and 0.94% CPU for the same loo
 
 ## Phase 2: Claude Code hooks (built; live test pending)
 
-- [x] **2.0** `config.rs`: TOML at `%APPDATA%\ai-notch\config.toml`, defaults when
+- [x] **2.0** `config.rs`: TOML at `%APPDATA%\notchling\config.toml`, defaults when
   missing; first field is the hook timeout. Commit `feat: config file`.
 - [x] **2.1** `protocol.rs`: pipe messages (permission request, stop, notification, prompt
   submitted) as JSON lines, round-trip tests. Capture a real `Stop` payload first. Commit `feat: hook pipe protocol`.
@@ -132,7 +132,7 @@ sessions (needs the user, since it changes the global settings).
 ## Phase 6: Extras
 
 - [x] **6.0** Panic hook, added after an unexplained exit in a Phase 5 screen test: every
-  panic goes to `%LOCALAPPDATA%\ai-notch\crash.log`, and a panic that stops the notch
+  panic goes to `%LOCALAPPDATA%\notchling\crash.log`, and a panic that stops the notch
   also shows a message box. Hook mode writes the note only, so it never blocks Claude
   Code. Commit `feat: show and record panics`.
 - [x] **6.1** Status dot from each provider's public status JSON every 5 minutes; verify
@@ -155,7 +155,7 @@ sessions (needs the user, since it changes the global settings).
 - [x] **6.5** Windows toast only while the notch is hidden.
   Done, needs-input and usage alerts become toasts while a fullscreen app hides the
   notch. Toasts need an app identity, so the first one registers
-  `HKCU\Software\Classes\AppUserModelId\ai-notch` (remove it on uninstall). Windows'
+  `HKCU\Software\Classes\AppUserModelId\notchling` (remove it on uninstall). Windows'
   own "do not disturb during games" may send them straight to the notification centre.
   Commit `feat: toast fallback when hidden`.
 
@@ -310,6 +310,10 @@ sessions (needs the user, since it changes the global settings).
   account endpoint is always asked while Claude is tracked. An old `claude_account` key
   still loads and is dropped on the next save. Commit
   `refactor: drop the exact claude usage toggle`.
+- [x] **8.20** Rename to Notchling: crate and exe, pipe, window titles, menu, toast id,
+  `%APPDATA%` and `%LOCALAPPDATA%` folders. The old `%APPDATA%\ai-notch\config.toml` is
+  copied over the first time, and `--install-hooks` replaces hooks that still name
+  `ai-notch.exe`. Commit `refactor: rename to notchling`.
 
 ## Deviations from SPEC.md
 
@@ -317,7 +321,7 @@ sessions (needs the user, since it changes the global settings).
 - `ureq` instead of `reqwest` + `tokio`: a few blocking HTTP calls need no async runtime.
   It uses Windows' own TLS (SChannel) and certificate store, not rustls and ring, with
   gzip for Google's incident feed.
-- No `keyring`: step 4.2 was dropped, so ai-notch stores no secrets of its own.
+- No `keyring`: step 4.2 was dropped, so notchling stores no secrets of its own.
 - The Claude account source refreshes Claude Code's expired login and writes it back
   (step 7.3), instead of only reading it: the desktop app never refreshes that file.
 - `chrono` for timestamps: Slint already builds it, so it adds no crate.

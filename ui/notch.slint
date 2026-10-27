@@ -821,7 +821,7 @@ export component Notch inherits Window {
     // Each shoulder tucks this far under the body, so no seam shows between them.
     private property <length> shoulder-overlap: 1px;
 
-    title: "ai-notch";
+    title: "notchling";
     no-frame: true;
     always-on-top: true;
     background: transparent;
@@ -893,7 +893,7 @@ export component Notch inherits Window {
         border-bottom-right-radius: self.corner * min(self.round-bottom, self.round-right);
         clip: true;
         accessible-role: groupbox;
-        accessible-label: "ai-notch";
+        accessible-label: "notchling";
         accessible-description: (root.show-usage ? "\{root.provider-name} \{root.usage-short}" : "No provider")
             + (root.show-cpu ? ", CPU \{round(root.cpu * 100)}%" : "")
             + (root.show-gpu ? ", GPU \{round(root.gpu * 100)}%" : "")

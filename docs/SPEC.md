@@ -13,7 +13,7 @@ and lets me approve Claude Code permission requests without switching windows.
 - GPU utilization (any vendor): PDH counter `\GPU Engine(*)\Utilization Percentage`.
   Optional NVIDIA extras (temp, VRAM) via `nvml-wrapper`.
 - Secrets: Windows Credential Manager via `keyring`. Never store tokens in plain files.
-- Config: TOML in %APPDATA%\ai-notch\config.toml.
+- Config: TOML in %APPDATA%\notchling\config.toml.
 
 ## Window behavior
 - Borderless, topmost, transparent background, not in taskbar/Alt+Tab
@@ -36,7 +36,7 @@ and lets me approve Claude Code permission requests without switching windows.
 - Provider selector: choose which AI the idle pill shows.
 
 ## Claude Code integration (hooks)
-- The same exe runs in hook mode: `ai-notch.exe --hook`.
+- The same exe runs in hook mode: `notchling.exe --hook`.
 - Register it in `~/.claude/settings.json` for these hook events:
   - `PermissionRequest`: forward request to the notch via a local named pipe, wait for
     my click, print the allow/deny decision in the format Claude Code expects.

@@ -1,4 +1,4 @@
-//! User settings, read from `%APPDATA%\ai-notch\config.toml`.
+//! User settings, read from `%APPDATA%\notchling\config.toml`.
 
 use std::env;
 use std::fs;
@@ -295,11 +295,20 @@ fn update_file(path: &Path, change: impl FnOnce(&mut Config)) -> anyhow::Result<
     Ok(config)
 }
 
-/// `%APPDATA%\ai-notch\config.toml`, or `None` when `APPDATA` is not set.
+/// `%APPDATA%\notchling\config.toml`, or `None` when `APPDATA` is not set.
+///
+/// The first time, the settings saved before the rename, in `%APPDATA%\ai-notch`, are
+/// copied there, so nothing is lost.
 #[must_use]
 pub fn config_path() -> Option<PathBuf> {
-    let appdata = env::var_os("APPDATA")?;
-    Some(PathBuf::from(appdata).join("ai-notch").join("config.toml"))
+    let appdata = PathBuf::from(env::var_os("APPDATA")?);
+    let path = appdata.join("notchling").join("config.toml");
+    let old = appdata.join("ai-notch").join("config.toml");
+    if !path.exists() && old.exists() {
+        // On failure the defaults apply, as with any unreadable file.
+        let _ = fs::create_dir_all(appdata.join("notchling")).and_then(|()| fs::copy(&old, &path));
+    }
+    Some(path)
 }
 
 #[cfg(test)]
@@ -423,9 +432,9 @@ mod tests {
 
     #[test]
     fn update_keeps_other_settings_and_never_overwrites_a_broken_file() {
-        let dir = env::temp_dir().join(format!("ai-notch-config-{}", std::process::id()));
+        let dir = env::temp_dir().join(format!("notchling-config-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        let path = dir.join("ai-notch").join("config.toml");
+        let path = dir.join("notchling").join("config.toml");
         let pick_gemini = |config: &mut Config| config.set_provider(Provider::Gemini);
         let read = |path: &Path| {
             let text = fs::read_to_string(path).expect("config file exists");

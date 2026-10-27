@@ -145,7 +145,7 @@ mod tests {
     fn origin() -> Origin {
         Origin {
             session_id: "s1".to_owned(),
-            project: "ai-notch".to_owned(),
+            project: "notchling".to_owned(),
             ancestors: vec![10, 20],
         }
     }

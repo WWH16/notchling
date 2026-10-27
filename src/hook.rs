@@ -1,4 +1,4 @@
-//! `ai-notch --hook`: the command Claude Code runs for each hook event.
+//! `notchling --hook`: the command Claude Code runs for each hook event.
 //!
 //! It reads the event from stdin, forwards it to the notch, and for permission
 //! requests prints the notch's decision. Whenever anything goes wrong (no notch, a
@@ -22,7 +22,7 @@ use crate::protocol::{self, Decision, Event, Origin, Question};
 const MAX_INPUT_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Message Claude sees when a request is denied from the notch.
-const DENY_MESSAGE: &str = "The user denied this from the ai-notch overlay.";
+const DENY_MESSAGE: &str = "The user denied this from the notchling overlay.";
 
 /// The tool Claude uses to ask the user to pick among options.
 const ASK_USER_QUESTION: &str = "AskUserQuestion";
@@ -30,7 +30,7 @@ const ASK_USER_QUESTION: &str = "AskUserQuestion";
 /// Put in front of a reply typed on the notch, so Claude takes it as the user's next
 /// message rather than as a note from a hook.
 const REPLY_PREFIX: &str =
-    "The user replied from the ai-notch overlay. Treat this as their next message: ";
+    "The user replied from the notchling overlay. Treat this as their next message: ";
 
 /// The fields of a Claude Code hook payload that the notch uses.
 #[derive(Debug, Default, Deserialize)]
@@ -161,7 +161,7 @@ fn reply_context(message: &str) -> String {
         format!("with these arguments, then follow it: {arguments}")
     };
     format!(
-        "The user replied from the ai-notch overlay with the slash command /{name}. \
+        "The user replied from the notchling overlay with the slash command /{name}. \
          Treat it as their next message: invoke the skill \"{name}\" with the Skill tool, \
          {then}. If no skill has that name, say so."
     )
@@ -186,7 +186,7 @@ fn tool_detail(tool_input: &Value) -> String {
     }
 }
 
-/// The last component of the session's working directory, e.g. `ai-notch`.
+/// The last component of the session's working directory, e.g. `notchling`.
 fn project_name(cwd: &str) -> String {
     Path::new(cwd)
         .file_name()
@@ -481,7 +481,7 @@ mod tests {
 
     #[test]
     fn project_name_is_the_last_folder() {
-        assert_eq!(project_name(r"S:\PERSONAL PROJECTS\ai-notch"), "ai-notch");
+        assert_eq!(project_name(r"S:\PERSONAL PROJECTS\notchling"), "notchling");
         assert_eq!(project_name(""), "");
     }
 }

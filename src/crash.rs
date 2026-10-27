@@ -37,16 +37,16 @@ pub fn install(report: Report) {
                 || "The details could not be saved.".to_owned(),
                 |path| format!("The details were saved to:\n{}", path.display()),
             );
-            let text = format!("ai-notch stopped because of a bug.\n\n{info}\n\n{saved}");
-            window::message_box("ai-notch", &text, MessageKind::Error);
+            let text = format!("notchling stopped because of a bug.\n\n{info}\n\n{saved}");
+            window::message_box("notchling", &text, MessageKind::Error);
         }
     }));
 }
 
-/// `%LOCALAPPDATA%\ai-notch\crash.log`, or `None` when `LOCALAPPDATA` is not set.
+/// `%LOCALAPPDATA%\notchling\crash.log`, or `None` when `LOCALAPPDATA` is not set.
 fn note_path() -> Option<PathBuf> {
     let local = env::var_os("LOCALAPPDATA")?;
-    Some(PathBuf::from(local).join("ai-notch").join("crash.log"))
+    Some(PathBuf::from(local).join("notchling").join("crash.log"))
 }
 
 /// Appends one panic to the crash note. Returns whether it was written; it never
@@ -54,7 +54,7 @@ fn note_path() -> Option<PathBuf> {
 fn append_note(path: &Path, thread: &str, panic: &str) -> bool {
     let time = Local::now().format("%Y-%m-%d %H:%M:%S %:z");
     let version = env!("CARGO_PKG_VERSION");
-    let note = format!("{time} ai-notch {version}, thread {thread}: {panic}\n\n");
+    let note = format!("{time} notchling {version}, thread {thread}: {panic}\n\n");
     path.parent()
         .is_some_and(|dir| fs::create_dir_all(dir).is_ok())
         && OpenOptions::new()
@@ -73,9 +73,9 @@ mod tests {
 
     #[test]
     fn notes_are_appended_with_thread_and_message() {
-        let dir = env::temp_dir().join(format!("ai-notch-crash-{}", process::id()));
+        let dir = env::temp_dir().join(format!("notchling-crash-{}", process::id()));
         let _ = fs::remove_dir_all(&dir);
-        let path = dir.join("ai-notch").join("crash.log");
+        let path = dir.join("notchling").join("crash.log");
 
         assert!(append_note(
             &path,
@@ -92,7 +92,7 @@ mod tests {
         let first = text.find("thread main: panicked").expect("first note");
         let second = text.find("thread usage: panicked").expect("second note");
         assert!(first < second, "{text}");
-        assert!(text.contains(concat!("ai-notch ", env!("CARGO_PKG_VERSION"))));
+        assert!(text.contains(concat!("notchling ", env!("CARGO_PKG_VERSION"))));
         let _ = fs::remove_dir_all(dir);
     }
 }

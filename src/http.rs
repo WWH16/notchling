@@ -20,7 +20,7 @@ pub fn agent() -> Agent {
         .tls_config(tls)
         .https_only(true)
         .timeout_global(Some(REQUEST_TIMEOUT))
-        .user_agent(concat!("ai-notch/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("notchling/", env!("CARGO_PKG_VERSION")))
         .build()
         .into()
 }

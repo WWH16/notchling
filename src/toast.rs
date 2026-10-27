@@ -10,9 +10,9 @@ use windows::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValue
 use windows::core::{HSTRING, w};
 
 /// The identity toasts are shown under, registered by [`register`].
-const APP_ID: &str = "ai-notch";
+const APP_ID: &str = "notchling";
 
-/// Shows `text` as a toast from ai-notch.
+/// Shows `text` as a toast from notchling.
 ///
 /// # Errors
 ///
@@ -37,7 +37,7 @@ fn register() -> anyhow::Result<()> {
     unsafe {
         RegSetKeyValueW(
             HKEY_CURRENT_USER,
-            w!(r"Software\Classes\AppUserModelId\ai-notch"),
+            w!(r"Software\Classes\AppUserModelId\notchling"),
             w!("DisplayName"),
             REG_SZ.0,
             Some(name.as_ptr().cast::<c_void>()),

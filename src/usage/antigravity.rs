@@ -22,7 +22,7 @@ const PRINT_TIMEOUT: &str = "60s";
 #[derive(Debug)]
 pub struct Antigravity {
     exe: PathBuf,
-    /// An empty folder of ai-notch's own, so the CLI never runs in a real project.
+    /// An empty folder of notchling's own, so the CLI never runs in a real project.
     workspace: PathBuf,
 }
 
@@ -35,7 +35,7 @@ impl Antigravity {
         let exe = local.join("agy").join("bin").join("agy.exe");
         exe.is_file().then(|| Self {
             exe,
-            workspace: local.join("ai-notch").join("antigravity"),
+            workspace: local.join("notchling").join("antigravity"),
         })
     }
 

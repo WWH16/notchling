@@ -230,14 +230,14 @@ fn report_settings_change(verb: &str, outcome: anyhow::Result<install::Outcome>)
                 |path| format!("The previous file was backed up to:\n{}", path.display()),
             );
             let text = format!(
-                "The ai-notch hooks were {verb}\n{}\n\n{backup}\n\nClaude Code picks up the change automatically.",
+                "The notchling hooks were {verb}\n{}\n\n{backup}\n\nClaude Code picks up the change automatically.",
                 outcome.settings.display()
             );
-            window::message_box("ai-notch", &text, MessageKind::Info);
+            window::message_box("notchling", &text, MessageKind::Info);
         }
         Err(err) => {
             let text = format!("Nothing was changed.\n\n{err:#}");
-            window::message_box("ai-notch", &text, MessageKind::Error);
+            window::message_box("notchling", &text, MessageKind::Error);
         }
     }
 }
@@ -1035,7 +1035,7 @@ struct Alert {
     hidden: bool,
 }
 
-/// "Done in ai-notch" or "ai-notch needs your input", or without the project when it is
+/// "Done in notchling" or "notchling needs your input", or without the project when it is
 /// unknown. Usage alerts have their own text.
 fn session_alert_text(kind: AlertKind, project: &str) -> String {
     match (kind, project.is_empty()) {
@@ -1393,12 +1393,12 @@ mod tests {
     #[test]
     fn session_alerts_read_as_sentences() {
         let cases = [
-            (AlertKind::Done, "ai-notch", "Done in ai-notch"),
+            (AlertKind::Done, "notchling", "Done in notchling"),
             (AlertKind::Done, "", "Done"),
             (
                 AlertKind::NeedsInput,
-                "ai-notch",
-                "ai-notch needs your input",
+                "notchling",
+                "notchling needs your input",
             ),
             (AlertKind::NeedsInput, "", "Needs your input"),
         ];

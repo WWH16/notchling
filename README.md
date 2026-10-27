@@ -35,8 +35,10 @@ The ring turns amber at 80% and red at 95%.
 - **Hover** the pill to see RAM, VRAM, and the provider's limits as rings with the
   clock time each one resets ("resets 2:20 PM", "resets Fri 7:00 AM"), plus tokens,
   burn rate and any incident on its status page.
-- **Drag** it with the left button to move it along the top edge. It stays there
-  next time.
+- **Drag** it with the left button anywhere, on any display. Let go within 32 px of
+  the top or bottom edge and it sticks there, flat side against the edge; anywhere
+  else it floats where you left it, with all corners round. In the lower half of the
+  screen it expands upward. It stays put next time.
 - **Right-click** it to pick the provider shown (Claude, ChatGPT or Gemini), open the
   settings, or quit.
 - **Click** a "Done" or "Needs your input" alert to bring that Claude Code window to
@@ -118,7 +120,8 @@ Right-click the notch and choose **Settings…**, or edit
 | `hook_timeout_secs` | `120` | How long a permission request waits for you (5 to 580) |
 | `gemini_daily_requests` | `1000` | Your Gemini CLI daily request limit |
 | `claude_account` | `true` | Read exact Claude usage from the account endpoint, refreshing Claude Code's login when needed |
-| `position` | `0.5` | Where the notch sits along the top edge, from 0 (left) to 1 (right); set by dragging |
+| `position` | `0.5` | Where the notch sits across its display, from 0 (left) to 1 (right); set by dragging |
+| `position_y` | `0.0` | Where it sits down its display, from 0 (hanging from the top edge) to 1 (on the bottom edge, above the taskbar); set by dragging |
 | `monitor` | primary display | Display the notch sits on, as Windows names it: `monitor = '\\.\DISPLAY2'` (single quotes, so the backslashes stay as they are) |
 
 A longer permission wait reaches Claude Code only after running `--install-hooks`

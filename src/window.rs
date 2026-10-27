@@ -8,8 +8,8 @@ use anyhow::{Context, bail};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
-    MONITORINFOEXW, SetWindowRgn,
+    CreateRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR,
+    MONITOR_DEFAULTTONEAREST, MONITORINFO, MONITORINFOEXW, MonitorFromPoint, SetWindowRgn,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Shell::{
@@ -79,13 +79,13 @@ pub enum MenuChoice {
     Quit,
 }
 
-/// The cursor's horizontal screen position in physical pixels, if Windows reports it.
+/// The cursor's screen position in physical pixels, if Windows reports it.
 #[must_use]
-pub fn cursor_x() -> Option<i32> {
+pub fn cursor() -> Option<POINT> {
     let mut cursor = POINT::default();
     // SAFETY: `cursor` is a live POINT the call writes into.
     unsafe { GetCursorPos(&mut cursor) }.ok()?;
-    Some(cursor.x)
+    Some(cursor)
 }
 
 /// Whether a fullscreen app, game or presentation is in front, so the notch should
@@ -110,6 +110,8 @@ pub struct Monitor {
     pub primary: bool,
     /// The whole display in physical pixels, taskbar included.
     pub bounds: RECT,
+    /// The display without the taskbar and docked bars.
+    pub work: RECT,
     handle: HMONITOR,
 }
 
@@ -168,77 +170,212 @@ fn monitor_info(handle: HMONITOR) -> anyhow::Result<Monitor> {
         device: String::from_utf16_lossy(&info.szDevice[..name_len]),
         primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
         bounds: info.monitorInfo.rcMonitor,
+        work: info.monitorInfo.rcWork,
         handle,
     })
 }
 
-/// Where the notch sits: a display, and how far along its top edge the window's
-/// center is, from 0 (left edge) to 1 (right edge).
+/// Where the notch hangs: from the top edge of its display, from the bottom of the work
+/// area (just above the taskbar), or floating anywhere in between.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edge {
+    Top,
+    Bottom,
+    Floating,
+}
+
+/// Which way the notch expands from its fixed side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Growth {
+    Down,
+    Up,
+}
+
+/// How close to the top or bottom edge, in logical pixels, a dropped notch sticks to it.
+const SNAP_DISTANCE: f32 = 32.0;
+
+/// Where the notch sits. The anchor is the middle of its fixed side: the top while it
+/// grows down, the bottom while it grows up.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Placement {
     /// Windows' device name; the primary display when `None` or disconnected.
     pub device: Option<String>,
+    /// The anchor across the display, from 0 (left edge) to 1 (right edge).
     pub position: f32,
+    /// The anchor down the display, from 0 (top edge) to 1 (bottom of the work area).
+    pub vertical: f32,
 }
 
 impl Placement {
-    /// Moves the window there, keeping the whole window on its display; the position
-    /// is clamped to match.
-    ///
-    /// Before the first `show()` this keeps the window from appearing anywhere else first.
-    /// `logical_width` is the window width in logical pixels, since Slint reports no size
-    /// before the window exists.
+    #[must_use]
+    pub fn edge(&self) -> Edge {
+        if self.vertical <= 0.0 {
+            Edge::Top
+        } else if self.vertical >= 1.0 {
+            Edge::Bottom
+        } else {
+            Edge::Floating
+        }
+    }
+
+    /// Up in the lower half of the display, so a tall request card stays on screen.
+    #[must_use]
+    pub fn growth(&self) -> Growth {
+        growth(self.vertical)
+    }
+
+    /// Moves the window there, keeping it on its display; the position is clamped to
+    /// match. `size` is the window size in logical pixels, since Slint reports no size
+    /// before the window exists. Before the first `show()` this keeps the window from
+    /// appearing anywhere else first.
     ///
     /// # Errors
     ///
     /// Fails when Windows reports no display, or not its DPI.
-    pub fn apply(&mut self, window: &slint::Window, logical_width: f32) -> anyhow::Result<()> {
-        self.place(window, logical_width, self.position, 0)
-    }
-
-    /// Moves the window `dx` physical pixels along the top edge from `start`, the
-    /// position it had when a drag began.
-    ///
-    /// # Errors
-    ///
-    /// Fails when Windows reports no display, or not its DPI.
-    pub fn drag(
+    pub fn apply(
         &mut self,
         window: &slint::Window,
-        logical_width: f32,
-        start: f32,
-        dx: i32,
+        size: slint::LogicalSize,
     ) -> anyhow::Result<()> {
-        self.place(window, logical_width, start, dx)
-    }
-
-    fn place(
-        &mut self,
-        window: &slint::Window,
-        logical_width: f32,
-        position: f32,
-        dx: i32,
-    ) -> anyhow::Result<()> {
-        let monitors = monitors();
-        let monitor = monitors
-            .iter()
-            .find(|monitor| Some(monitor.device.as_str()) == self.device.as_deref())
-            .or_else(|| monitors.iter().find(|monitor| monitor.primary))
-            .context("Windows reports no display")?;
-        let scale = monitor_scale(monitor.handle)?;
-        let bounds = monitor.bounds;
-
-        // Pixel counts are far inside f32's exact range.
-        let (left, span) = (bounds.left as f32, (bounds.right - bounds.left) as f32);
-        let half = logical_width * scale / 2.0;
-        let lowest = left + half;
-        let center =
-            (left + position * span + dx as f32).clamp(lowest, (left + span - half).max(lowest));
-        self.position = (center - left) / span;
-        // Rounding to whole pixels is intended.
-        let x = (center - half).round() as i32;
-        window.set_position(slint::PhysicalPosition::new(x, bounds.top));
+        let area = Area::of(&self.monitor()?)?;
+        let (x, y, position) = area.origin(size, self.position, self.vertical);
+        self.position = position;
+        window.set_position(slint::PhysicalPosition::new(x, y));
         Ok(())
+    }
+
+    /// The anchor in screen pixels, where a drag starts from.
+    ///
+    /// # Errors
+    ///
+    /// Fails when Windows reports no display, or not its DPI.
+    pub fn anchor(&self) -> anyhow::Result<POINT> {
+        let (x, y) = Area::of(&self.monitor()?)?.anchor(self.position, self.vertical);
+        // Rounding to whole pixels is intended.
+        Ok(POINT {
+            x: x.round() as i32,
+            y: y.round() as i32,
+        })
+    }
+
+    /// Puts the anchor at `point`, in screen pixels, on whichever display holds it, as a
+    /// drag does.
+    ///
+    /// # Errors
+    ///
+    /// Fails when Windows reports no display, or not its DPI.
+    pub fn move_anchor(
+        &mut self,
+        window: &slint::Window,
+        size: slint::LogicalSize,
+        point: POINT,
+    ) -> anyhow::Result<()> {
+        // SAFETY: MonitorFromPoint has no preconditions; with DEFAULTTONEAREST it always
+        // returns a display.
+        let monitor = monitor_info(unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST) })?;
+        let area = Area::of(&monitor)?;
+        // Pixel counts are far inside f32's exact range.
+        (self.position, self.vertical) = area.fractions(point.x as f32, point.y as f32);
+        self.device = Some(monitor.device);
+        self.apply(window, size)
+    }
+
+    /// Sticks the notch to the top or bottom edge when it was let go within
+    /// [`SNAP_DISTANCE`] of one; anywhere else it stays where it is.
+    ///
+    /// # Errors
+    ///
+    /// Fails when Windows reports no display, or not its DPI.
+    pub fn snap(&mut self, window: &slint::Window, size: slint::LogicalSize) -> anyhow::Result<()> {
+        self.vertical = Area::of(&self.monitor()?)?.snapped(self.vertical);
+        self.apply(window, size)
+    }
+
+    fn monitor(&self) -> anyhow::Result<Monitor> {
+        let mut monitors = monitors();
+        let index = monitors
+            .iter()
+            .position(|monitor| Some(monitor.device.as_str()) == self.device.as_deref())
+            .or_else(|| monitors.iter().position(|monitor| monitor.primary))
+            .context("Windows reports no display")?;
+        Ok(monitors.swap_remove(index))
+    }
+}
+
+fn growth(vertical: f32) -> Growth {
+    if vertical > 0.5 {
+        Growth::Up
+    } else {
+        Growth::Down
+    }
+}
+
+/// A display as the notch uses it, in physical pixels: the whole width, from the top of
+/// the display to the bottom of its work area.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Area {
+    left: f32,
+    right: f32,
+    top: f32,
+    bottom: f32,
+    scale: f32,
+}
+
+impl Area {
+    fn of(monitor: &Monitor) -> anyhow::Result<Self> {
+        // Pixel counts are far inside f32's exact range.
+        Ok(Self {
+            left: monitor.bounds.left as f32,
+            right: monitor.bounds.right as f32,
+            top: monitor.bounds.top as f32,
+            bottom: monitor.work.bottom as f32,
+            scale: monitor_scale(monitor.handle)?,
+        })
+    }
+
+    fn anchor(self, position: f32, vertical: f32) -> (f32, f32) {
+        (
+            self.left + position * (self.right - self.left),
+            self.top + vertical * (self.bottom - self.top),
+        )
+    }
+
+    fn fractions(self, x: f32, y: f32) -> (f32, f32) {
+        (
+            ((x - self.left) / (self.right - self.left)).clamp(0.0, 1.0),
+            ((y - self.top) / (self.bottom - self.top)).clamp(0.0, 1.0),
+        )
+    }
+
+    /// The window's top-left corner for a placement, keeping the whole window across
+    /// the display, and the position that leaves.
+    fn origin(self, size: slint::LogicalSize, position: f32, vertical: f32) -> (i32, i32, f32) {
+        let (width, height) = (size.width * self.scale, size.height * self.scale);
+        let half = width / 2.0;
+        let (x, y) = self.anchor(position, vertical);
+        let lowest = self.left + half;
+        let x = x.clamp(lowest, (self.right - half).max(lowest));
+        let top = match growth(vertical) {
+            Growth::Down => y,
+            Growth::Up => y - height,
+        };
+        let position = (x - self.left) / (self.right - self.left);
+        // Rounding to whole pixels is intended.
+        ((x - half).round() as i32, top.round() as i32, position)
+    }
+
+    /// `vertical` pulled onto the top or bottom edge when it is within
+    /// [`SNAP_DISTANCE`] of one.
+    fn snapped(self, vertical: f32) -> f32 {
+        let span = self.bottom - self.top;
+        let distance = SNAP_DISTANCE * self.scale;
+        if vertical * span <= distance {
+            0.0
+        } else if (1.0 - vertical) * span <= distance {
+            1.0
+        } else {
+            vertical
+        }
     }
 }
 
@@ -481,20 +618,33 @@ pub fn union(a: RECT, b: RECT) -> RECT {
     }
 }
 
-/// The top-centered rectangle, in physical pixels, that holds a shape of the given
-/// logical size inside a window of the given logical width.
+/// The rectangle, in physical pixels, that holds a shape of the given logical size
+/// inside a window of the given logical size: centered across it, against the top when
+/// the notch grows down and against the bottom when it grows up.
 ///
 /// Rounds outward so anti-aliased edges are never cut off.
 #[must_use]
-pub fn shape_rect(window_width: f32, shape_width: f32, shape_height: f32, scale: f32) -> RECT {
-    let left = (window_width - shape_width) / 2.0 * scale;
-    let right = left + shape_width * scale;
+pub fn shape_rect(
+    window: slint::LogicalSize,
+    shape: slint::LogicalSize,
+    scale: f32,
+    growth: Growth,
+) -> RECT {
+    let left = (window.width - shape.width) / 2.0 * scale;
+    let right = left + shape.width * scale;
+    let (top, bottom) = match growth {
+        Growth::Down => (0.0, shape.height * scale),
+        Growth::Up => (
+            (window.height - shape.height) * scale,
+            window.height * scale,
+        ),
+    };
     // Pixel coordinates are far inside i32 range; truncation after floor/ceil is intended.
     RECT {
         left: left.floor() as i32,
-        top: 0,
+        top: top.floor() as i32,
         right: right.ceil() as i32,
-        bottom: (shape_height * scale).ceil() as i32,
+        bottom: bottom.ceil() as i32,
     }
 }
 
@@ -536,21 +686,82 @@ mod tests {
 
     #[test]
     fn shape_rect_is_centered_at_100_percent() {
-        let rect = shape_rect(520.0, 190.0, 30.0, 1.0);
+        let window = slint::LogicalSize::new(520.0, 280.0);
+        let shape = slint::LogicalSize::new(190.0, 30.0);
+        let down = shape_rect(window, shape, 1.0, Growth::Down);
         assert_eq!(
-            (rect.left, rect.top, rect.right, rect.bottom),
+            (down.left, down.top, down.right, down.bottom),
             (165, 0, 355, 30)
         );
+        let up = shape_rect(window, shape, 1.0, Growth::Up);
+        assert_eq!((up.left, up.top, up.right, up.bottom), (165, 250, 355, 280));
     }
 
     #[test]
     fn shape_rect_rounds_outward_when_scaled() {
-        let rect = shape_rect(520.0, 191.0, 30.5, 1.25);
+        let window = slint::LogicalSize::new(520.0, 280.0);
+        let rect = shape_rect(
+            window,
+            slint::LogicalSize::new(191.0, 30.5),
+            1.25,
+            Growth::Down,
+        );
         // Unrounded: left 205.625, right 444.375, bottom 38.125.
         assert_eq!(
             (rect.left, rect.right, rect.bottom),
             (205, 445, 39),
             "{rect:?}"
+        );
+    }
+
+    /// A 1920x1080 display at 125% with a 48-pixel taskbar.
+    fn area() -> Area {
+        Area {
+            left: 0.0,
+            right: 1920.0,
+            top: 0.0,
+            bottom: 1032.0,
+            scale: 1.25,
+        }
+    }
+
+    #[test]
+    fn notch_hangs_from_the_edge_it_is_on() {
+        let size = slint::LogicalSize::new(520.0, 280.0);
+        // 650 x 350 physical pixels.
+        assert_eq!(area().origin(size, 0.5, 0.0), (635, 0, 0.5), "top edge");
+        assert_eq!(
+            area().origin(size, 0.5, 1.0),
+            (635, 682, 0.5),
+            "bottom edge grows up"
+        );
+        assert_eq!(
+            area().origin(size, 0.5, 0.25),
+            (635, 258, 0.5),
+            "upper half grows down"
+        );
+        let (x, _, position) = area().origin(size, 0.0, 0.0);
+        assert_eq!((x, position), (0, 325.0 / 1920.0), "kept on the display");
+    }
+
+    #[test]
+    fn dropped_notch_sticks_only_near_an_edge() {
+        // 32 logical pixels are 40 physical ones; the area is 1032 tall.
+        assert_eq!(area().snapped(39.0 / 1032.0), 0.0);
+        assert_eq!(area().snapped(1.0 - 39.0 / 1032.0), 1.0);
+        let middle = 500.0 / 1032.0;
+        assert_eq!(area().snapped(middle), middle);
+        assert_eq!(area().snapped(41.0 / 1032.0), 41.0 / 1032.0);
+    }
+
+    #[test]
+    fn anchor_and_fractions_agree() {
+        let (x, y) = area().anchor(0.25, 0.75);
+        assert_eq!(area().fractions(x, y), (0.25, 0.75));
+        assert_eq!(
+            area().fractions(-50.0, 5000.0),
+            (0.0, 1.0),
+            "clamped to the display"
         );
     }
 }

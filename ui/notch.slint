@@ -279,6 +279,9 @@ export enum Provider { claude, chatgpt, gemini }
 // The shown provider's status page; unknown until checked or when the check fails.
 export enum Health { unknown, operational, degraded, down }
 
+// Where the notch hangs; Rust decides from where it was dropped.
+export enum NotchEdge { top, bottom, floating }
+
 // Why the notch is asking for attention.
 export enum AlertKind { done, needs-input, usage-high, usage-critical }
 
@@ -348,8 +351,11 @@ export component Notch inherits Window {
     callback menu-requested();
 
     // Dragging the notch with the left button: press, each move, and release. Rust moves
-    // the window along the top edge by how far the cursor travelled on screen, since the
-    // pill itself resizes during a drag.
+    // the window by how far the cursor travelled on screen, since the pill itself resizes
+    // during a drag, and sticks it to an edge it is dropped near.
+    in property <NotchEdge> edge;
+    // In the lower half of the screen the notch expands upward, from its bottom side.
+    in property <bool> grows-up;
     callback drag-started();
     callback dragged();
     callback drag-ended();
@@ -394,16 +400,21 @@ export component Notch inherits Window {
     // Fixed size large enough for the biggest state; only the shape is drawn.
     // Exposed because Rust positions the window before Slint knows its size.
     out property <length> fixed-width: 520px;
+    out property <length> fixed-height: 280px;
     width: self.fixed-width;
-    height: 280px;
+    height: self.fixed-height;
 
     pill := Rectangle {
         x: (parent.width - self.width) / 2;
-        y: 0;
+        y: root.grows-up ? parent.height - self.height : 0;
         width: root.idle-width;
         height: root.idle-height;
         background: Theme.surface;
-        border-bottom-left-radius: min(self.height / 2, 22px);
+        // The side against a screen edge stays square; every other corner is round.
+        property <length> corner: min(self.height / 2, 22px);
+        border-top-left-radius: root.edge == NotchEdge.top ? 0 : self.corner;
+        border-top-right-radius: self.border-top-left-radius;
+        border-bottom-left-radius: root.edge == NotchEdge.bottom ? 0 : self.corner;
         border-bottom-right-radius: self.border-bottom-left-radius;
         clip: true;
 

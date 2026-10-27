@@ -43,9 +43,12 @@ pub struct Config {
     /// Whether to ask the account endpoint for Claude's exact usage, with Claude Code's
     /// login. Off, the notch shows the local estimate only.
     claude_account: bool,
-    /// Where the notch sits along the top edge, from 0 (left) to 1 (right); set by
+    /// Where the notch sits across its display, from 0 (left) to 1 (right); set by
     /// dragging it.
     position: f32,
+    /// Where the notch sits down its display, from 0 (hanging from the top edge) to 1
+    /// (standing on the bottom of the work area); set by dragging it.
+    position_y: f32,
 }
 
 impl Default for Config {
@@ -59,6 +62,7 @@ impl Default for Config {
             monitor: None,
             claude_account: true,
             position: 0.5,
+            position_y: 0.0,
         }
     }
 }
@@ -146,18 +150,24 @@ impl Config {
         self.claude_account = enabled;
     }
 
-    /// Where the notch sits along the top edge, from 0 (left) to 1 (right).
+    /// Where the notch sits across its display, from 0 (left) to 1 (right).
     #[must_use]
     pub fn position(&self) -> f32 {
-        if self.position.is_finite() {
-            self.position.clamp(0.0, 1.0)
-        } else {
-            0.5
-        }
+        fraction_or(self.position, 0.5)
     }
 
     pub fn set_position(&mut self, position: f32) {
         self.position = position;
+    }
+
+    /// Where the notch sits down its display, from 0 (top edge) to 1 (bottom edge).
+    #[must_use]
+    pub fn position_y(&self) -> f32 {
+        fraction_or(self.position_y, 0.0)
+    }
+
+    pub fn set_position_y(&mut self, position_y: f32) {
+        self.position_y = position_y;
     }
 
     /// Changes the config file and keeps every other setting, returning the new
@@ -170,6 +180,15 @@ impl Config {
     pub fn update(change: impl FnOnce(&mut Self)) -> anyhow::Result<Self> {
         let path = config_path().context("APPDATA is not set")?;
         update_file(&path, change)
+    }
+}
+
+/// `value` kept in 0..=1, or `fallback` when it is not a number.
+fn fraction_or(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        fallback
     }
 }
 
@@ -236,6 +255,14 @@ mod tests {
         assert_eq!(read("position = -3.0"), 0.0);
         assert_eq!(read("position = 7.5"), 1.0);
         assert_eq!(read("position = nan"), 0.5);
+        assert_eq!(
+            Config::default().position_y(),
+            0.0,
+            "hangs from the top edge"
+        );
+        let read_y = |text: &str| Config::parse(text).expect("valid TOML").position_y();
+        assert_eq!(read_y("position_y = 0.6"), 0.6);
+        assert_eq!(read_y("position_y = 2.0"), 1.0);
     }
 
     #[test]

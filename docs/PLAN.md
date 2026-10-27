@@ -185,6 +185,10 @@ sessions (needs the user, since it changes the global settings).
   window procedure, and the menu belongs to a hidden helper window. Checked on the live
   notch with the menu open and after it closed.
   Commit `fix: stop windows painting a title bar over the notch`.
+- [x] **7.6** Drag the notch anywhere, onto any display. Dropped within 32 px of the
+  top or bottom edge it sticks there with its flat side against the edge; elsewhere it
+  floats as a fully rounded pill. In the lower half it grows upward. Saved as
+  `monitor`, `position` and `position_y`. Commit `feat: drag the notch anywhere`.
 
 ## Deviations from SPEC.md
 

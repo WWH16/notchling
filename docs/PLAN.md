@@ -131,6 +131,10 @@ sessions (needs the user, since it changes the global settings).
 
 ## Phase 6: Extras
 
+- [x] **6.0** Panic hook, added after an unexplained exit in a Phase 5 screen test: every
+  panic goes to `%LOCALAPPDATA%\ai-notch\crash.log`, and a panic that stops the notch
+  also shows a message box. Hook mode writes the note only, so it never blocks Claude
+  Code. Commit `feat: show and record panics`.
 - [ ] **6.1** Status dot from each provider's public status JSON every 5 minutes; verify
   URLs at this step. Commit `feat: provider status dot`.
 - [ ] **6.2** Alerts at 80% and 95%, once per usage window.

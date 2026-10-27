@@ -2,6 +2,7 @@
 
 mod awake;
 mod config;
+mod crash;
 mod gpu;
 mod hook;
 mod install;
@@ -70,6 +71,7 @@ const CLI_LOG_INTERVAL: Duration = Duration::from_secs(60);
 fn main() -> anyhow::Result<()> {
     match env::args().nth(1).as_deref() {
         Some("--hook") => {
+            crash::install(crash::Report::NoteOnly);
             hook::run();
             return Ok(());
         }
@@ -83,6 +85,8 @@ fn main() -> anyhow::Result<()> {
         }
         _ => {}
     }
+
+    crash::install(crash::Report::NoteAndDialog);
 
     // Claiming the pipe first also stops a second notch from starting.
     let listener = Listener::bind(&pipe::pipe_name()?)?;

@@ -53,6 +53,25 @@ No decision: exit 0 with no stdout. Exit code 2 is not a deny on this event.
 Hook `timeout` is in seconds; command hooks default to 600. The installer sets an
 explicit timeout slightly above the notch's own wait, so the notch always gives up first.
 
+### Live use (2026-10-27, Claude Code 2.1.307 in the desktop app)
+
+- When the user answers in Claude Code's own dialog, or auto mode decides, Claude Code
+  goes on without the `PermissionRequest` hook and does not end it: the hook and its
+  `bash.exe` parent keep running until the hook gives up. The notch therefore showed
+  such requests until its 120 s wait ran out.
+- No hook event fires at the moment of approval. The closest are `PostToolUse`,
+  `PostToolUseFailure` and `PermissionDenied`, whose payloads carry `tool_name` and
+  `tool_input` (and `tool_use_id`, which `PermissionRequest` lacks). The notch matches
+  them to a waiting request by session, tool and command, and `Stop` clears anything
+  left in that session.
+- Command hooks accept `"async": true` and then run in the background without blocking
+  the tool call; the installer uses it for those three events, which fire on every
+  tool call.
+- winit keeps `WS_CAPTION` on frameless windows and hides it in `WM_NCCALCSIZE`. With a
+  window region set, activating the window (`SetForegroundWindow` for the right-click
+  menu) made Windows paint a classic caption and its buttons over the notch. The notch
+  now drops the caption and frame styles and is a plain `WS_POPUP`.
+
 ## V2: Codex CLI (confirmed, exact %)
 
 - Sessions: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl.zst`. The files are

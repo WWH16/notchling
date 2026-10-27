@@ -24,13 +24,21 @@ impl RequestId {
     }
 }
 
+/// What a permission request asks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Request {
+    pub session_id: String,
+    pub project: String,
+    pub tool: String,
+    /// The full command, or the full tool input for non-shell tools.
+    pub detail: String,
+}
+
 /// One request shown on the notch.
 #[derive(Debug)]
 pub struct Pending {
     pub id: RequestId,
-    pub project: String,
-    pub tool: String,
-    pub detail: String,
+    pub request: Request,
     reply: Sender<Decision>,
 }
 
@@ -43,22 +51,10 @@ pub struct Requests {
 
 impl Requests {
     /// Queues a request; `reply` receives the decision when the user clicks.
-    pub fn push(
-        &mut self,
-        project: String,
-        tool: String,
-        detail: String,
-        reply: Sender<Decision>,
-    ) -> RequestId {
+    pub fn push(&mut self, request: Request, reply: Sender<Decision>) -> RequestId {
         let id = RequestId(self.next_id);
         self.next_id = (self.next_id + 1) % (1 << 31);
-        self.queue.push_back(Pending {
-            id,
-            project,
-            tool,
-            detail,
-            reply,
-        });
+        self.queue.push_back(Pending { id, request, reply });
         id
     }
 
@@ -90,6 +86,33 @@ impl Requests {
         self.take(id).is_some()
     }
 
+    /// Hands back the requests for a call Claude Code has already settled, with no
+    /// decision, so their hooks exit and the cards go. Returns how many there were.
+    pub fn settle(&mut self, session_id: &str, tool: &str, detail: &str) -> usize {
+        self.release(|request| {
+            request.session_id == session_id && request.tool == tool && request.detail == detail
+        })
+    }
+
+    /// Hands back every request from a session whose turn has ended. Returns how many
+    /// there were.
+    pub fn settle_session(&mut self, session_id: &str) -> usize {
+        self.release(|request| request.session_id == session_id)
+    }
+
+    fn release(&mut self, settled: impl Fn(&Request) -> bool) -> usize {
+        let before = self.queue.len();
+        self.queue.retain(|pending| {
+            if !settled(&pending.request) {
+                return true;
+            }
+            // The hook may have given up a moment ago; then nobody needs the answer.
+            let _ = pending.reply.send(Decision::AskInApp);
+            false
+        });
+        before - self.queue.len()
+    }
+
     fn take(&mut self, id: RequestId) -> Option<Pending> {
         let index = self.queue.iter().position(|pending| pending.id == id)?;
         self.queue.remove(index)
@@ -102,9 +125,18 @@ mod tests {
 
     use super::*;
 
+    fn request(session_id: &str, tool: &str, detail: &str) -> Request {
+        Request {
+            session_id: session_id.to_owned(),
+            project: "proj".to_owned(),
+            tool: tool.to_owned(),
+            detail: detail.to_owned(),
+        }
+    }
+
     fn push(requests: &mut Requests, tool: &str) -> (RequestId, mpsc::Receiver<Decision>) {
         let (sender, receiver) = mpsc::channel();
-        let id = requests.push("proj".to_owned(), tool.to_owned(), "cmd".to_owned(), sender);
+        let id = requests.push(request("s1", tool, "cmd"), sender);
         (id, receiver)
     }
 
@@ -138,6 +170,35 @@ mod tests {
             "a removed request is never answered"
         );
         assert!(requests.front().is_none());
+    }
+
+    #[test]
+    fn calls_settled_elsewhere_are_handed_back_without_a_decision() {
+        let mut requests = Requests::default();
+        let mut queue = |session: &str, tool: &str, detail: &str| {
+            let (sender, receiver) = mpsc::channel();
+            requests.push(request(session, tool, detail), sender);
+            receiver
+        };
+        let build = queue("s1", "Bash", "cargo build");
+        let test = queue("s1", "Bash", "cargo test");
+        let other_session = queue("s2", "Bash", "cargo build");
+
+        assert_eq!(requests.settle("s1", "Bash", "cargo build"), 1);
+        assert_eq!(build.try_recv(), Ok(Decision::AskInApp));
+        assert!(test.try_recv().is_err(), "another command stays open");
+        assert!(
+            other_session.try_recv().is_err(),
+            "another session stays open"
+        );
+        assert_eq!(requests.settle("s1", "Edit", "cargo test"), 0);
+
+        assert_eq!(requests.settle_session("s1"), 1);
+        assert_eq!(test.try_recv(), Ok(Decision::AskInApp));
+        assert_eq!(
+            requests.front().map(|p| p.request.session_id.as_str()),
+            Some("s2")
+        );
     }
 
     #[test]

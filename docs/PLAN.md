@@ -175,6 +175,11 @@ sessions (needs the user, since it changes the global settings).
   after a short delay and the window region changes once per morph, not every frame;
   drag the notch along the top edge, remembered as `position`.
   Commit `feat: rings, reset times, drag and login refresh`.
+- [x] **7.4** Fixes from live use: a request answered in Claude Code's own dialog no
+  longer stays on the notch (background `PostToolUse`, `PostToolUseFailure` and
+  `PermissionDenied` hooks settle it, and `Stop` clears the session); a Windows caption
+  no longer appears over the notch after the right-click menu. Needs
+  `--install-hooks` again. Commit `fix: settle requests answered in claude code`.
 
 ## Deviations from SPEC.md
 

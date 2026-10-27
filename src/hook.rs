@@ -102,6 +102,13 @@ fn to_event(input: &HookInput, ancestors: Vec<u32>) -> Option<Event> {
         },
         "Stop" => Some(Event::TaskDone { origin }),
         "UserPromptSubmit" => Some(Event::PromptSubmitted { origin }),
+        // Claude Code does not cancel a waiting PermissionRequest hook when the user
+        // answers in its own dialog; these tell the notch the call was settled.
+        "PostToolUse" | "PostToolUseFailure" | "PermissionDenied" => Some(Event::ToolSettled {
+            origin,
+            tool: input.tool_name.clone(),
+            detail: tool_detail(&input.tool_input),
+        }),
         _ => None,
     }
 }
@@ -206,6 +213,39 @@ mod tests {
             matches!(prompt, Some(Event::PromptSubmitted { .. })),
             "{prompt:?}"
         );
+    }
+
+    #[test]
+    fn settled_tool_calls_match_their_request() {
+        let request = event_for(include_str!(
+            "../tests/fixtures/hooks/permission_request.json"
+        ));
+        let Some(Event::PermissionRequest {
+            tool: asked_tool,
+            detail: asked_detail,
+            ..
+        }) = request
+        else {
+            panic!("expected a permission request, got {request:?}");
+        };
+        for event_name in ["PostToolUse", "PostToolUseFailure", "PermissionDenied"] {
+            let json = json!({
+                "hook_event_name": event_name,
+                "session_id": "s",
+                "cwd": "C:\\w\\example",
+                "tool_name": "Bash",
+                "tool_input": { "command": "cargo build --release", "description": "Build" },
+                "tool_use_id": "toolu_example",
+            });
+            let settled = event_for(&json.to_string());
+            let Some(Event::ToolSettled { tool, detail, .. }) = settled else {
+                panic!("expected a settled call for {event_name}, got {settled:?}");
+            };
+            assert_eq!(
+                (tool.as_str(), detail.as_str()),
+                (asked_tool.as_str(), asked_detail.as_str())
+            );
+        }
     }
 
     #[test]

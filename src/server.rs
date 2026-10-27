@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use crate::pipe::{self, Listener};
 use crate::protocol::{self, Event};
-use crate::requests::Requests;
+use crate::requests::{Request, Requests};
 
 /// How often a waiting request checks whether its hook process is still there.
 const DISCONNECT_CHECK: Duration = Duration::from_millis(250);
@@ -59,7 +59,13 @@ fn handle(connection: &File, requests: &Mutex<Requests>, notify: &impl Fn(Update
             detail,
         } => {
             let (reply, decision) = mpsc::channel();
-            let id = lock(requests).push(origin.project, tool, detail, reply);
+            let request = Request {
+                session_id: origin.session_id,
+                project: origin.project,
+                tool,
+                detail,
+            };
+            let id = lock(requests).push(request, reply);
             notify(Update::Requests);
             loop {
                 match decision.recv_timeout(DISCONNECT_CHECK) {
@@ -78,6 +84,22 @@ fn handle(connection: &File, requests: &Mutex<Requests>, notify: &impl Fn(Update
                     Err(RecvTimeoutError::Disconnected) => return,
                 }
             }
+        }
+        Event::ToolSettled {
+            origin,
+            tool,
+            detail,
+        } => {
+            if lock(requests).settle(&origin.session_id, &tool, &detail) > 0 {
+                notify(Update::Requests);
+            }
+        }
+        Event::TaskDone { ref origin } => {
+            // The turn is over, so nothing from it can still be waiting for an answer.
+            if lock(requests).settle_session(&origin.session_id) > 0 {
+                notify(Update::Requests);
+            }
+            notify(Update::Session(event));
         }
         other => notify(Update::Session(other)),
     }

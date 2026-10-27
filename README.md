@@ -58,9 +58,11 @@ ai-notch.exe --install-hooks
 
 This backs up `%USERPROFILE%\.claude\settings.json` to
 `settings.json.ai-notch-backup-<time>` in the same folder, then adds ai-notch to the
-`PermissionRequest`, `Notification`, `Stop` and `UserPromptSubmit` events. Your other
-settings and hooks are left as they are, and running it twice adds nothing twice.
-Claude Code picks up the change without a restart.
+`PermissionRequest`, `Notification`, `Stop` and `UserPromptSubmit` events, plus
+`PostToolUse`, `PostToolUseFailure` and `PermissionDenied` as background hooks that
+never slow a tool call down. Your other settings and hooks are left as they are, and
+running it twice adds nothing twice. Claude Code picks up the change without a
+restart. After updating ai-notch, run it again so new events are added.
 
 How a permission request works:
 
@@ -70,6 +72,8 @@ How a permission request works:
   not answer within the permission wait (120 s by default), or if anything goes wrong,
   Claude Code shows its normal dialog.
 - Requests from several sessions queue up on the notch.
+- If you answer in Claude Code instead, the card goes away by itself once the tool has
+  run, failed or been denied, or when that session's turn ends.
 
 The notch talks to the hooks over a named pipe that only your Windows user can open.
 

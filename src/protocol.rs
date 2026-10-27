@@ -36,6 +36,14 @@ pub enum Event {
     TaskDone { origin: Origin },
     /// The user sent a prompt, so Claude is now working.
     PromptSubmitted { origin: Origin },
+    /// Claude Code ran a tool, saw it fail, or denied it. A request for that call was
+    /// answered somewhere else, such as Claude Code's own dialog, and is no longer open.
+    ToolSettled {
+        origin: Origin,
+        tool: String,
+        /// Built the same way as a request's detail, so the two can be matched.
+        detail: String,
+    },
 }
 
 /// The notch's answer to a [`Event::PermissionRequest`].
@@ -107,6 +115,11 @@ mod tests {
             },
             Event::TaskDone { origin: origin() },
             Event::PromptSubmitted { origin: origin() },
+            Event::ToolSettled {
+                origin: origin(),
+                tool: "Bash".to_owned(),
+                detail: "cargo build".to_owned(),
+            },
         ];
         let mut wire = Vec::new();
         for event in &events {

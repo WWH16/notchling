@@ -15,11 +15,13 @@ use windows::Win32::UI::Shell::{
     QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CheckMenuRadioItem, CreatePopupMenu, DestroyMenu, GWL_EXSTYLE, GetCursorPos,
-    GetWindowLongPtrW, HMENU, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND, MF_SEPARATOR,
-    MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, SW_HIDE, SW_SHOWNOACTIVATE, SetForegroundWindow,
-    SetWindowLongPtrW, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WS_EX_APPWINDOW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    AppendMenuW, CheckMenuRadioItem, CreatePopupMenu, DestroyMenu, GWL_EXSTYLE, GWL_STYLE,
+    GetCursorPos, GetWindowLongPtrW, HMENU, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND,
+    MF_SEPARATOR, MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, SW_HIDE, SW_SHOWNOACTIVATE,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SIZEBOX, WS_SYSMENU,
 };
 use windows::core::{BOOL, HSTRING, PCWSTR, w};
 
@@ -268,17 +270,36 @@ impl NotchWindow {
         Ok(Self { hwnd })
     }
 
-    /// Removes the window from the taskbar and Alt+Tab, and stops clicks from stealing focus.
+    /// Removes the window from the taskbar and Alt+Tab, stops clicks from stealing focus,
+    /// and drops the caption and frame styles.
+    ///
+    /// winit keeps a caption on frameless windows and hides it in `WM_NCCALCSIZE`. Once
+    /// the window has a region, Windows paints that caption over the notch whenever the
+    /// window is activated, as it is for the right-click menu; a plain popup has none.
     pub fn apply_tool_styles(&self) {
+        let frame = WS_CAPTION | WS_SYSMENU | WS_SIZEBOX | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
         // SAFETY: `hwnd` is a live window owned by this thread's Slint event loop.
         unsafe {
-            let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
-            let style = (style & !(WS_EX_APPWINDOW.0 as isize))
+            let style = GetWindowLongPtrW(self.hwnd, GWL_STYLE);
+            let style = (style & !(frame.0 as isize)) | WS_POPUP.0 as isize;
+            let ex_style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
+            let ex_style = (ex_style & !((WS_EX_APPWINDOW | WS_EX_WINDOWEDGE).0 as isize))
                 | WS_EX_TOOLWINDOW.0 as isize
                 | WS_EX_NOACTIVATE.0 as isize;
             // The taskbar only re-reads the style when the window is shown again.
             let _ = ShowWindow(self.hwnd, SW_HIDE);
-            SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, style);
+            SetWindowLongPtrW(self.hwnd, GWL_STYLE, style);
+            SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, ex_style);
+            // Style changes to the frame apply only after this.
+            let _ = SetWindowPos(
+                self.hwnd,
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
         }
     }

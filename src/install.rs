@@ -13,12 +13,19 @@ use serde_json::{Map, Value, json};
 use crate::config::{Config, HOOK_ENTRY_MARGIN_SECS};
 
 /// Hook events the notch listens to.
-const EVENTS: [&str; 4] = [
+const EVENTS: [&str; 7] = [
     "PermissionRequest",
     "Notification",
     "Stop",
     "UserPromptSubmit",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PermissionDenied",
 ];
+
+/// Events that only tell the notch a tool call was settled. They fire on every tool
+/// call, so Claude Code runs them in the background instead of waiting for them.
+const BACKGROUND_EVENTS: [&str; 3] = ["PostToolUse", "PostToolUseFailure", "PermissionDenied"];
 
 /// Claude Code timeout for events that do not wait for the user; the hook returns at once.
 const QUICK_EVENT_TIMEOUT_SECS: u64 = 10;
@@ -120,8 +127,11 @@ fn install(settings: &mut Value, command: &str, permission_timeout: u64) -> anyh
         } else {
             QUICK_EVENT_TIMEOUT_SECS
         };
-        let entry =
-            json!({ "hooks": [{ "type": "command", "command": command, "timeout": timeout }] });
+        let mut handler = json!({ "type": "command", "command": command, "timeout": timeout });
+        if BACKGROUND_EVENTS.contains(&event) {
+            handler["async"] = true.into();
+        }
+        let entry = json!({ "hooks": [handler] });
         let groups = hooks.entry(event).or_insert_with(|| json!([]));
         let Some(groups) = groups.as_array_mut() else {
             bail!("hooks.{event} in settings.json is not a list");
@@ -199,6 +209,16 @@ mod tests {
             130
         );
         assert_eq!(settings["hooks"]["Stop"][0]["hooks"][0]["timeout"], 10);
+        assert_eq!(
+            settings["hooks"]["PostToolUse"][0]["hooks"][0]["async"],
+            true
+        );
+        assert!(
+            settings["hooks"]["PermissionRequest"][0]["hooks"][0]
+                .get("async")
+                .is_none(),
+            "a permission request must be waited for"
+        );
         assert_eq!(settings["model"], "opus");
     }
 

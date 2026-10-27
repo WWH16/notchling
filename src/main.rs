@@ -613,7 +613,8 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
                 lock_awake(&awake).started(origin.session_id, Instant::now());
             }
             // The server turns these into `Update::Requests`.
-            Update::Session(Event::PermissionRequest { .. }) => {}
+            // The server turns these into `Update::Requests`.
+            Update::Session(Event::PermissionRequest { .. } | Event::ToolSettled { .. }) => {}
         });
     });
     awake_check
@@ -690,9 +691,9 @@ fn show_requests(notch: &Notch, requests: &Requests) {
         return;
     };
     notch.set_request_id(front.id.to_ui());
-    notch.set_request_tool(front.tool.as_str().into());
-    notch.set_request_project(front.project.as_str().into());
-    notch.set_request_detail(front.detail.as_str().into());
+    notch.set_request_tool(front.request.tool.as_str().into());
+    notch.set_request_project(front.request.project.as_str().into());
+    notch.set_request_detail(front.request.detail.as_str().into());
     notch.set_request_more(i32::try_from(requests.behind_front()).unwrap_or(i32::MAX));
     notch.set_has_request(true);
 }

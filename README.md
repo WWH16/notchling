@@ -154,7 +154,6 @@ Right-click the notch and choose **Settings…**, or edit
 | `usage_alerts` | `[80, 95]` | Percentages that raise an alert |
 | `hook_timeout_secs` | `120` | How long a permission request waits for you (5 to 580) |
 | `gemini_daily_requests` | `1000` | Your Gemini CLI daily request limit |
-| `claude_account` | `true` | Read exact Claude usage from the account endpoint, refreshing Claude Code's login when needed |
 | `request_shortcuts` | `false` | Ctrl+Alt+Y allows and Ctrl+Alt+N denies the request on the notch |
 | `tuck` | `false` | On the left or right edge, the notch waits as a thin sliver until you point at it |
 | `show_cpu` | `true` | Show CPU load on the pill, and RAM in the panel |
@@ -172,7 +171,7 @@ ignored, and the settings window will not overwrite it.
 ai-notch sends no telemetry. It connects to:
 
 - `api.anthropic.com`, for the Claude account usage, and `platform.claude.com`, to
-  refresh Claude Code's login when it has expired (only when that source is on);
+  refresh Claude Code's login when it has expired (only while Claude is tracked);
 - the public status pages `status.claude.com`, `status.openai.com` and
   `status.cloud.google.com`, for the provider shown, every 5 minutes.
 

@@ -44,9 +44,10 @@ pub struct Config {
     /// when missing or disconnected.
     #[serde(skip_serializing_if = "Option::is_none")]
     monitor: Option<String>,
-    /// Whether to ask the account endpoint for Claude's exact usage, with Claude Code's
-    /// login. Off, the notch shows the local estimate only.
-    claude_account: bool,
+    /// A key from when exact Claude usage could be turned off. It is accepted so older
+    /// files still load, and never written again.
+    #[serde(skip_serializing)]
+    claude_account: Option<bool>,
     /// Whether Ctrl+Alt+Y and Ctrl+Alt+N answer the permission request on the notch.
     /// Off by default: a global key that allows commands is opt-in.
     request_shortcuts: bool,
@@ -78,7 +79,7 @@ impl Default for Config {
             providers: Provider::ALL.to_vec(),
             usage_alerts: vec![80, 95],
             monitor: None,
-            claude_account: true,
+            claude_account: None,
             request_shortcuts: false,
             tuck: false,
             show_cpu: true,
@@ -190,16 +191,6 @@ impl Config {
 
     pub fn set_monitor(&mut self, device: Option<String>) {
         self.monitor = device;
-    }
-
-    /// Whether to ask the account endpoint for Claude's exact usage.
-    #[must_use]
-    pub fn claude_account(&self) -> bool {
-        self.claude_account
-    }
-
-    pub fn set_claude_account(&mut self, enabled: bool) {
-        self.claude_account = enabled;
     }
 
     /// Whether Ctrl+Alt+Y and Ctrl+Alt+N answer the permission request on the notch.
@@ -408,13 +399,11 @@ mod tests {
     fn monitor_and_toggles_round_trip() {
         let mut config = Config::default();
         assert_eq!(config.monitor(), None);
-        assert!(config.claude_account());
         assert!(
             !config.request_shortcuts(),
             "keys that allow commands are opt-in"
         );
         config.set_monitor(Some(r"\\.\DISPLAY2".to_owned()));
-        config.set_claude_account(false);
         config.set_request_shortcuts(true);
         config.set_tuck(true);
         assert!(
@@ -456,6 +445,13 @@ mod tests {
         let text = fs::read_to_string(&path).expect("config file exists");
         assert_eq!(text, "hook_timeout = 45\n", "a broken file stays untouched");
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_old_claude_account_key_still_loads_and_is_dropped() {
+        let config = Config::parse("claude_account = false").expect("older files still load");
+        let text = toml::to_string(&config).expect("config serializes");
+        assert!(!text.contains("claude_account"), "{text}");
     }
 
     #[test]

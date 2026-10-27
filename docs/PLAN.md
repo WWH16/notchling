@@ -306,6 +306,10 @@ sessions (needs the user, since it changes the global settings).
   shown provider moves the notch to the next tracked one; with none tracked, the ring
   and limits leave the notch and no status page is checked. Commit
   `feat: choose which ai providers to track`.
+- [x] **8.19** Drop the "Exact Claude usage" toggle: tracking Claude is enough, so the
+  account endpoint is always asked while Claude is tracked. An old `claude_account` key
+  still loads and is dropped on the next save. Commit
+  `refactor: drop the exact claude usage toggle`.
 
 ## Deviations from SPEC.md
 

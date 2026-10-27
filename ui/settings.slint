@@ -25,7 +25,6 @@ export component Settings inherits Window {
     in-out property <int> second-alert;
     in-out property <int> permission-wait;
     in-out property <int> gemini-limit;
-    in-out property <bool> claude-account;
     in-out property <bool> request-shortcuts;
     in-out property <bool> tuck;
     in-out property <bool> show-cpu;
@@ -127,11 +126,6 @@ export component Settings inherits Window {
                 text: "Show GPU and VRAM";
                 checked <=> root.show-gpu;
             }
-        }
-
-        CheckBox {
-            text: "Exact Claude usage from your Claude login";
-            checked <=> root.claude-account;
         }
 
         CheckBox {

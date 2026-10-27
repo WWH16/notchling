@@ -399,21 +399,25 @@ Motion (each follows Windows "Show animations", and the agent motion has its own
 - [ ] **10.11** Moving logo: while working, the agent's logo slides along the pill to the
   right and back, or nudges right on each new tool call; it settles when the agent
   stops.
-- [ ] **10.12** Card transitions: the pill grows into the request card and shrinks back
+- [ ] **10.12** Request pulse: when Claude asks for something (a permission, a
+  question, a reply), the pill gives two or three quick pulses, brighter outline and a
+  slight swell, in under half a second, then grows into the card. Follows
+  `agent_motion` and "Show animations"; with motion off the card just appears.
+- [ ] **10.13** Card transitions: the pill grows into the request card and shrinks back
   into the outcome pill (10.4) with one spring-like motion instead of a cut.
 
 Suggested UI polish:
 
-- [ ] **10.13** The usage ring fills smoothly to a new value instead of jumping.
-- [ ] **10.14** A pulse on the ring when a usage alert fires, amber or red as the alert.
-- [ ] **10.15** Several pending requests: small dots under the card, one per request,
+- [ ] **10.14** The usage ring fills smoothly to a new value instead of jumping.
+- [ ] **10.15** A pulse on the ring when a usage alert fires, amber or red as the alert.
+- [ ] **10.16** Several pending requests: small dots under the card, one per request,
   instead of only "2 more".
-- [ ] **10.16** Keyboard hints on the buttons when shortcuts are on (Ctrl+Alt+Y,
+- [ ] **10.17** Keyboard hints on the buttons when shortcuts are on (Ctrl+Alt+Y,
   Ctrl+Alt+N).
-- [ ] **10.17** Hover shows each provider's ring side by side in the panel, so all
+- [ ] **10.18** Hover shows each provider's ring side by side in the panel, so all
   tracked limits are visible at once (overlaps 8.10).
-- [ ] **10.18** Optional sound when a request arrives, off by default.
-- [ ] **10.19** Light theme for the panel and Settings, following Windows' app mode.
+- [ ] **10.19** Optional sound when a request arrives, off by default.
+- [ ] **10.20** Light theme for the panel and Settings, following Windows' app mode.
 
 ## Deviations from SPEC.md
 

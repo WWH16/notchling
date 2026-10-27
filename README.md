@@ -29,14 +29,15 @@ exe's path, so moving it later means installing the hooks again.
 
 Start `ai-notch.exe`. Only one copy runs at a time.
 
-The pill shows CPU, GPU and a ring with the share of the selected provider's limit.
-The ring turns amber at 80% and red at 95%. While Claude Code is working, an orange dot
-shows how long, such as "12m", or "2 · 12m" for two sessions.
+The notch flows out of its screen edge in concave curves. It shows the selected
+provider's logo inside a ring with the share of its limit, then CPU and GPU. The ring
+turns amber at 80% and red at 95%. While Claude Code is working, Claude's mark shows
+how long, such as "12m", with "×2" when two sessions are.
 
-- **Hover** the pill for a moment, or **click** it, to see RAM, VRAM, and the
-  provider's limits as rings with the clock time each one resets ("resets 2:20 PM",
-  "resets Fri 7:00 AM"), plus tokens, burn rate and any incident on its status page.
-  A click keeps the panel open until you click again.
+- **Hover** the pill for a moment, or **click** it, to see the provider's limits as
+  rings with the clock time each one resets ("resets 2:20 PM", "resets Fri 7:00 AM"),
+  tokens, burn rate and any incident on its status page, and below them CPU, GPU, RAM
+  and VRAM. A click keeps the panel open until you click again.
 - **Drag** it with the left button anywhere, on any display. Let go and it glides
   onto the screen edge nearest the cursor (top, bottom, left or right), flat side
   against it, and expands away from that edge. On the left or right edge it stands
@@ -50,8 +51,7 @@ shows how long, such as "12m", or "2 · 12m" for two sessions.
 The notch grows with Windows' text size (Settings, Accessibility, Text size).
 
 With Windows' "Show animations" turned off (Settings, Accessibility, Visual effects),
-the notch changes shape at once instead of morphing and gliding, and alerts stop
-pulsing.
+the notch changes shape at once instead of morphing and gliding.
 
 The notch hides while a fullscreen app, game or presentation is in front. Alerts
 then arrive as Windows notifications instead.
@@ -119,8 +119,8 @@ About the Claude account source:
   (`claude /login`). The desktop app is not affected.
 - Tokens are never logged or shown in errors.
 - The endpoint is unofficial and may change. When it fails, the notch falls back to
-  the local logs: the ring stays empty, tokens and burn rate still show, and an
-  "ESTIMATED" badge appears.
+  the local logs: the ring stays empty, tokens and burn rate still show, and
+  "estimated" appears beside the provider's name.
 - You can turn this source off in the settings.
 
 Usage alerts appear at 80% and 95% of a limit, once per usage window.
@@ -167,6 +167,14 @@ It writes:
   the hooks;
 - the registry key `HKCU\Software\Classes\AppUserModelId\ai-notch`, the first time it
   shows a Windows notification. Windows only shows notifications from apps it knows.
+
+## Logos
+
+The provider logos are their publishers' own paths, unchanged: Claude and Google
+Gemini from [Simple Icons](https://simpleicons.org) 16.36.0 (CC0), OpenAI from
+[LobeHub Icons](https://github.com/lobehub/lobe-icons) 1.101.0 (MIT), since Simple
+Icons no longer carries it. The marks are trademarks of Anthropic, OpenAI and Google,
+shown only to name whose usage is on the notch.
 
 ## Uninstall
 

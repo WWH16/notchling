@@ -1,25 +1,28 @@
-// Notch UI: one black shape against a screen edge that morphs between states.
+// Notch UI: one near-black shape that flows out of a screen edge and morphs between
+// states. Its mark is the provider's logo inside the ring of the provider's limit.
 
 export { Settings } from "settings.slint";
 
 export global Theme {
-    out property <color> surface: #000000;
-    out property <color> text: #ffffff;
+    // Near-black, tinted a touch cool, so the shape reads as a cut-out of the screen.
+    out property <color> surface: #0b0b0d;
+    out property <color> text: #f5f5f7;
     out property <color> muted: #8e8e93;
     out property <color> track: #2c2c2e;
+    // The hairline between the panel's usage and its system readings.
+    out property <color> rule: #1f1f22;
     // Borders, and an outline button while pressed.
     out property <color> outline: #3a3a3c;
     // The command box on a request card.
     out property <color> code-surface: #161618;
     out property <color> code-text: #e5e5ea;
-    // The primary button, light on the black notch, with its hover and pressed shades.
-    out property <color> button: #ffffff;
-    out property <color> button-hover: #f2f2f7;
+    // The primary button, light on the dark notch, with its hover and pressed shades.
+    out property <color> button: #ececee;
+    out property <color> button-hover: #f5f5f7;
     out property <color> button-pressed: #d1d1d6;
     out property <color> claude: #d97757;
     out property <color> chatgpt: #10a37f;
     out property <color> gemini: #4c8df6;
-    out property <color> good: #30d158;
     out property <color> warn: #ff9f0a;
     out property <color> bad: #ff453a;
     // Segoe UI digits are tabular by default, so numbers don't jitter.
@@ -36,6 +39,146 @@ export global Theme {
     out property <length> size-large: 13px * self.text-scale;
     // Windows "Show animations" is off: shapes change at once and only fades remain.
     in property <bool> reduce-motion;
+}
+
+// What the user picked on a permission request.
+export enum Choice { allow, deny, ask-in-app }
+
+// Whose usage the notch shows.
+export enum Provider { claude, chatgpt, gemini }
+
+// The shown provider's status page; unknown until checked or when the check fails.
+export enum Health { unknown, operational, degraded, down }
+
+// The screen edge the notch sticks to; Rust picks the nearest one when it is dropped.
+export enum NotchEdge { top, bottom, left, right }
+
+// Why the notch is asking for attention.
+export enum AlertKind { done, needs-input, usage-high, usage-critical }
+
+component Label inherits Text {
+    color: Theme.muted;
+    font-family: Theme.font;
+    font-size: Theme.size-label;
+    vertical-alignment: center;
+}
+
+component Value inherits Text {
+    color: Theme.text;
+    font-family: Theme.font;
+    font-size: Theme.size-value;
+    font-weight: 600;
+    vertical-alignment: center;
+}
+
+// A provider's mark, centred in whatever height a layout gives it. The paths are the
+// publishers' own, unchanged: Claude and Gemini from Simple Icons 16.36.0 (CC0), OpenAI
+// from LobeHub Icons 1.101.0 (MIT), since Simple Icons no longer carries it.
+component Logo inherits Rectangle {
+    in property <Provider> provider;
+    in property <color> fill;
+    in property <length> size: 14px * Theme.text-scale;
+    width: self.size;
+    min-height: self.size;
+
+    if root.provider == Provider.claude: Path {
+        y: (parent.height - self.height) / 2;
+        width: root.size;
+        height: root.size;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: root.fill;
+        commands: "m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z";
+    }
+    if root.provider == Provider.chatgpt: Path {
+        y: (parent.height - self.height) / 2;
+        width: root.size;
+        height: root.size;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: root.fill;
+        fill-rule: evenodd;
+        commands: "M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z";
+    }
+    if root.provider == Provider.gemini: Path {
+        y: (parent.height - self.height) / 2;
+        width: root.size;
+        height: root.size;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: root.fill;
+        commands: "M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81";
+    }
+}
+
+// A thin circular progress ring; an empty track when the share is unknown (below 0).
+component Ring inherits Rectangle {
+    in property <float> fraction;
+    in property <color> fill;
+    in property <length> thickness: 2px;
+    width: 14px * Theme.text-scale;
+    height: self.width;
+
+    Rectangle {
+        border-radius: self.width / 2;
+        border-width: root.thickness;
+        border-color: Theme.track;
+    }
+
+    // In viewbox units: the radius that centres the stroke on the track.
+    property <float> radius: (root.width - root.thickness) / root.width * 50;
+    // A full turn would start and end at the same point and draw nothing.
+    property <angle> sweep-angle: min(root.fraction, 0.999) * 360deg;
+    if root.fraction > 0.005: Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        stroke: root.fill;
+        stroke-width: root.thickness;
+
+        MoveTo {
+            x: 50;
+            y: 50 - root.radius;
+        }
+        ArcTo {
+            x: 50 + root.radius * sin(root.sweep-angle);
+            y: 50 - root.radius * cos(root.sweep-angle);
+            radius-x: root.radius;
+            radius-y: root.radius;
+            large-arc: root.fraction > 0.5;
+            sweep: true;
+        }
+    }
+}
+
+// The notch's signature: the provider's mark inside the ring of its main limit, centred
+// in whatever height a layout gives it.
+component MarkRing inherits Rectangle {
+    in property <Provider> provider;
+    in property <float> fraction;
+    // The ring's colour, which turns amber and then red as the limit runs out.
+    in property <color> level;
+    in property <color> mark;
+    in property <length> size: 22px * Theme.text-scale;
+    width: self.size;
+    min-height: self.size;
+
+    Ring {
+        y: (parent.height - self.height) / 2;
+        width: root.size;
+        fraction: root.fraction;
+        fill: root.level;
+        thickness: 2px;
+    }
+    Logo {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        height: self.size;
+        size: root.size * 0.55;
+        provider: root.provider;
+        fill: root.mark;
+    }
 }
 
 component Bar inherits Rectangle {
@@ -56,83 +199,145 @@ component Bar inherits Rectangle {
     }
 }
 
+// A system reading: its name and value over a thin bar.
 component Stat inherits VerticalLayout {
     in property <string> label;
     in property <string> value;
     in property <float> fraction;
-    spacing: 5px;
+    spacing: 6px;
 
     HorizontalLayout {
         spacing: 6px;
-        Text {
+        Label {
             text: root.label;
-            color: Theme.muted;
-            font-family: Theme.font;
-            font-size: Theme.size-label;
-            font-weight: 600;
-            vertical-alignment: center;
         }
-        Text {
+        Value {
             text: root.value;
-            color: Theme.text;
-            font-family: Theme.font;
-            font-size: Theme.size-value;
-            font-weight: 600;
             horizontal-alignment: right;
-            vertical-alignment: center;
         }
     }
-
     Bar {
         fraction: root.fraction;
     }
 }
 
-component Pair inherits HorizontalLayout {
-    in property <string> label;
-    in property <string> value;
-    spacing: 5px;
-
-    Text {
-        text: root.label;
-        color: Theme.muted;
-        font-family: Theme.font;
-        font-size: Theme.size-label;
-        font-weight: 600;
-        vertical-alignment: center;
-    }
-    Text {
-        text: root.value;
-        color: Theme.text;
-        font-family: Theme.font;
-        font-size: Theme.size-value;
-        font-weight: 600;
-        vertical-alignment: center;
-    }
-}
-
-// A label over its value, for the narrow notch on a side edge.
+// A label over its value, for the upright notch on a side edge.
 component StackedPair inherits VerticalLayout {
     in property <string> label;
     in property <string> value;
     spacing: 1px;
 
-    Text {
+    Label {
         text: root.label;
-        color: Theme.muted;
-        font-family: Theme.font;
-        font-size: Theme.size-label;
-        font-weight: 600;
         horizontal-alignment: center;
     }
-    Text {
+    Value {
         text: root.value;
-        color: Theme.text;
-        font-family: Theme.font;
-        font-size: Theme.size-value;
-        font-weight: 600;
         horizontal-alignment: center;
     }
+}
+
+// One usage limit: a ring, the share used, the window's name and when it resets.
+component Gauge inherits HorizontalLayout {
+    in property <float> fraction;
+    in property <color> fill;
+    in property <string> value;
+    in property <string> label;
+    in property <string> detail;
+    spacing: 9px;
+    accessible-role: progress-indicator;
+    accessible-label: self.label;
+    accessible-value: self.value;
+    accessible-description: self.detail;
+
+    Ring {
+        width: 26px * Theme.text-scale;
+        thickness: 3px;
+        fraction: root.fraction;
+        fill: root.fill;
+        y: (parent.height - self.height) / 2;
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 1px;
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
+            Value {
+                text: root.value;
+                font-size: Theme.size-large;
+            }
+            Label {
+                text: root.label;
+            }
+        }
+        Label {
+            text: root.detail;
+        }
+    }
+}
+
+// The provider's mark and name, any incident on its status page, and whether its
+// numbers are an estimate.
+component ProviderName inherits HorizontalLayout {
+    in property <Provider> provider;
+    in property <color> accent;
+    in property <string> name;
+    in property <Health> status;
+    in property <bool> estimated;
+    alignment: start;
+    spacing: 8px;
+
+    Logo {
+        provider: root.provider;
+        fill: root.accent;
+        size: 15px * Theme.text-scale;
+    }
+    Value {
+        text: root.name;
+        font-size: Theme.size-large;
+    }
+    // Only incidents show; a healthy or unknown status takes no space.
+    if root.status == Health.degraded || root.status == Health.down: Value {
+        text: root.status == Health.down ? "Outage" : "Degraded";
+        color: root.status == Health.down ? Theme.bad : Theme.warn;
+        font-size: Theme.size-label;
+    }
+    if root.estimated: Label {
+        text: "estimated";
+    }
+}
+
+// A concave fillet joining the notch to its screen edge: a square with a quarter circle
+// cut away. The circle's centre sits at the corner `cx`, `cy` (0 or 1: left or right, top
+// or bottom), the corner away from both the edge and the notch.
+component Shoulder inherits Path {
+    in property <int> cx;
+    in property <int> cy;
+    fill: Theme.surface;
+    viewbox-width: 100;
+    viewbox-height: 100;
+
+    MoveTo {
+        x: root.cx * 100;
+        y: (1 - root.cy) * 100;
+    }
+    LineTo {
+        x: (1 - root.cx) * 100;
+        y: (1 - root.cy) * 100;
+    }
+    LineTo {
+        x: (1 - root.cx) * 100;
+        y: root.cy * 100;
+    }
+    ArcTo {
+        x: root.cx * 100;
+        y: (1 - root.cy) * 100;
+        radius-x: 100;
+        radius-y: 100;
+        sweep: root.cx == root.cy;
+    }
+    Close { }
 }
 
 component PillButton inherits Rectangle {
@@ -212,195 +417,6 @@ component LinkButton inherits Rectangle {
     }
 }
 
-component Dot inherits Rectangle {
-    in property <color> fill;
-    width: 6px;
-
-    Rectangle {
-        y: (parent.height - self.height) / 2;
-        width: 6px;
-        height: 6px;
-        border-radius: 3px;
-        background: root.fill;
-    }
-}
-
-component Badge inherits Rectangle {
-    in property <string> label;
-    width: badge-text.preferred-width + 10px;
-
-    Rectangle {
-        y: (parent.height - self.height) / 2;
-        height: 15px * Theme.text-scale;
-        border-width: 1px;
-        border-color: Theme.outline;
-        border-radius: 4px;
-
-        badge-text := Text {
-            text: root.label;
-            color: Theme.muted;
-            font-family: Theme.font;
-            font-size: Theme.size-small;
-            font-weight: 600;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
-    }
-}
-
-// A thin circular progress ring; an empty track when the share is unknown (below 0).
-component Ring inherits Rectangle {
-    in property <float> fraction;
-    in property <color> fill;
-    in property <length> thickness: 2px;
-    width: 14px * Theme.text-scale;
-    height: 14px * Theme.text-scale;
-
-    Rectangle {
-        border-radius: self.width / 2;
-        border-width: root.thickness;
-        border-color: Theme.track;
-    }
-
-    // In viewbox units: the radius that centres the stroke on the track.
-    property <float> radius: (root.width - root.thickness) / root.width * 50;
-    // A full turn would start and end at the same point and draw nothing.
-    property <angle> sweep-angle: min(root.fraction, 0.999) * 360deg;
-    if root.fraction > 0.005: Path {
-        width: root.width;
-        height: root.height;
-        viewbox-width: 100;
-        viewbox-height: 100;
-        stroke: root.fill;
-        stroke-width: root.thickness;
-
-        MoveTo {
-            x: 50;
-            y: 50 - root.radius;
-        }
-        ArcTo {
-            x: 50 + root.radius * sin(root.sweep-angle);
-            y: 50 - root.radius * cos(root.sweep-angle);
-            radius-x: root.radius;
-            radius-y: root.radius;
-            large-arc: root.fraction > 0.5;
-            sweep: true;
-        }
-    }
-}
-
-// One usage limit: a ring, the share used, the window's name and when it resets.
-component Gauge inherits HorizontalLayout {
-    in property <float> fraction;
-    in property <color> fill;
-    in property <string> value;
-    in property <string> label;
-    in property <string> detail;
-    spacing: 8px;
-    accessible-role: progress-indicator;
-    accessible-label: self.label;
-    accessible-value: self.value;
-    accessible-description: self.detail;
-
-    Ring {
-        width: 24px * Theme.text-scale;
-        height: 24px * Theme.text-scale;
-        thickness: 3px;
-        fraction: root.fraction;
-        fill: root.fill;
-        y: (parent.height - self.height) / 2;
-    }
-    VerticalLayout {
-        alignment: center;
-        spacing: 1px;
-        HorizontalLayout {
-            alignment: start;
-            spacing: 5px;
-            Text {
-                text: root.value;
-                color: Theme.text;
-                font-family: Theme.font;
-                font-size: Theme.size-large;
-                font-weight: 600;
-                vertical-alignment: center;
-            }
-            Text {
-                text: root.label;
-                color: Theme.muted;
-                font-family: Theme.font;
-                font-size: Theme.size-label;
-                font-weight: 600;
-                vertical-alignment: center;
-            }
-        }
-        Text {
-            text: root.detail;
-            color: Theme.muted;
-            font-family: Theme.font;
-            font-size: Theme.size-label;
-        }
-    }
-}
-
-// What the user picked on a permission request.
-export enum Choice { allow, deny, ask-in-app }
-
-// Whose usage the notch shows.
-export enum Provider { claude, chatgpt, gemini }
-
-// The shown provider's status page; unknown until checked or when the check fails.
-export enum Health { unknown, operational, degraded, down }
-
-// The screen edge the notch sticks to; Rust picks the nearest one when it is dropped.
-export enum NotchEdge { top, bottom, left, right }
-
-// Why the notch is asking for attention.
-export enum AlertKind { done, needs-input, usage-high, usage-critical }
-
-// The provider's name and any incident, over its tokens and burn rate when known.
-component ProviderInfo inherits VerticalLayout {
-    in property <color> accent;
-    in property <string> name;
-    in property <Health> status;
-    in property <bool> estimated;
-    in property <string> detail;
-    alignment: center;
-    spacing: 3px;
-
-    HorizontalLayout {
-        spacing: 6px;
-        Dot {
-            fill: root.accent;
-        }
-        Text {
-            text: root.name;
-            color: Theme.text;
-            font-family: Theme.font;
-            font-size: Theme.size-value;
-            font-weight: 600;
-            vertical-alignment: center;
-        }
-        // Only incidents show; a healthy or unknown status takes no space.
-        if root.status == Health.degraded || root.status == Health.down: Text {
-            text: root.status == Health.down ? "· Outage" : "· Degraded";
-            color: root.status == Health.down ? Theme.bad : Theme.warn;
-            font-family: Theme.font;
-            font-size: Theme.size-label;
-            font-weight: 600;
-            vertical-alignment: center;
-        }
-        if root.estimated: Badge {
-            label: "ESTIMATED";
-        }
-    }
-    if root.detail != "": Text {
-        text: root.detail;
-        color: Theme.muted;
-        font-family: Theme.font;
-        font-size: Theme.size-label;
-    }
-}
-
 export component Notch inherits Window {
     // Loads as fractions in 0..1; text values are formatted by Rust.
     in property <float> cpu;
@@ -422,8 +438,10 @@ export component Notch inherits Window {
     in property <float> weekly-fraction: -1;
     in property <string> weekly-short;
     in property <string> weekly-reset;
-    // Tokens and burn rate from local logs, when there are any.
-    in property <string> usage-detail;
+    // Tokens and burn rate from local logs, e.g. "1.2M tokens" and "3.4k/min"; empty
+    // when there are none.
+    in property <string> usage-tokens;
+    in property <string> usage-rate;
     in property <Health> status;
     in property <bool> usage-estimated;
     // How long the longest-working Claude session has been at it, e.g. "3m", and how many
@@ -491,19 +509,26 @@ export component Notch inherits Window {
         }
     }
 
-    // A short attention message; Rust sets and clears it.
+    // A short attention message; Rust sets and clears it. Its mark is the provider it
+    // is about: Claude for a session, the provider for a usage alert.
     in property <bool> alert-active;
     in property <AlertKind> alert-kind;
+    in property <Provider> alert-provider;
     in property <string> alert-text;
     callback alert-clicked();
+    private property <color> alert-mark: self.alert-kind == AlertKind.usage-critical ? Theme.bad
+        : self.alert-kind == AlertKind.usage-high ? Theme.warn
+        : self.alert-provider == Provider.chatgpt ? Theme.chatgpt
+        : self.alert-provider == Provider.gemini ? Theme.gemini : Theme.claude;
 
-    // The size the shape is heading to. Rust clips the window to it, growing the region
-    // at once and shrinking it after the animation, so clicks elsewhere pass through.
-    out property <length> shape-width: self.target-width;
-    out property <length> shape-height: self.target-height;
+    // The size the shape is heading to, shoulders included. Rust clips the window to it,
+    // growing the region at once and shrinking it after the animation, so clicks
+    // elsewhere pass through.
+    out property <length> shape-width: self.target-width + (self.vertical ? 0 : 2 * self.target-shoulder);
+    out property <length> shape-height: self.target-height + (self.vertical ? 2 * self.target-shoulder : 0);
     // The size the shape has right now, partway through a morph.
-    out property <length> drawn-width: pill.width;
-    out property <length> drawn-height: pill.height;
+    out property <length> drawn-width: pill.width + (self.vertical ? 0 : 2 * self.shoulder);
+    out property <length> drawn-height: pill.height + (self.vertical ? 2 * self.shoulder : 0);
     callback shape-changed();
     changed shape-width => {
         self.shape-changed();
@@ -578,12 +603,12 @@ export component Notch inherits Window {
         && !self.has-request && !self.alert-active && !self.floating;
     private property <bool> working: self.activity != "";
     private property <length> idle-width: self.tucked ? 6px
-        : (self.vertical ? 54px : self.working ? 330px : 250px) * Theme.text-scale;
+        : (self.vertical ? 56px : self.working ? 312px : 236px) * Theme.text-scale;
     private property <length> idle-height: self.tucked ? 96px
-        : (self.vertical ? (self.working ? 196px : 140px) : 30px) * Theme.text-scale;
-    // Wide enough for "ChatGPT · Outage" and the ESTIMATED badge on one line.
+        : (self.vertical ? (self.working ? 196px : 148px) : 32px) * Theme.text-scale;
+    // Wide enough for "ChatGPT", "Outage" and "estimated" on one line.
     private property <length> open-width: (self.vertical ? 230px : 460px) * Theme.text-scale;
-    private property <length> open-height: (self.vertical ? 304px : 106px) * Theme.text-scale;
+    private property <length> open-height: (self.vertical ? 306px : 146px) * Theme.text-scale;
     // The idle and open sizes as drawn, easing into the other orientation when the notch
     // moves between a side edge and the top or bottom. The window region follows the
     // targets above instead, since re-clipping on every frame made the notch flicker.
@@ -598,16 +623,28 @@ export component Notch inherits Window {
     private property <length> request-width: 460px * Theme.text-scale;
     private property <length> request-height: 196px * Theme.text-scale;
     private property <length> alert-width: 290px * Theme.text-scale;
-    private property <length> alert-height: 34px * Theme.text-scale;
+    private property <length> alert-height: 36px * Theme.text-scale;
+
+    // The shoulders: concave curves where the notch flows out of its edge. They fold away
+    // with the edge corners while the notch is dragged, and the region allows for the
+    // target reach, not the animation.
+    private property <length> shoulder-radius: 14px * Theme.text-scale;
+    private property <float> edge-round: self.edge == NotchEdge.top ? pill.round-top
+        : self.edge == NotchEdge.bottom ? pill.round-bottom
+        : self.edge == NotchEdge.left ? pill.round-left : pill.round-right;
+    private property <length> shoulder: self.shoulder-radius * (1 - self.edge-round);
+    private property <length> target-shoulder: self.floating ? 0 : self.shoulder-radius;
+    // Each shoulder tucks this far under the body, so no seam shows between them.
+    private property <length> shoulder-overlap: 1px;
 
     title: "ai-notch";
     no-frame: true;
     always-on-top: true;
     background: transparent;
-    // Fixed size large enough for the biggest state; only the shape is drawn.
-    // Exposed because Rust positions the window before Slint knows its size.
+    // Fixed size large enough for the biggest state and its shoulders; only the shape is
+    // drawn. Exposed because Rust positions the window before Slint knows its size.
     out property <length> fixed-width: 520px * Theme.text-scale;
-    out property <length> fixed-height: 320px * Theme.text-scale;
+    out property <length> fixed-height: 380px * Theme.text-scale;
     // Runs when the text size changes the window's size, so Rust can place it again.
     callback size-changed();
     changed fixed-width => {
@@ -615,6 +652,32 @@ export component Notch inherits Window {
     }
     width: self.fixed-width;
     height: self.fixed-height;
+
+    // Before the body, so the body covers their overlap.
+    if root.shoulder > 0.5px: Shoulder {
+        width: root.shoulder;
+        height: root.shoulder;
+        x: root.edge == NotchEdge.left ? 0
+            : root.edge == NotchEdge.right ? parent.width - self.width
+            : pill.x - self.width + root.shoulder-overlap;
+        y: root.edge == NotchEdge.top ? 0
+            : root.edge == NotchEdge.bottom ? parent.height - self.height
+            : pill.y - self.height + root.shoulder-overlap;
+        cx: root.edge == NotchEdge.left ? 1 : 0;
+        cy: root.edge == NotchEdge.top ? 1 : 0;
+    }
+    if root.shoulder > 0.5px: Shoulder {
+        width: root.shoulder;
+        height: root.shoulder;
+        x: root.edge == NotchEdge.left ? 0
+            : root.edge == NotchEdge.right ? parent.width - self.width
+            : pill.x + pill.width - root.shoulder-overlap;
+        y: root.edge == NotchEdge.top ? 0
+            : root.edge == NotchEdge.bottom ? parent.height - self.height
+            : pill.y + pill.height - root.shoulder-overlap;
+        cx: root.edge == NotchEdge.right ? 0 : 1;
+        cy: root.edge == NotchEdge.bottom ? 0 : 1;
+    }
 
     pill := Rectangle {
         // Against the window side that faces the screen edge, centered the other way, so
@@ -628,9 +691,9 @@ export component Notch inherits Window {
         width: root.drawn-idle-width;
         height: root.drawn-idle-height;
         background: Theme.surface;
-        // The side against the screen edge stays square; every other corner is round.
-        // Each side's roundness runs from 0 (square) to 1 (round), easing between the two
-        // as the notch is picked up and sticks again.
+        // The side against the screen edge stays square, where the shoulders join it;
+        // every other corner is round. Each side's roundness runs from 0 (square) to 1
+        // (round), easing between the two as the notch is picked up and sticks again.
         property <length> corner: min(min(self.width, self.height) / 2, 22px);
         property <float> round-top: !root.floating && root.edge == NotchEdge.top ? 0 : 1;
         property <float> round-bottom: !root.floating && root.edge == NotchEdge.bottom ? 0 : 1;
@@ -647,7 +710,7 @@ export component Notch inherits Window {
         clip: true;
         accessible-role: groupbox;
         accessible-label: "ai-notch";
-        accessible-description: "CPU \{round(root.cpu * 100)}%, GPU \{round(root.gpu * 100)}%, \{root.provider-name} \{root.usage-short}"
+        accessible-description: "\{root.provider-name} \{root.usage-short}, CPU \{round(root.cpu * 100)}%, GPU \{round(root.gpu * 100)}%"
             + (root.working ? ", Claude working \{root.activity}" : "");
 
         hover := TouchArea {
@@ -684,52 +747,75 @@ export component Notch inherits Window {
         }
 
         idle-row := Rectangle {
+            // The provider leads; the system readings follow, quieter.
             if !root.vertical: HorizontalLayout {
                 alignment: center;
-                spacing: 18px;
-                Pair {
-                    label: "CPU";
-                    value: "\{round(root.cpu * 100)}%";
-                }
-                Pair {
-                    label: "GPU";
-                    value: "\{round(root.gpu * 100)}%";
+                spacing: 16px;
+                HorizontalLayout {
+                    spacing: 7px;
+                    MarkRing {
+                        provider: root.usage-provider;
+                        fraction: root.usage-fraction;
+                        level: root.level(root.usage-fraction);
+                        mark: root.accent;
+                    }
+                    Value {
+                        text: root.usage-short;
+                    }
                 }
                 HorizontalLayout {
-                    spacing: 6px;
-                    Ring {
-                        y: (parent.height - self.height) / 2;
-                        fraction: root.usage-fraction;
-                        fill: root.level(root.usage-fraction);
+                    spacing: 5px;
+                    Label {
+                        text: "CPU";
                     }
-                    Text {
-                        text: root.usage-short;
-                        color: Theme.text;
-                        font-family: Theme.font;
-                        font-size: Theme.size-value;
-                        font-weight: 600;
-                        vertical-alignment: center;
+                    Value {
+                        text: "\{round(root.cpu * 100)}%";
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 5px;
+                    Label {
+                        text: "GPU";
+                    }
+                    Value {
+                        text: "\{round(root.gpu * 100)}%";
                     }
                 }
                 if root.working: HorizontalLayout {
-                    spacing: 6px;
-                    Dot {
+                    spacing: 5px;
+                    Logo {
+                        provider: Provider.claude;
                         fill: Theme.claude;
+                        size: 11px * Theme.text-scale;
                     }
-                    Text {
-                        text: root.activity-sessions > 1
-                            ? "\{root.activity-sessions} · \{root.activity}" : root.activity;
-                        color: Theme.text;
-                        font-family: Theme.font;
-                        font-size: Theme.size-value;
-                        font-weight: 600;
-                        vertical-alignment: center;
+                    Value {
+                        text: root.activity;
+                    }
+                    if root.activity-sessions > 1: Label {
+                        text: "×\{root.activity-sessions}";
                     }
                 }
             }
             if root.vertical: VerticalLayout {
                 alignment: center;
-                spacing: 10px;
+                spacing: 12px;
+                VerticalLayout {
+                    spacing: 4px;
+                    HorizontalLayout {
+                        alignment: center;
+                        MarkRing {
+                            size: 26px * Theme.text-scale;
+                            provider: root.usage-provider;
+                            fraction: root.usage-fraction;
+                            level: root.level(root.usage-fraction);
+                            mark: root.accent;
+                        }
+                    }
+                    Value {
+                        text: root.usage-short;
+                        horizontal-alignment: center;
+                    }
+                }
                 StackedPair {
                     label: "CPU";
                     value: "\{round(root.cpu * 100)}%";
@@ -738,47 +824,23 @@ export component Notch inherits Window {
                     label: "GPU";
                     value: "\{round(root.gpu * 100)}%";
                 }
-                VerticalLayout {
-                    spacing: 3px;
-                    HorizontalLayout {
-                        alignment: center;
-                        Ring {
-                            fraction: root.usage-fraction;
-                            fill: root.level(root.usage-fraction);
-                        }
-                    }
-                    Text {
-                        text: root.usage-short;
-                        color: Theme.text;
-                        font-family: Theme.font;
-                        font-size: Theme.size-value;
-                        font-weight: 600;
-                        horizontal-alignment: center;
-                    }
-                }
                 if root.working: VerticalLayout {
                     spacing: 3px;
                     HorizontalLayout {
                         alignment: center;
-                        Dot {
-                            height: 6px;
+                        Logo {
+                            provider: Provider.claude;
                             fill: Theme.claude;
+                            size: 11px * Theme.text-scale;
                         }
                     }
-                    Text {
+                    Value {
                         text: root.activity;
-                        color: Theme.text;
-                        font-family: Theme.font;
                         font-size: Theme.size-label;
-                        font-weight: 600;
                         horizontal-alignment: center;
                     }
-                    if root.activity-sessions > 1: Text {
+                    if root.activity-sessions > 1: Label {
                         text: "×\{root.activity-sessions}";
-                        color: Theme.muted;
-                        font-family: Theme.font;
-                        font-size: Theme.size-label;
-                        font-weight: 600;
                         horizontal-alignment: center;
                     }
                 }
@@ -788,12 +850,57 @@ export component Notch inherits Window {
         detail := Rectangle {
             opacity: 0;
 
+            // The provider and its limits first, then the system readings under a hairline.
             if !root.vertical: VerticalLayout {
                 padding-left: 20px;
                 padding-right: 20px;
-                padding-top: 14px;
+                padding-top: 16px;
                 padding-bottom: 18px;
                 spacing: 14px;
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    ProviderName {
+                        provider: root.usage-provider;
+                        accent: root.accent;
+                        name: root.provider-name;
+                        status: root.status;
+                        estimated: root.usage-estimated;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                    if root.usage-tokens != "": Label {
+                        text: root.usage-tokens;
+                    }
+                    if root.usage-rate != "": Label {
+                        text: root.usage-rate;
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 32px;
+                    Gauge {
+                        fraction: root.usage-fraction;
+                        fill: root.level(root.usage-fraction);
+                        value: root.usage-short;
+                        label: root.usage-label;
+                        detail: root.usage-reset;
+                    }
+                    if root.weekly-fraction >= 0: Gauge {
+                        fraction: root.weekly-fraction;
+                        fill: root.level(root.weekly-fraction);
+                        value: root.weekly-short;
+                        label: "week";
+                        detail: root.weekly-reset;
+                    }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Theme.rule;
+                }
 
                 HorizontalLayout {
                     spacing: 18px;
@@ -818,43 +925,52 @@ export component Notch inherits Window {
                         fraction: root.vram;
                     }
                 }
-
-                HorizontalLayout {
-                    spacing: 18px;
-                    ProviderInfo {
-                        horizontal-stretch: 1;
-                        accent: root.accent;
-                        name: root.provider-name;
-                        status: root.status;
-                        estimated: root.usage-estimated;
-                        detail: root.usage-detail;
-                    }
-                    Gauge {
-                        fraction: root.usage-fraction;
-                        fill: root.level(root.usage-fraction);
-                        value: root.usage-short;
-                        label: root.usage-label;
-                        detail: root.usage-reset;
-                    }
-                    if root.weekly-fraction >= 0: Gauge {
-                        fraction: root.weekly-fraction;
-                        fill: root.level(root.weekly-fraction);
-                        value: root.weekly-short;
-                        label: "week";
-                        detail: root.weekly-reset;
-                    }
-                }
             }
 
-            // The same, stacked: stats, then the provider and its limits.
+            // The same, stacked.
             if root.vertical: VerticalLayout {
-                alignment: center;
+                alignment: start;
                 padding-left: 18px;
                 padding-right: 18px;
-                padding-top: 16px;
-                padding-bottom: 16px;
-                spacing: 10px;
+                padding-top: 18px;
+                padding-bottom: 18px;
+                spacing: 12px;
 
+                ProviderName {
+                    provider: root.usage-provider;
+                    accent: root.accent;
+                    name: root.provider-name;
+                    status: root.status;
+                    estimated: root.usage-estimated;
+                }
+                Gauge {
+                    fraction: root.usage-fraction;
+                    fill: root.level(root.usage-fraction);
+                    value: root.usage-short;
+                    label: root.usage-label;
+                    detail: root.usage-reset;
+                }
+                if root.weekly-fraction >= 0: Gauge {
+                    fraction: root.weekly-fraction;
+                    fill: root.level(root.weekly-fraction);
+                    value: root.weekly-short;
+                    label: "week";
+                    detail: root.weekly-reset;
+                }
+                if root.usage-tokens != "" || root.usage-rate != "": HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    Label {
+                        text: root.usage-tokens;
+                    }
+                    Label {
+                        text: root.usage-rate;
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.rule;
+                }
                 Stat {
                     label: "CPU";
                     value: "\{round(root.cpu * 100)}%";
@@ -875,31 +991,6 @@ export component Notch inherits Window {
                     value: root.vram-text;
                     fraction: root.vram;
                 }
-                Rectangle {
-                    height: 1px;
-                    background: Theme.track;
-                }
-                ProviderInfo {
-                    accent: root.accent;
-                    name: root.provider-name;
-                    status: root.status;
-                    estimated: root.usage-estimated;
-                    detail: root.usage-detail;
-                }
-                Gauge {
-                    fraction: root.usage-fraction;
-                    fill: root.level(root.usage-fraction);
-                    value: root.usage-short;
-                    label: root.usage-label;
-                    detail: root.usage-reset;
-                }
-                if root.weekly-fraction >= 0: Gauge {
-                    fraction: root.weekly-fraction;
-                    fill: root.level(root.weekly-fraction);
-                    value: root.weekly-short;
-                    label: "week";
-                    detail: root.weekly-reset;
-                }
             }
         }
 
@@ -908,7 +999,7 @@ export component Notch inherits Window {
             visible: self.opacity > 0;
             padding-left: 18px;
             padding-right: 18px;
-            padding-top: 12px;
+            padding-top: 13px;
             padding-bottom: 14px;
             spacing: 10px;
             accessible-role: groupbox;
@@ -917,34 +1008,21 @@ export component Notch inherits Window {
 
             HorizontalLayout {
                 spacing: 8px;
-                Rectangle {
-                    width: 6px;
-                    Rectangle {
-                        y: (parent.height - self.height) / 2;
-                        width: 6px;
-                        height: 6px;
-                        border-radius: 3px;
-                        background: Theme.claude;
-                    }
+                Logo {
+                    provider: Provider.claude;
+                    fill: Theme.claude;
                 }
-                Text {
+                Value {
                     text: "Claude wants to use \{root.request-tool}";
-                    color: Theme.text;
-                    font-family: Theme.font;
-                    font-size: Theme.size-value;
-                    font-weight: 600;
-                    vertical-alignment: center;
                     overflow: elide;
                     horizontal-stretch: 1;
                 }
-                Text {
-                    text: root.request-more > 0
-                        ? "\{root.request-project} · \{root.request-more} more"
-                        : root.request-project;
-                    color: Theme.muted;
-                    font-family: Theme.font;
-                    font-size: Theme.size-label;
-                    vertical-alignment: center;
+                Label {
+                    text: root.request-project;
+                }
+                if root.request-more > 0: Label {
+                    text: "\{root.request-more} more";
+                    color: Theme.text;
                 }
             }
 
@@ -983,8 +1061,7 @@ export component Notch inherits Window {
                     font-size: command.font-size;
                 }
                 // The viewport moves up, below zero, as the command scrolls.
-                property <int> hidden-lines: ceil(
-                    (command.preferred-height + code.content-y - code.height) / line.preferred-height);
+                property <int> hidden-lines: ceil((command.preferred-height + code.content-y - code.height) / line.preferred-height);
                 // The full command must be read before it is allowed, so say what is cut off.
                 if self.hidden-lines > 0: Rectangle {
                     y: parent.height - self.height;
@@ -994,11 +1071,10 @@ export component Notch inherits Window {
                     Text {
                         x: parent.width - self.width - 12px;
                         y: parent.height - self.height - 6px;
-                        text: code-box.hidden-lines == 1 ? "+1 line"
-                            : "+\{code-box.hidden-lines} lines";
+                        text: code-box.hidden-lines == 1 ? "+1 line" : "+\{code-box.hidden-lines} lines";
                         color: Theme.muted;
                         font-family: Theme.font;
-                        font-size: Theme.size-label;
+                        font-size: Theme.size-small;
                         font-weight: 600;
                     }
                 }
@@ -1015,12 +1091,9 @@ export component Notch inherits Window {
                 Rectangle {
                     horizontal-stretch: 1;
                 }
-                if root.shortcuts: Text {
-                    text: "Ctrl+Alt+Y · N";
-                    color: Theme.muted;
-                    font-family: Theme.font;
-                    font-size: Theme.size-label;
-                    vertical-alignment: center;
+                if root.shortcuts: Label {
+                    text: "Ctrl+Alt+Y or N";
+                    font-size: Theme.size-small;
                 }
                 PillButton {
                     label: "Deny";
@@ -1055,29 +1128,12 @@ export component Notch inherits Window {
                 root.alert-clicked();
             }
 
-            Rectangle {
-                width: 8px;
-                // Only exists while an alert shows, so the pulse never runs in the background.
-                if root.alert-active: Rectangle {
-                    y: (parent.height - self.height) / 2;
-                    width: 8px;
-                    height: 8px;
-                    border-radius: 4px;
-                    background: root.alert-kind == AlertKind.done ? Theme.good
-                        : root.alert-kind == AlertKind.usage-high ? Theme.warn
-                        : root.alert-kind == AlertKind.usage-critical ? Theme.bad
-                        : Theme.claude;
-                    opacity: Theme.reduce-motion ? 1
-                        : 0.55 + 0.45 * Math.sin(animation-tick() / 1100ms * 360deg);
-                }
+            Logo {
+                provider: root.alert-provider;
+                fill: root.alert-mark;
             }
-            Text {
+            Value {
                 text: root.alert-text;
-                color: Theme.text;
-                font-family: Theme.font;
-                font-size: Theme.size-value;
-                font-weight: 600;
-                vertical-alignment: center;
                 overflow: elide;
             }
         }

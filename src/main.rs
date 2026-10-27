@@ -584,7 +584,7 @@ fn start_usage(notch: &Notch, usages: &Arc<Mutex<Usages>>, alert: &Arc<Mutex<Ale
                     if let Some(crossing) = usages.thresholds.crossed(reading.provider, &usage) {
                         let text = usage_alert_text(reading.provider, &usage);
                         let kind = alert_kind(crossing);
-                        show_alert(&notch, &alert, kind, text, Vec::new());
+                        show_alert(&notch, &alert, kind, reading.provider, text, Vec::new());
                     }
                     usages.latest.insert(reading.provider, usage);
                 }
@@ -643,11 +643,11 @@ fn select_provider(
     let _ = Config::update(|config| config.set_provider(provider));
 }
 
-/// "Claude at 82% · resets 2:20 PM".
+/// "Claude at 82%, resets 2:20 PM".
 fn usage_alert_text(provider: Provider, usage: &Usage) -> String {
     let used = usage.used.unwrap_or(0.0) * 100.0;
     match reset_text(usage.resets_at) {
-        Some(reset) => format!("{} at {used:.0}% · {reset}", provider.name()),
+        Some(reset) => format!("{} at {used:.0}%, {reset}", provider.name()),
         None => format!("{} at {used:.0}%", provider.name()),
     }
 }
@@ -692,7 +692,8 @@ fn show_usage(notch: &Notch, provider: Provider, usage: Option<&Usage>) {
         notch.set_usage_short("-".into());
         notch.set_usage_reset("no data".into());
         notch.set_weekly_fraction(-1.0);
-        notch.set_usage_detail("".into());
+        notch.set_usage_tokens("".into());
+        notch.set_usage_rate("".into());
         notch.set_usage_estimated(false);
         return;
     };
@@ -716,8 +717,8 @@ fn show_usage(notch: &Notch, provider: Provider, usage: Option<&Usage>) {
     let rate = usage
         .burn_rate
         .map(|rate| format!("{}/min", usage::compact(rate.round() as u64)));
-    let detail: Vec<String> = tokens.into_iter().chain(rate).collect();
-    notch.set_usage_detail(detail.join(" · ").into());
+    notch.set_usage_tokens(tokens.unwrap_or_default().into());
+    notch.set_usage_rate(rate.unwrap_or_default().into());
     notch.set_usage_estimated(usage.estimated);
 }
 
@@ -776,18 +777,26 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
                 let mut awake = lock_awake(&awake);
                 awake.stopped(&origin.session_id);
                 show_activity(&notch, &awake);
-                let text = session_alert_text("Done", &origin.project);
-                show_alert(&notch, &alert, AlertKind::Done, text, origin.ancestors);
+                let text = session_alert_text(AlertKind::Done, &origin.project);
+                show_alert(
+                    &notch,
+                    &alert,
+                    AlertKind::Done,
+                    Provider::Claude,
+                    text,
+                    origin.ancestors,
+                );
             }
             Update::Session(Event::NeedsInput { origin, .. }) => {
                 let mut awake = lock_awake(&awake);
                 awake.stopped(&origin.session_id);
                 show_activity(&notch, &awake);
-                let text = session_alert_text("Needs your input", &origin.project);
+                let text = session_alert_text(AlertKind::NeedsInput, &origin.project);
                 show_alert(
                     &notch,
                     &alert,
                     AlertKind::NeedsInput,
+                    Provider::Claude,
                     text,
                     origin.ancestors,
                 );
@@ -797,7 +806,6 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
                 awake.started(origin.session_id, Instant::now());
                 show_activity(&notch, &awake);
             }
-            // The server turns these into `Update::Requests`.
             // The server turns these into `Update::Requests`.
             Update::Session(Event::PermissionRequest { .. } | Event::ToolSettled { .. }) => {}
         });
@@ -840,22 +848,25 @@ struct Alert {
     hidden: bool,
 }
 
-/// "Done · ai-notch", or just the label when the project is unknown.
-fn session_alert_text(label: &str, project: &str) -> String {
-    if project.is_empty() {
-        label.to_owned()
-    } else {
-        format!("{label} · {project}")
+/// "Done in ai-notch" or "ai-notch needs your input", or without the project when it is
+/// unknown. Usage alerts have their own text.
+fn session_alert_text(kind: AlertKind, project: &str) -> String {
+    match (kind, project.is_empty()) {
+        (AlertKind::NeedsInput, true) => "Needs your input".to_owned(),
+        (AlertKind::NeedsInput, false) => format!("{project} needs your input"),
+        (_, true) => "Done".to_owned(),
+        (_, false) => format!("Done in {project}"),
     }
 }
 
-/// Shows an attention message until it times out or is clicked. A click focuses the
-/// first window among `ancestors`, the processes above a Claude Code hook. While the
-/// notch hides behind a fullscreen app, the message becomes a Windows toast.
+/// Shows an attention message about `provider` until it times out or is clicked. A click
+/// focuses the first window among `ancestors`, the processes above a Claude Code hook.
+/// While the notch hides behind a fullscreen app, the message becomes a Windows toast.
 fn show_alert(
     notch: &Notch,
     alert: &Arc<Mutex<Alert>>,
     kind: AlertKind,
+    provider: Provider,
     text: String,
     ancestors: Vec<u32>,
 ) {
@@ -876,6 +887,7 @@ fn show_alert(
         AlertKind::UsageHigh | AlertKind::UsageCritical => USAGE_ALERT,
     };
     notch.set_alert_kind(kind);
+    notch.set_alert_provider(provider.into());
     notch.set_alert_text(text.into());
     notch.set_alert_active(true);
 
@@ -1000,6 +1012,23 @@ mod tests {
         ];
         for (secs, want) in cases {
             assert_eq!(working_time(Duration::from_secs(secs)), want, "{secs} s");
+        }
+    }
+
+    #[test]
+    fn session_alerts_read_as_sentences() {
+        let cases = [
+            (AlertKind::Done, "ai-notch", "Done in ai-notch"),
+            (AlertKind::Done, "", "Done"),
+            (
+                AlertKind::NeedsInput,
+                "ai-notch",
+                "ai-notch needs your input",
+            ),
+            (AlertKind::NeedsInput, "", "Needs your input"),
+        ];
+        for (kind, project, want) in cases {
+            assert_eq!(session_alert_text(kind, project), want, "{project:?}");
         }
     }
 }

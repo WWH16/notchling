@@ -245,6 +245,15 @@ sessions (needs the user, since it changes the global settings).
 - [ ] **8.8** "Start at sign-in" toggle in Settings.
 - [ ] **8.9** Investigate "Always allow" through the hook API; build it if supported.
 - [ ] **8.10** All providers in the hover panel; double-click to reset placement.
+- [x] **8.11** Redesign the notch, austere: a tinted near-black body that flows out of
+  its edge in concave shoulders (14 px, folding away while dragged, included in the
+  window region); the provider's logo inside the ring of its limit as the mark; usage
+  leads the panel, system readings sit under a hairline. No pulsing or decorative
+  dots, no capitals badge ("estimated" instead) and no middle-dot strings, so tokens
+  and burn rate, alert texts and the card header are separate pieces. Logos are the
+  publishers' paths: Simple Icons 16.36.0 (Claude, Gemini) and LobeHub Icons 1.101.0
+  (OpenAI). Checked offscreen in every state and edge. Commit
+  `feat: redesign the notch with provider logos`.
 
 ## Deviations from SPEC.md
 

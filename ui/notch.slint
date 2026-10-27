@@ -499,6 +499,8 @@ export component Notch inherits Window {
     in property <NotchEdge> edge;
     // While it is dragged, the notch is a free pill with every corner round.
     in property <bool> floating;
+    // On a side edge, the idle notch tucks into a thin sliver until the pointer reaches it.
+    in property <bool> tuck;
     callback drag-started();
     callback dragged();
     callback drag-ended();
@@ -549,9 +551,12 @@ export component Notch inherits Window {
     // On a side edge the notch stands upright; requests and alerts stay wide, since their
     // text needs the room.
     private property <bool> vertical: self.edge == NotchEdge.left || self.edge == NotchEdge.right;
-    private property <length> idle-width: self.vertical ? 54px : 250px;
-    private property <length> idle-height: self.vertical ? 140px : 30px;
-    private property <length> open-width: self.vertical ? 210px : 460px;
+    private property <bool> tucked: self.tuck && self.vertical && !self.hovered && !self.expanded
+        && !self.has-request && !self.alert-active && !self.floating;
+    private property <length> idle-width: self.tucked ? 6px : self.vertical ? 54px : 250px;
+    private property <length> idle-height: self.tucked ? 96px : self.vertical ? 140px : 30px;
+    // Wide enough for "ChatGPT · Outage" and the ESTIMATED badge on one line.
+    private property <length> open-width: self.vertical ? 230px : 460px;
     private property <length> open-height: self.vertical ? 304px : 106px;
     // The idle and open sizes as drawn, easing into the other orientation when the notch
     // moves between a side edge and the top or bottom. The window region follows the
@@ -634,6 +639,16 @@ export component Notch inherits Window {
                     root.drag-ended();
                 }
             }
+        }
+
+        // The tucked sliver's mark, in the colour of the usage ring.
+        if root.tucked: Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 2px;
+            height: 24px;
+            border-radius: 1px;
+            background: root.usage-fraction >= 0 ? root.level(root.usage-fraction) : Theme.muted;
         }
 
         idle-row := Rectangle {
@@ -1032,6 +1047,15 @@ export component Notch inherits Window {
                 out {
                     animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
                     animate alert-view.opacity { duration: 80ms; }
+                    animate idle-row.opacity { duration: 140ms; delay: 120ms; }
+                }
+            }
+            tucked when root.tucked: {
+                idle-row.opacity: 0;
+                in {
+                    animate idle-row.opacity { duration: 80ms; }
+                }
+                out {
                     animate idle-row.opacity { duration: 140ms; delay: 120ms; }
                 }
             }

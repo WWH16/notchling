@@ -47,6 +47,9 @@ pub struct Config {
     /// Whether Ctrl+Alt+Y and Ctrl+Alt+N answer the permission request on the notch.
     /// Off by default: a global key that allows commands is opt-in.
     request_shortcuts: bool,
+    /// Whether the idle notch tucks into a thin sliver on the left and right edges until
+    /// the pointer reaches it.
+    tuck: bool,
     /// The screen edge the notch sticks to; set by dragging it.
     edge: Option<Edge>,
     /// Where along that edge the notch sits, from 0 to 1: left to right on the top and
@@ -69,6 +72,7 @@ impl Default for Config {
             monitor: None,
             claude_account: true,
             request_shortcuts: false,
+            tuck: false,
             edge: None,
             position: 0.5,
             position_y: None,
@@ -167,6 +171,16 @@ impl Config {
 
     pub fn set_request_shortcuts(&mut self, enabled: bool) {
         self.request_shortcuts = enabled;
+    }
+
+    /// Whether the idle notch tucks into the left and right edges until pointed at.
+    #[must_use]
+    pub fn tuck(&self) -> bool {
+        self.tuck
+    }
+
+    pub fn set_tuck(&mut self, enabled: bool) {
+        self.tuck = enabled;
     }
 
     /// The screen edge the notch sticks to.
@@ -308,6 +322,7 @@ mod tests {
         config.set_monitor(Some(r"\\.\DISPLAY2".to_owned()));
         config.set_claude_account(false);
         config.set_request_shortcuts(true);
+        config.set_tuck(true);
         let text = toml::to_string(&config).expect("config serializes");
         assert_eq!(Config::parse(&text), Ok(config));
         assert!(

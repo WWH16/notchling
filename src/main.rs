@@ -140,6 +140,7 @@ fn main() -> anyhow::Result<()> {
         .borrow_mut()
         .apply(notch.window(), window_size(&notch))?;
     show_placement(&notch, &placement.borrow());
+    notch.set_tuck(config.tuck());
     show_usage(&notch, config.provider(), None);
     notch.show()?;
     let status_switch = start_status(&notch, &usages);
@@ -448,8 +449,8 @@ fn glide_window(
     });
 }
 
-/// Applies saved settings to the running notch: its display and the usage alerts. The
-/// usage sources and hook mode read the rest from the config file themselves.
+/// Applies saved settings to the running notch: its display, tucking and the usage
+/// alerts. The usage sources and hook mode read the rest from the config file themselves.
 fn apply_settings(
     notch: &Notch,
     usages: &Arc<Mutex<Usages>>,
@@ -465,6 +466,7 @@ fn apply_settings(
         let Some(notch) = weak.upgrade() else {
             return;
         };
+        notch.set_tuck(config.tuck());
         let mut placement = placement.borrow_mut();
         placement.device = config.monitor().map(str::to_owned);
         // Fails only when Windows reports no display; the notch then stays put.

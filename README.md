@@ -39,7 +39,8 @@ The ring turns amber at 80% and red at 95%.
 - **Drag** it with the left button anywhere, on any display. Let go and it glides
   onto the screen edge nearest the cursor (top, bottom, left or right), flat side
   against it, and expands away from that edge. On the left or right edge it stands
-  upright, with its readings stacked. It stays put next time.
+  upright, with its readings stacked. It stays put next time. Turn on tucking in the
+  settings and, on a side edge, it waits as a thin sliver until you point at it.
 - **Right-click** it to pick the provider shown (Claude, ChatGPT or Gemini), open the
   settings, or quit.
 - **Click** a "Done" or "Needs your input" alert to bring that Claude Code window to
@@ -134,6 +135,7 @@ Right-click the notch and choose **Settings…**, or edit
 | `gemini_daily_requests` | `1000` | Your Gemini CLI daily request limit |
 | `claude_account` | `true` | Read exact Claude usage from the account endpoint, refreshing Claude Code's login when needed |
 | `request_shortcuts` | `false` | Ctrl+Alt+Y allows and Ctrl+Alt+N denies the request on the notch |
+| `tuck` | `false` | On the left or right edge, the notch waits as a thin sliver until you point at it |
 | `edge` | `"top"` | The screen edge the notch sticks to: `"top"`, `"bottom"`, `"left"` or `"right"`; set by dragging |
 | `position` | `0.5` | Where along that edge it sits, from 0 to 1 (left to right, or top to bottom on a side edge); set by dragging |
 | `monitor` | primary display | Display the notch sits on, as Windows names it: `monitor = '\\.\DISPLAY2'` (single quotes, so the backslashes stay as they are) |

@@ -224,7 +224,11 @@ sessions (needs the user, since it changes the global settings).
   alert pulse and glide stop; the fades stay. Checked offscreen: 400 ms into a hover
   the panel is mid-morph with animations and full size without. Commit
   `feat: follow windows' show animations setting`.
-- [ ] **8.4** Tuck mode on the side edges; check and fix the upright panel width.
+- [x] **8.4** Tuck mode on the side edges; check and fix the upright panel width.
+  Opt-in `tuck`: on a side edge the idle notch is a 6 x 96 px sliver with a mark in
+  the ring's colour, and unfolds while pointed at. The upright panel is 230 px wide
+  instead of 210; offscreen, "Claude · Degraded" and the ESTIMATED badge now fit with
+  room to spare. Commit `feat: tuck the notch into side edges`.
 - [ ] **8.5** Polish: colours into `Theme`, "2 more", the Consolas fallback, label sizes.
 - [ ] **8.6** Live Claude activity in the idle pill.
 - [ ] **8.7** Limit forecast in the hover panel.

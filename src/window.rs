@@ -22,12 +22,12 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CallWindowProcW, CheckMenuRadioItem, CreatePopupMenu, CreateWindowExW,
     DestroyMenu, DestroyWindow, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetCursorPos,
-    GetWindowLongPtrW, HMENU, IsWindowVisible, MB_ICONERROR, MB_ICONINFORMATION, MB_OK,
-    MF_BYCOMMAND, MF_SEPARATOR, MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, PostMessageW,
-    SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, TrackPopupMenu, WM_HOTKEY, WM_NCACTIVATE, WM_NCPAINT, WM_NULL, WNDPROC,
-    WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE,
+    GetSystemMetrics, GetWindowLongPtrW, HMENU, IsWindowVisible, MB_ICONERROR, MB_ICONINFORMATION,
+    MB_OK, MF_BYCOMMAND, MF_SEPARATOR, MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, PostMessageW,
+    SM_CXDRAG, SM_CYDRAG, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WM_HOTKEY, WM_NCACTIVATE, WM_NCPAINT, WM_NULL,
+    WNDPROC, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE,
     WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SIZEBOX, WS_SYSMENU,
 };
 use windows::core::{BOOL, HSTRING, PCWSTR, w};
@@ -132,6 +132,15 @@ pub fn cursor() -> Option<POINT> {
     // SAFETY: `cursor` is a live POINT the call writes into.
     unsafe { GetCursorPos(&mut cursor) }.ok()?;
     Some(cursor)
+}
+
+/// Whether the cursor has moved from `start` to `now` far enough to start a drag, by
+/// Windows' own threshold, so a click with a shaky hand stays a click.
+#[must_use]
+pub fn past_drag_threshold(start: POINT, now: POINT) -> bool {
+    // SAFETY: GetSystemMetrics has no preconditions.
+    let (width, height) = unsafe { (GetSystemMetrics(SM_CXDRAG), GetSystemMetrics(SM_CYDRAG)) };
+    (now.x - start.x).abs() >= width || (now.y - start.y).abs() >= height
 }
 
 /// Whether a fullscreen app, game or presentation is in front, so the notch should

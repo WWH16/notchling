@@ -350,6 +350,9 @@ fn drag_and_stick(notch: &Notch, placement: &Rc<RefCell<Placement>>, clip: &Rc<d
         else {
             return;
         };
+        if !notch.get_floating() && !window::past_drag_threshold(cursor_start, cursor) {
+            return;
+        }
         // Picked up mid-glide, it stays in the hand; a mere click lets the glide finish.
         caught.stop();
         notch.set_floating(true);

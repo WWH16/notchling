@@ -214,7 +214,11 @@ sessions (needs the user, since it changes the global settings).
   notch hides. Checked offscreen with the software renderer: the sweep, the armed
   buttons and "+7 lines" on a 14-line command. Commit `feat: harden the permission
   card`.
-- [ ] **8.2** Click the pill to toggle the hover panel, and a longer hover delay.
+- [x] **8.2** Click the pill to toggle the hover panel, and a longer hover delay.
+  A click opens the panel and keeps it open; the next click closes it until the
+  pointer leaves. Hover opens after 300 ms instead of 120 ms. A drag now starts past
+  Windows' drag threshold, so a click with a shaky hand stays a click. Commit
+  `feat: click the notch to open its panel`.
 - [ ] **8.3** Follow Windows "Show animations".
 - [ ] **8.4** Tuck mode on the side edges; check and fix the upright panel width.
 - [ ] **8.5** Polish: colours into `Theme`, "2 more", the Consolas fallback, label sizes.

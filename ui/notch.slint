@@ -501,21 +501,40 @@ export component Notch inherits Window {
     callback dragged();
     callback drag-ended();
 
-    // Opens after a short hover and closes after a short absence, so grazing the edge or
-    // passing over it does not make the shape flicker.
+    // Opens after a hover of a moment and closes after a short absence, so grazing the
+    // edge or passing over it does not open it. A click opens it at once and keeps it
+    // open until the next click, which closes it until the pointer leaves.
     private property <bool> expanded;
+    private property <bool> pinned;
+    private property <bool> dismissed;
+    private property <bool> hovered: hover.has-hover;
+    changed hovered => {
+        if !self.hovered {
+            self.dismissed = false;
+        }
+    }
     Timer {
-        interval: 120ms;
-        running: hover.has-hover && !root.expanded;
+        interval: 300ms;
+        running: root.hovered && !root.expanded && !root.dismissed;
         triggered => {
             root.expanded = true;
         }
     }
     Timer {
         interval: 250ms;
-        running: !hover.has-hover && root.expanded;
+        running: !root.hovered && root.expanded && !root.pinned;
         triggered => {
             root.expanded = false;
+        }
+    }
+    function toggle-panel() {
+        if self.expanded {
+            self.expanded = false;
+            self.pinned = false;
+            self.dismissed = true;
+        } else {
+            self.expanded = true;
+            self.pinned = true;
         }
     }
 
@@ -605,6 +624,11 @@ export component Notch inherits Window {
                     root.drag-started();
                 }
                 if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                    // Rust sets `floating` once the pointer moves far enough to drag, so
+                    // a release without it is a click.
+                    if !root.floating && !root.has-request && !root.alert-active {
+                        root.toggle-panel();
+                    }
                     root.drag-ended();
                 }
             }

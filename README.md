@@ -32,9 +32,10 @@ Start `ai-notch.exe`. Only one copy runs at a time.
 The pill shows CPU, GPU and a ring with the share of the selected provider's limit.
 The ring turns amber at 80% and red at 95%.
 
-- **Hover** the pill to see RAM, VRAM, and the provider's limits as rings with the
-  clock time each one resets ("resets 2:20 PM", "resets Fri 7:00 AM"), plus tokens,
-  burn rate and any incident on its status page.
+- **Hover** the pill for a moment, or **click** it, to see RAM, VRAM, and the
+  provider's limits as rings with the clock time each one resets ("resets 2:20 PM",
+  "resets Fri 7:00 AM"), plus tokens, burn rate and any incident on its status page.
+  A click keeps the panel open until you click again.
 - **Drag** it with the left button anywhere, on any display. Let go and it glides
   onto the screen edge nearest the cursor (top, bottom, left or right), flat side
   against it, and expands away from that edge. On the left or right edge it stands

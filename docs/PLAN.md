@@ -112,10 +112,11 @@ sessions (needs the user, since it changes the global settings).
 
 ## Phase 4: Claude usage, account source
 
-- [ ] **4.1** Read the OAuth token, parse 5-hour and weekly % and reset times. Token never
+- [x] **4.1** Read the OAuth token, parse 5-hour and weekly % and reset times. Token never
   appears in logs or `Debug` output. Commit `feat: claude account usage`.
-- [ ] **4.2** Fallback: pasted claude.ai session token stored in Credential Manager.
-  Commit `feat: session token fallback`.
+- [x] **4.2** Dropped: the account source works with Claude Code's own login (V4), so
+  no pasted claude.ai session token and no Credential Manager. When that login is
+  expired the local estimate covers it. No commit of its own.
 - [ ] **4.3** Merge sources: account % first, local for details, estimated badge on
   fallback, with a test. Commit `feat: merge claude usage sources`.
 
@@ -136,7 +137,7 @@ sessions (needs the user, since it changes the global settings).
 - [ ] **6.3** Hide during fullscreen apps via `SHQueryUserNotificationState`.
   Commit `feat: hide during fullscreen`.
 - [ ] **6.4** Settings window: monitor picker, thresholds, hook timeout, account source
-  toggles, token paste field. Commit `feat: settings window`.
+  toggle. Commit `feat: settings window`.
 - [ ] **6.5** Windows toast only while the notch is hidden.
   Commit `feat: toast fallback when hidden`.
 
@@ -149,6 +150,9 @@ sessions (needs the user, since it changes the global settings).
 
 - No `nvml-wrapper`: PDH provides VRAM, and the design shows no GPU temperature.
 - `ureq` instead of `reqwest` + `tokio`: a few blocking HTTP calls need no async runtime.
+  It uses Windows' own TLS (SChannel) and certificate store, not rustls and ring.
+- No `keyring`: step 4.2 was dropped, so ai-notch stores no secrets of its own.
+- `chrono` for timestamps: Slint already builds it, so it adds no crate.
 - Right-click menu added: needed to quit and switch providers.
 - `--install-hooks` added: edits `settings.json` safely with a backup.
 - One exe for app and `--hook` mode. If V1 shows stdin/stdout problems with the GUI

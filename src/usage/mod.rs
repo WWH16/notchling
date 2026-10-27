@@ -1,5 +1,7 @@
 //! Usage limits of the AI providers, read from each source on a background thread.
 
+#[expect(dead_code, reason = "merged with the local source in step 4.3")]
+mod claude_account;
 mod claude_local;
 
 pub use claude_local::ClaudeLocal;
@@ -25,6 +27,8 @@ pub struct Usage {
     pub used: Option<f32>,
     /// When the current limit window resets.
     pub resets_at: Option<DateTime<Utc>>,
+    /// Share of the weekly limit in use, from 0 to 1, when the provider has one.
+    pub weekly_used: Option<f32>,
     /// Tokens used in the current window, when the source counts them.
     pub tokens: Option<u64>,
     /// `tokens` split by model name, when the source knows the models.

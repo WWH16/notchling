@@ -97,11 +97,16 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   optional.
 - The claude.ai session-token fallback (step 4.2) may be unnecessary. Revisit before
   building it.
+- Checked again at step 4.1 (2026-10-27): the token in `.credentials.json` had expired
+  hours earlier while Claude Code kept working in the desktop app's Code tab. The
+  desktop app does not seem to refresh that file; the terminal CLI does. So the exact %
+  is only there while the CLI login is fresh, and the local estimate covers the rest.
+  Without a token the endpoint answers 401.
 
 ## Plan changes
 
 - 2.3: the hook output format is confirmed as above.
 - 2.5: ignore `Notification` events whose type is `permission_prompt`.
-- 4.2: probably drop it; decide at Phase 4.
+- 4.2: dropped at Phase 4.
 - 5.1: add the `zstd` dependency; Codex gives an exact %, not an estimate.
 - Plans: Claude Pro, ChatGPT Go. Update SPEC.md wording when Phase 5 starts.

@@ -34,7 +34,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use awake::KeepAwake;
-use chrono::Utc;
+use chrono::{DateTime, Local, Utc};
 use config::Config;
 use gpu::GpuLoad;
 use pipe::Listener;
@@ -46,7 +46,7 @@ use status::Health;
 use system::SystemLoad;
 use ui::{AlertKind, Choice, Notch};
 use usage::{Claude, Codex, Crossing, Gemini, Provider, Reading, Thresholds, Usage};
-use window::{MenuChoice, MessageKind, NotchWindow};
+use window::{MenuChoice, MessageKind, NotchWindow, Placement};
 
 /// One frame at 60 Hz; how often to check whether the native window exists yet.
 const FRAME: Duration = Duration::from_millis(16);
@@ -56,6 +56,10 @@ const NATIVE_WINDOW_ATTEMPTS: u32 = 60;
 
 /// How often the CPU, GPU and RAM readings refresh, matching Task Manager's default.
 const STATS_INTERVAL: Duration = Duration::from_secs(1);
+
+/// How long a shrinking shape keeps its old window region: the longest morph animation.
+/// Updating the region on every animation frame made the notch flicker.
+const SHRINK_DELAY: Duration = Duration::from_millis(350);
 
 /// How long after a move to another display the notch re-clips its window, once
 /// Windows has applied that display's scale.
@@ -120,7 +124,13 @@ fn main() -> anyhow::Result<()> {
     }));
 
     let notch = Notch::new()?;
-    window::place_top_center(notch.window(), notch.get_fixed_width(), config.monitor())?;
+    let placement = Rc::new(RefCell::new(Placement {
+        device: config.monitor().map(str::to_owned),
+        position: config.position(),
+    }));
+    placement
+        .borrow_mut()
+        .apply(notch.window(), notch.get_fixed_width())?;
     show_usage(&notch, config.provider(), None);
     notch.show()?;
     let status_switch = start_status(&notch, &usages);
@@ -137,22 +147,11 @@ fn main() -> anyhow::Result<()> {
             let native = Rc::new(native);
             hide_during_fullscreen(&fullscreen_timer, Rc::clone(&native), fullscreen_alert);
 
-            let weak = notch.as_weak();
-            let clip_native = Rc::clone(&native);
-            let clip: Rc<dyn Fn()> = Rc::new(move || {
-                let Some(notch) = weak.upgrade() else {
-                    return;
-                };
-                clip_native.clip_to(window::shape_rect(
-                    notch.get_fixed_width(),
-                    notch.get_shape_width(),
-                    notch.get_shape_height(),
-                    notch.window().scale_factor(),
-                ));
-            });
+            let clip = clip_to_shape(&notch, Rc::clone(&native));
             clip();
             let shape_clip = Rc::clone(&clip);
             notch.on_shape_changed(move || shape_clip());
+            drag_along_top(&notch, &placement);
 
             let weak = notch.as_weak();
             let settings = RefCell::new(None);
@@ -170,7 +169,7 @@ fn main() -> anyhow::Result<()> {
                         select_provider(&notch, &menu_usages, &status_switch, provider);
                     }
                     Some(MenuChoice::Settings) => {
-                        let saved = apply_settings(&notch, &menu_usages, &clip);
+                        let saved = apply_settings(&notch, &menu_usages, &placement, &clip);
                         // A window that cannot open leaves everything as it is.
                         let _ = settings::open(&settings, saved);
                     }
@@ -230,23 +229,109 @@ fn hide_during_fullscreen(timer: &Timer, native: Rc<NotchWindow>, alert: Arc<Mut
     timer.start(TimerMode::Repeated, FULLSCREEN_CHECK, check);
 }
 
+/// Keeps the window's clickable region on the notch's shape, returning the function
+/// that updates it. A growing shape gets its room at once, so the morph is never cut
+/// off; a shrinking one keeps the old room until the morph has finished.
+fn clip_to_shape(notch: &Notch, native: Rc<NotchWindow>) -> Rc<dyn Fn()> {
+    let weak = notch.as_weak();
+    let target = Rc::new(move || {
+        let notch = weak.upgrade()?;
+        Some(window::shape_rect(
+            notch.get_fixed_width(),
+            notch.get_shape_width(),
+            notch.get_shape_height(),
+            notch.window().scale_factor(),
+        ))
+    });
+    let applied = Rc::new(Cell::new(None));
+    let shrink = Rc::new(Timer::default());
+    Rc::new(move || {
+        let Some(wanted) = target() else {
+            return;
+        };
+        let room = applied
+            .get()
+            .map_or(wanted, |current| window::union(current, wanted));
+        if applied.get() != Some(room) {
+            native.clip_to(room);
+            applied.set(Some(room));
+        }
+        if room == wanted {
+            shrink.stop();
+            return;
+        }
+        let (native, applied, target) =
+            (Rc::clone(&native), Rc::clone(&applied), Rc::clone(&target));
+        shrink.start(TimerMode::SingleShot, SHRINK_DELAY, move || {
+            if let Some(wanted) = target() {
+                native.clip_to(wanted);
+                applied.set(Some(wanted));
+            }
+        });
+    })
+}
+
+/// Lets the user drag the notch along the top edge, and remembers where it was left.
+/// The drag follows the cursor on screen, so the pill resizing under it does not matter.
+fn drag_along_top(notch: &Notch, placement: &Rc<RefCell<Placement>>) {
+    // Where the cursor and the notch were when the button went down.
+    let start: Rc<Cell<Option<(i32, f32)>>> = Rc::new(Cell::new(None));
+    let started = Rc::clone(&start);
+    let pressed = Rc::clone(placement);
+    notch.on_drag_started(move || {
+        let position = pressed.borrow().position;
+        started.set(window::cursor_x().map(|x| (x, position)));
+    });
+    let weak = notch.as_weak();
+    let moving = Rc::clone(placement);
+    let dragging = Rc::clone(&start);
+    notch.on_dragged(move || {
+        let (Some(notch), Some((start_x, start_position)), Some(x)) =
+            (weak.upgrade(), dragging.get(), window::cursor_x())
+        else {
+            return;
+        };
+        // Fails only when Windows reports no display; the notch then stays put.
+        let _ = moving.borrow_mut().drag(
+            notch.window(),
+            notch.get_fixed_width(),
+            start_position,
+            x - start_x,
+        );
+    });
+    let saved = Cell::new(placement.borrow().position);
+    let placement = Rc::clone(placement);
+    notch.on_drag_ended(move || {
+        let position = placement.borrow().position;
+        // A click without a drag leaves nothing to save.
+        if position != saved.replace(position) {
+            // On failure the spot only lasts until the notch restarts.
+            let _ = Config::update(|config| config.set_position(position));
+        }
+    });
+}
+
 /// Applies saved settings to the running notch: its display and the usage alerts. The
 /// usage sources and hook mode read the rest from the config file themselves.
 fn apply_settings(
     notch: &Notch,
     usages: &Arc<Mutex<Usages>>,
+    placement: &Rc<RefCell<Placement>>,
     clip: &Rc<dyn Fn()>,
 ) -> impl Fn(&Config) + 'static {
     let weak = notch.as_weak();
     let usages = Arc::clone(usages);
+    let placement = Rc::clone(placement);
     let clip = Rc::clone(clip);
     move |config| {
         lock_usages(&usages).thresholds = Thresholds::new(config.usage_alerts());
         let Some(notch) = weak.upgrade() else {
             return;
         };
+        let mut placement = placement.borrow_mut();
+        placement.device = config.monitor().map(str::to_owned);
         // Fails only when Windows reports no display; the notch then stays put.
-        let _ = window::place_top_center(notch.window(), notch.get_fixed_width(), config.monitor());
+        let _ = placement.apply(notch.window(), notch.get_fixed_width());
         let clip = Rc::clone(&clip);
         Timer::single_shot(MONITOR_MOVE_SETTLE, move || clip());
     }
@@ -381,16 +466,33 @@ fn select_provider(
     let _ = Config::update(|config| config.set_provider(provider));
 }
 
-/// "Claude at 82% · resets in 2h 10m".
+/// "Claude at 82% · resets 2:20 PM".
 fn usage_alert_text(provider: Provider, usage: &Usage) -> String {
     let used = usage.used.unwrap_or(0.0) * 100.0;
-    match usage.resets_at {
-        Some(at) => format!(
-            "{} at {used:.0}% · resets in {}",
-            provider.name(),
-            usage::countdown(at - Utc::now())
-        ),
+    match reset_text(usage.resets_at) {
+        Some(reset) => format!("{} at {used:.0}% · {reset}", provider.name()),
         None => format!("{} at {used:.0}%", provider.name()),
+    }
+}
+
+/// "resets 2:20 PM", in the PC's time zone.
+fn reset_text(at: Option<DateTime<Utc>>) -> Option<String> {
+    let at = at?.with_timezone(&Local);
+    Some(format!("resets {}", usage::reset_time(at, &Local::now())))
+}
+
+/// "85%", or "-" when the share is unknown.
+fn percent_text(used: Option<f32>) -> String {
+    used.map_or_else(|| "-".to_owned(), |used| format!("{:.0}%", used * 100.0))
+}
+
+/// The main window's name for each provider: Claude's 5 hours, the Codex plan's own
+/// window, and Gemini's day.
+fn window_label(provider: Provider) -> &'static str {
+    match provider {
+        Provider::Claude => "5h",
+        Provider::ChatGpt => "plan",
+        Provider::Gemini => "today",
     }
 }
 
@@ -404,44 +506,41 @@ fn alert_kind(crossing: Crossing) -> AlertKind {
 }
 
 /// Puts a provider's usage on the notch, or "no data" when there is no good reading.
+/// The rings show shares only; tokens and burn rate are details on hover.
 fn show_usage(notch: &Notch, provider: Provider, usage: Option<&Usage>) {
     notch.set_usage_provider(provider.into());
+    notch.set_usage_label(window_label(provider).into());
     let Some(usage) = usage else {
+        notch.set_usage_fraction(-1.0);
         notch.set_usage_short("-".into());
-        notch.set_usage_tokens("".into());
-        notch.set_usage_rate("".into());
-        notch.set_usage_weekly("".into());
         notch.set_usage_reset("no data".into());
+        notch.set_weekly_fraction(-1.0);
+        notch.set_usage_detail("".into());
         notch.set_usage_estimated(false);
         return;
     };
-    let tokens = usage.tokens.map(usage::compact);
-    let short = match (usage.used, &tokens) {
-        (Some(used), _) => format!("{:.0}%", used * 100.0),
-        (None, Some(tokens)) => tokens.clone(),
-        (None, None) => "-".to_owned(),
-    };
+    notch.set_usage_fraction(usage.used.unwrap_or(-1.0));
+    notch.set_usage_short(percent_text(usage.used).into());
+    let reset = reset_text(usage.resets_at).unwrap_or_else(|| "not started".to_owned());
+    notch.set_usage_reset(reset.into());
+
+    notch.set_weekly_fraction(usage.weekly_used.unwrap_or(-1.0));
+    notch.set_weekly_short(percent_text(usage.weekly_used).into());
+    notch.set_weekly_reset(
+        reset_text(usage.weekly_resets_at)
+            .unwrap_or_default()
+            .into(),
+    );
+
+    let tokens = usage
+        .tokens
+        .map(|tokens| format!("{} tokens", usage::compact(tokens)));
     // Float to integer casts saturate; display only.
     let rate = usage
         .burn_rate
         .map(|rate| format!("{}/min", usage::compact(rate.round() as u64)));
-    let reset = usage.resets_at.map_or_else(
-        || "no window open".to_owned(),
-        |at| format!("resets in {}", usage::countdown(at - Utc::now())),
-    );
-    notch.set_usage_short(short.into());
-    notch.set_usage_tokens(
-        tokens
-            .map(|tokens| format!("{tokens} tokens"))
-            .unwrap_or_default()
-            .into(),
-    );
-    notch.set_usage_rate(rate.unwrap_or_default().into());
-    let weekly = usage
-        .weekly_used
-        .map(|used| format!("week {:.0}%", used * 100.0));
-    notch.set_usage_weekly(weekly.unwrap_or_default().into());
-    notch.set_usage_reset(reset.into());
+    let detail: Vec<String> = tokens.into_iter().chain(rate).collect();
+    notch.set_usage_detail(detail.join(" · ").into());
     notch.set_usage_estimated(usage.estimated);
 }
 

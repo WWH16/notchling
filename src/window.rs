@@ -70,6 +70,15 @@ pub enum MenuChoice {
     Quit,
 }
 
+/// The cursor's horizontal screen position in physical pixels, if Windows reports it.
+#[must_use]
+pub fn cursor_x() -> Option<i32> {
+    let mut cursor = POINT::default();
+    // SAFETY: `cursor` is a live POINT the call writes into.
+    unsafe { GetCursorPos(&mut cursor) }.ok()?;
+    Some(cursor.x)
+}
+
 /// Whether a fullscreen app, game or presentation is in front, so the notch should
 /// stay out of the way.
 #[must_use]
@@ -154,35 +163,74 @@ fn monitor_info(handle: HMONITOR) -> anyhow::Result<Monitor> {
     })
 }
 
-/// Moves the window to the top center of the display named `device`, or of the
-/// primary display when `device` is `None` or no longer connected.
-///
-/// Before the first `show()` this keeps the window from appearing anywhere else first.
-/// `logical_width` is the window width in logical pixels, since Slint reports no size
-/// before the window exists.
-///
-/// # Errors
-///
-/// Fails when Windows reports no display, or not its DPI.
-pub fn place_top_center(
-    window: &slint::Window,
-    logical_width: f32,
-    device: Option<&str>,
-) -> anyhow::Result<()> {
-    let monitors = monitors();
-    let monitor = monitors
-        .iter()
-        .find(|monitor| Some(monitor.device.as_str()) == device)
-        .or_else(|| monitors.iter().find(|monitor| monitor.primary))
-        .context("Windows reports no display")?;
-    let scale = monitor_scale(monitor.handle)?;
-    let bounds = monitor.bounds;
+/// Where the notch sits: a display, and how far along its top edge the window's
+/// center is, from 0 (left edge) to 1 (right edge).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Placement {
+    /// Windows' device name; the primary display when `None` or disconnected.
+    pub device: Option<String>,
+    pub position: f32,
+}
 
-    // Rounding to whole pixels is intended.
-    let width = (logical_width * scale).round() as i32;
-    let x = bounds.left + (bounds.right - bounds.left - width) / 2;
-    window.set_position(slint::PhysicalPosition::new(x, bounds.top));
-    Ok(())
+impl Placement {
+    /// Moves the window there, keeping the whole window on its display; the position
+    /// is clamped to match.
+    ///
+    /// Before the first `show()` this keeps the window from appearing anywhere else first.
+    /// `logical_width` is the window width in logical pixels, since Slint reports no size
+    /// before the window exists.
+    ///
+    /// # Errors
+    ///
+    /// Fails when Windows reports no display, or not its DPI.
+    pub fn apply(&mut self, window: &slint::Window, logical_width: f32) -> anyhow::Result<()> {
+        self.place(window, logical_width, self.position, 0)
+    }
+
+    /// Moves the window `dx` physical pixels along the top edge from `start`, the
+    /// position it had when a drag began.
+    ///
+    /// # Errors
+    ///
+    /// Fails when Windows reports no display, or not its DPI.
+    pub fn drag(
+        &mut self,
+        window: &slint::Window,
+        logical_width: f32,
+        start: f32,
+        dx: i32,
+    ) -> anyhow::Result<()> {
+        self.place(window, logical_width, start, dx)
+    }
+
+    fn place(
+        &mut self,
+        window: &slint::Window,
+        logical_width: f32,
+        position: f32,
+        dx: i32,
+    ) -> anyhow::Result<()> {
+        let monitors = monitors();
+        let monitor = monitors
+            .iter()
+            .find(|monitor| Some(monitor.device.as_str()) == self.device.as_deref())
+            .or_else(|| monitors.iter().find(|monitor| monitor.primary))
+            .context("Windows reports no display")?;
+        let scale = monitor_scale(monitor.handle)?;
+        let bounds = monitor.bounds;
+
+        // Pixel counts are far inside f32's exact range.
+        let (left, span) = (bounds.left as f32, (bounds.right - bounds.left) as f32);
+        let half = logical_width * scale / 2.0;
+        let lowest = left + half;
+        let center =
+            (left + position * span + dx as f32).clamp(lowest, (left + span - half).max(lowest));
+        self.position = (center - left) / span;
+        // Rounding to whole pixels is intended.
+        let x = (center - half).round() as i32;
+        window.set_position(slint::PhysicalPosition::new(x, bounds.top));
+        Ok(())
+    }
 }
 
 fn monitor_scale(monitor: HMONITOR) -> anyhow::Result<f32> {
@@ -323,6 +371,17 @@ unsafe fn fill_menu(menu: HMENU, shown: Provider) -> windows::core::Result<()> {
     }
 }
 
+/// The smallest rectangle holding both `a` and `b`.
+#[must_use]
+pub fn union(a: RECT, b: RECT) -> RECT {
+    RECT {
+        left: a.left.min(b.left),
+        top: a.top.min(b.top),
+        right: a.right.max(b.right),
+        bottom: a.bottom.max(b.bottom),
+    }
+}
+
 /// The top-centered rectangle, in physical pixels, that holds a shape of the given
 /// logical size inside a window of the given logical width.
 ///
@@ -343,6 +402,30 @@ pub fn shape_rect(window_width: f32, shape_width: f32, shape_height: f32, scale:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn union_holds_both_rectangles() {
+        let wide = RECT {
+            left: 0,
+            top: 0,
+            right: 460,
+            bottom: 30,
+        };
+        let tall = RECT {
+            left: 100,
+            top: 0,
+            right: 360,
+            bottom: 196,
+        };
+        let both = RECT {
+            left: 0,
+            top: 0,
+            right: 460,
+            bottom: 196,
+        };
+        assert_eq!(union(wide, tall), both);
+        assert_eq!(union(both, wide), both);
+    }
 
     #[test]
     fn there_is_one_primary_monitor() {

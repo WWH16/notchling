@@ -238,6 +238,7 @@ fn current_window(messages: &[&Message], now: DateTime<Utc>) -> Usage {
         used: None,
         resets_at: Some(start + WINDOW),
         weekly_used: None,
+        weekly_resets_at: None,
         tokens: Some(tokens),
         tokens_by_model,
         burn_rate,

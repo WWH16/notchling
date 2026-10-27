@@ -169,6 +169,12 @@ sessions (needs the user, since it changes the global settings).
 - [x] **7.2** Read Claude Code logs line by line instead of whole files. Startup peak
   97.9 MB to 35.2 MB working set; idle unchanged at about 35 MB, and the first scan
   went from 174 ms to 96 ms. Commit `fix: read claude logs line by line`.
+- [x] **7.3** Feedback round after v0.1.0: Claude shows a % instead of tokens (the
+  account source refreshes Claude Code's expired login, see FINDINGS); reset times as
+  clock times, the weekly reset too; rings for each limit; hover opens and closes
+  after a short delay and the window region changes once per morph, not every frame;
+  drag the notch along the top edge, remembered as `position`.
+  Commit `feat: rings, reset times, drag and login refresh`.
 
 ## Deviations from SPEC.md
 
@@ -177,6 +183,8 @@ sessions (needs the user, since it changes the global settings).
   It uses Windows' own TLS (SChannel) and certificate store, not rustls and ring, with
   gzip for Google's incident feed.
 - No `keyring`: step 4.2 was dropped, so ai-notch stores no secrets of its own.
+- The Claude account source refreshes Claude Code's expired login and writes it back
+  (step 7.3), instead of only reading it: the desktop app never refreshes that file.
 - `chrono` for timestamps: Slint already builds it, so it adds no crate.
 - `ruzstd` instead of `zstd` for Codex logs: a pure-Rust decoder, no C build.
 - Right-click menu added: needed to quit and switch providers.

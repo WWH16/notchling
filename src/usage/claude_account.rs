@@ -1,9 +1,10 @@
 //! Claude's exact usage limits from the account endpoint behind Claude Code's `/usage`
 //! screen, signed in with Claude Code's own login.
 //!
-//! The endpoint is unofficial. The login is only read: ai-notch never refreshes it, so
-//! it cannot sign Claude Code out. While the login is expired there is no reading, until
-//! Claude Code refreshes it.
+//! The endpoint is unofficial. The login lives in `~/.claude/.credentials.json`, which
+//! only the Claude Code CLI refreshes; the desktop app keeps its own login. So once the
+//! stored token expires, ai-notch refreshes it the way Claude Code does and writes the
+//! new tokens back, and the CLI carries on with them.
 
 use std::env;
 use std::fmt;
@@ -13,7 +14,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, anyhow, bail};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 use ureq::Agent;
 
 use super::Usage;
@@ -23,6 +24,15 @@ const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 
 /// Beta flag the endpoint requires for OAuth logins.
 const OAUTH_BETA: &str = "oauth-2025-04-20";
+
+/// Where Claude Code refreshes its login, as of Claude Code 2.1.
+const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
+
+/// The OAuth client Claude Code signs in as; a refresh must name the same client.
+const CLAUDE_CODE_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+
+/// A token this close to expiry is refreshed first, so it cannot lapse mid-request.
+const REFRESH_MARGIN_MS: i64 = 60_000;
 
 /// Reads Claude's usage limits from the account endpoint.
 #[derive(Debug)]
@@ -45,14 +55,15 @@ impl ClaudeAccount {
         })
     }
 
-    /// Asks the account endpoint for the current limits.
+    /// Asks the account endpoint for the current limits, refreshing the login first
+    /// when it has expired.
     ///
     /// # Errors
     ///
-    /// Fails when Claude Code is not signed in or its login expired, when the request
-    /// fails, or when the response holds no limits.
+    /// Fails when Claude Code is not signed in, when the login cannot be refreshed,
+    /// when the request fails, or when the response holds no limits.
     pub fn fetch(&self) -> anyhow::Result<Usage> {
-        let token = read_token(&self.credentials, Utc::now())?;
+        let token = self.access_token(Utc::now())?;
         let body = self
             .agent
             .get(USAGE_URL)
@@ -65,16 +76,63 @@ impl ClaudeAccount {
             .context("reading the usage response")?;
         parse_usage(&body)
     }
+
+    /// A valid access token: the stored one, or a refreshed one once it has expired.
+    /// A refresh is written back to the credentials file unless Claude Code changed
+    /// the file meanwhile, in which case its tokens win.
+    fn access_token(&self, now: DateTime<Utc>) -> anyhow::Result<Secret> {
+        let path = &self.credentials;
+        let read =
+            || fs::read_to_string(path).with_context(|| format!("reading {}", path.display()));
+        let text = read()?;
+        let login = parse_login(&text)?;
+        if !login.expires_by(now) {
+            return Ok(login.access_token);
+        }
+        let refresh_token = login
+            .refresh_token
+            .context("the Claude Code login expired; run `claude` to sign in again")?;
+        let refreshed = self.refresh(&refresh_token, &login.scopes)?;
+        let updated = updated_credentials(&text, &refreshed, now)?;
+        if read()? == text {
+            write_atomically(path, &updated)?;
+        }
+        Ok(refreshed.access_token)
+    }
+
+    /// Trades the refresh token for new tokens, exactly as Claude Code does.
+    fn refresh(&self, refresh_token: &Secret, scopes: &[String]) -> anyhow::Result<Refreshed> {
+        let mut request = json!({
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token.0,
+            "client_id": CLAUDE_CODE_CLIENT_ID,
+        });
+        if !scopes.is_empty() {
+            request["scope"] = scopes.join(" ").into();
+        }
+        let reply = self
+            .agent
+            .post(TOKEN_URL)
+            .header("Content-Type", "application/json")
+            .send(request.to_string())
+            .context("refreshing the Claude Code login; run `claude` once if this keeps failing")?
+            .body_mut()
+            .read_to_string()
+            .context("reading the refreshed login")?;
+        // serde_json errors can quote values from the reply, which holds tokens.
+        serde_json::from_str(&reply)
+            .map_err(|_| anyhow!("the refreshed login has an unexpected format"))
+    }
 }
 
-/// Claude Code's OAuth access token. `Debug` hides it, so it never reaches a log.
-#[derive(Deserialize)]
+/// An OAuth token. `Debug` hides it, so it never reaches a log or an error.
+#[derive(Clone, Deserialize)]
 #[serde(transparent)]
-struct AccessToken(String);
+struct Secret(String);
 
-impl fmt::Debug for AccessToken {
+impl fmt::Debug for Secret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AccessToken(..)")
+        f.write_str("Secret(..)")
     }
 }
 
@@ -84,35 +142,98 @@ struct Credentials {
     claude_ai_oauth: Option<OAuth>,
 }
 
-/// The only login fields read; the refresh token is never touched.
+/// The login fields ai-notch uses; everything else in the file is left as it is.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OAuth {
-    access_token: AccessToken,
+    access_token: Secret,
+    refresh_token: Option<Secret>,
     /// Unix time in milliseconds.
     expires_at: Option<i64>,
+    #[serde(default)]
+    scopes: Vec<String>,
 }
 
-fn read_token(path: &Path, now: DateTime<Utc>) -> anyhow::Result<AccessToken> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    parse_token(&text, now)
+impl OAuth {
+    /// Whether the access token has expired by `now`, or is about to.
+    fn expires_by(&self, now: DateTime<Utc>) -> bool {
+        self.expires_at
+            .is_some_and(|expires| expires - REFRESH_MARGIN_MS <= now.timestamp_millis())
+    }
 }
 
-/// The access token in a credentials file, if it is still valid at `now`.
-fn parse_token(text: &str, now: DateTime<Utc>) -> anyhow::Result<AccessToken> {
+/// The Claude Code login in a credentials file.
+fn parse_login(text: &str) -> anyhow::Result<OAuth> {
     // serde_json errors can quote values from the file, so they are dropped.
     let credentials: Credentials = serde_json::from_str(text)
         .map_err(|_| anyhow!("the Claude Code credentials file has an unexpected format"))?;
-    let oauth = credentials
+    credentials
         .claude_ai_oauth
+        .context("Claude Code is not signed in with a Claude account")
+}
+
+/// The token endpoint's reply to a refresh.
+#[derive(Debug, Deserialize)]
+struct Refreshed {
+    access_token: Secret,
+    /// Missing when the old refresh token stays valid.
+    refresh_token: Option<Secret>,
+    /// Seconds.
+    expires_in: i64,
+    /// Seconds.
+    refresh_token_expires_in: Option<i64>,
+    /// Space-separated.
+    scope: Option<String>,
+}
+
+/// The credentials file with the refreshed tokens in place, every other field and the
+/// key order unchanged, written compactly as Claude Code writes it.
+fn updated_credentials(
+    text: &str,
+    refreshed: &Refreshed,
+    now: DateTime<Utc>,
+) -> anyhow::Result<String> {
+    let mut root: Value = serde_json::from_str(text)
+        .map_err(|_| anyhow!("the Claude Code credentials file has an unexpected format"))?;
+    let oauth: &mut Map<String, Value> = root
+        .get_mut("claudeAiOauth")
+        .and_then(Value::as_object_mut)
         .context("Claude Code is not signed in with a Claude account")?;
-    if oauth
-        .expires_at
-        .is_some_and(|expires| expires <= now.timestamp_millis())
-    {
-        bail!("the Claude Code login expired; waiting for Claude Code to refresh it");
+    let in_ms = |secs: i64| {
+        now.timestamp_millis()
+            .saturating_add(secs.saturating_mul(1000))
+    };
+    // Copies of the tokens, deliberately: the caller still needs the access token.
+    oauth.insert(
+        "accessToken".into(),
+        refreshed.access_token.0.clone().into(),
+    );
+    if let Some(refresh_token) = &refreshed.refresh_token {
+        oauth.insert("refreshToken".into(), refresh_token.0.clone().into());
     }
-    Ok(oauth.access_token)
+    oauth.insert("expiresAt".into(), in_ms(refreshed.expires_in).into());
+    if let Some(secs) = refreshed.refresh_token_expires_in {
+        oauth.insert("refreshTokenExpiresAt".into(), in_ms(secs).into());
+    }
+    if let Some(scope) = &refreshed.scope {
+        let scopes: Vec<&str> = scope.split_whitespace().collect();
+        oauth.insert("scopes".into(), scopes.into());
+    }
+    serde_json::to_string(&root).context("writing the credentials as JSON")
+}
+
+/// Replaces `path` in one step, so a reader never sees a half-written login.
+fn write_atomically(path: &Path, text: &str) -> anyhow::Result<()> {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".ai-notch-tmp");
+    let temp = path.with_file_name(name);
+    fs::write(&temp, text).with_context(|| format!("writing {}", temp.display()))?;
+    if let Err(err) = fs::rename(&temp, path) {
+        // Best effort; a leftover temp file is overwritten next time anyway.
+        let _ = fs::remove_file(&temp);
+        return Err(err).with_context(|| format!("replacing {}", path.display()));
+    }
+    Ok(())
 }
 
 /// One limit: an entry of `limits`, or the older `five_hour` and `seven_day` objects,
@@ -139,22 +260,29 @@ fn parse_usage(body: &str) -> anyhow::Result<Usage> {
         listed.or_else(|| Limit::deserialize(&response[older]).ok())
     };
     let session = limit("session", "five_hour").filter(|limit| limit.percent.is_some());
-    let weekly = limit("weekly_all", "seven_day").and_then(|limit| limit.percent);
+    let weekly = limit("weekly_all", "seven_day").filter(|limit| limit.percent.is_some());
     if session.is_none() && weekly.is_none() {
         bail!("the usage response holds no limits");
     }
     Ok(Usage {
-        used: session
-            .as_ref()
-            .and_then(|limit| limit.percent)
-            .map(|percent| percent / 100.0),
-        resets_at: session
-            .and_then(|limit| limit.resets_at)
-            .and_then(|at| DateTime::parse_from_rfc3339(&at).ok())
-            .map(|at| at.to_utc()),
-        weekly_used: weekly.map(|percent| percent / 100.0),
+        used: session.as_ref().and_then(Limit::share),
+        resets_at: session.as_ref().and_then(Limit::reset),
+        weekly_used: weekly.as_ref().and_then(Limit::share),
+        weekly_resets_at: weekly.as_ref().and_then(Limit::reset),
         ..Usage::default()
     })
+}
+
+impl Limit {
+    /// The share used, from 0 to 1.
+    fn share(&self) -> Option<f32> {
+        self.percent.map(|percent| percent / 100.0)
+    }
+
+    fn reset(&self) -> Option<DateTime<Utc>> {
+        let at = DateTime::parse_from_rfc3339(self.resets_at.as_deref()?).ok()?;
+        Some(at.to_utc())
+    }
 }
 
 #[cfg(test)]
@@ -176,6 +304,10 @@ mod tests {
         // The session window is not open, so it has no reset time.
         assert_eq!(usage.resets_at, None);
         assert_eq!(usage.weekly_used, Some(0.02));
+        assert_eq!(
+            usage.weekly_resets_at,
+            Some(time("2026-10-29T23:00:00.114010Z"))
+        );
         assert!(!usage.estimated);
     }
 
@@ -207,41 +339,98 @@ mod tests {
         assert!(parse_usage("<html>").is_err());
     }
 
-    #[test]
-    fn token_is_read_until_it_expires() {
-        let file = r#"{"claudeAiOauth": {
-            "accessToken": "synthetic-secret",
-            "refreshToken": "synthetic-refresh",
-            "expiresAt": 1793000000000,
-            "subscriptionType": "pro"
-        }}"#;
-        let before = DateTime::from_timestamp_millis(1_792_999_999_999).expect("valid time");
-        let token = parse_token(file, before).expect("token is still valid");
-        assert_eq!(token.0, "synthetic-secret");
+    const CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"synthetic-old-access","refreshToken":"synthetic-old-refresh","expiresAt":1793000000000,"refreshTokenExpiresAt":1794000000000,"scopes":["user:inference","user:profile"],"subscriptionType":"pro","rateLimitTier":"default"},"mcpOAuth":{"example":{"accessToken":"synthetic-mcp"}}}"#;
 
-        let at = DateTime::from_timestamp_millis(1_793_000_000_000).expect("valid time");
-        let err = parse_token(file, at).expect_err("token expired");
-        assert!(err.to_string().contains("expired"), "{err}");
+    #[test]
+    fn login_needs_a_refresh_shortly_before_it_expires() {
+        let login = parse_login(CREDENTIALS).expect("fixture parses");
+        assert_eq!(login.scopes, ["user:inference", "user:profile"]);
+        let at = |ms| DateTime::from_timestamp_millis(ms).expect("valid time");
+        assert!(!login.expires_by(at(1_793_000_000_000 - 61_000)));
+        assert!(login.expires_by(at(1_793_000_000_000 - 60_000)));
+        assert!(login.expires_by(at(1_793_000_000_000)));
     }
 
     #[test]
-    fn token_never_shows_in_debug_or_errors() {
-        let now = time("2026-10-27T00:00:00Z");
-        let token = parse_token(
-            r#"{"claudeAiOauth": {"accessToken": "synthetic-secret"}}"#,
-            now,
+    fn refresh_replaces_only_the_token_fields() {
+        let refreshed: Refreshed = serde_json::from_str(
+            r#"{"token_type":"Bearer","access_token":"synthetic-new-access","refresh_token":"synthetic-new-refresh","expires_in":28800,"refresh_token_expires_in":2592000,"scope":"user:inference user:profile user:sessions:claude_code"}"#,
         )
-        .expect("a token without expiry is valid");
-        assert_eq!(format!("{token:?}"), "AccessToken(..)");
+        .expect("reply parses");
+        let now = DateTime::from_timestamp_millis(1_793_100_000_000).expect("valid time");
+
+        let text = updated_credentials(CREDENTIALS, &refreshed, now).expect("credentials update");
+
+        assert!(
+            !text.contains('\n'),
+            "written compactly like Claude Code: {text}"
+        );
+        let root: Value = serde_json::from_str(&text).expect("written file is JSON");
+        let oauth = &root["claudeAiOauth"];
+        assert_eq!(oauth["accessToken"], "synthetic-new-access");
+        assert_eq!(oauth["refreshToken"], "synthetic-new-refresh");
+        assert_eq!(oauth["expiresAt"], 1_793_100_000_000_i64 + 28_800_000);
+        assert_eq!(
+            oauth["refreshTokenExpiresAt"],
+            1_793_100_000_000_i64 + 2_592_000_000
+        );
+        assert_eq!(oauth["scopes"][2], "user:sessions:claude_code");
+        assert_eq!(oauth["subscriptionType"], "pro");
+        assert_eq!(oauth["rateLimitTier"], "default");
+        assert_eq!(root["mcpOAuth"]["example"]["accessToken"], "synthetic-mcp");
+        let keys: Vec<&String> = oauth.as_object().expect("object").keys().collect();
+        assert_eq!(keys[0], "accessToken", "key order is kept");
+    }
+
+    #[test]
+    fn refresh_without_a_new_refresh_token_keeps_the_old_one() {
+        let refreshed: Refreshed =
+            serde_json::from_str(r#"{"access_token":"synthetic-new-access","expires_in":3600}"#)
+                .expect("reply parses");
+        let now = DateTime::from_timestamp_millis(1_793_100_000_000).expect("valid time");
+        let text = updated_credentials(CREDENTIALS, &refreshed, now).expect("credentials update");
+        let root: Value = serde_json::from_str(&text).expect("written file is JSON");
+        assert_eq!(
+            root["claudeAiOauth"]["refreshToken"],
+            "synthetic-old-refresh"
+        );
+        assert_eq!(
+            root["claudeAiOauth"]["refreshTokenExpiresAt"],
+            1_794_000_000_000_i64
+        );
+    }
+
+    #[test]
+    fn written_login_replaces_the_file() {
+        let dir = env::temp_dir().join(format!("ai-notch-credentials-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir is writable");
+        let path = dir.join(".credentials.json");
+        fs::write(&path, CREDENTIALS).expect("temp file is writable");
+        write_atomically(&path, "{}").expect("file is replaced");
+        assert_eq!(fs::read_to_string(&path).expect("file exists"), "{}");
+        assert_eq!(
+            fs::read_dir(&dir).expect("dir lists").count(),
+            1,
+            "no temp file left"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn tokens_never_show_in_debug_or_errors() {
+        let login = parse_login(CREDENTIALS).expect("fixture parses");
+        let shown = format!("{login:?}");
+        assert!(!shown.contains("synthetic"), "{shown}");
 
         for file in [
             r#"{"claudeAiOauth": "synthetic-secret"}"#,
             r#"{"claudeAiOauth": {"accessToken": "synthetic-secret", "expiresAt": "synthetic-secret"}}"#,
             r#"{"claudeAiOauth": {"accessToken": ["synthetic-secret"]}}"#,
         ] {
-            let err = parse_token(file, now).expect_err("malformed credentials");
+            let err = parse_login(file).expect_err("malformed credentials");
             assert!(!format!("{err:?}").contains("synthetic-secret"), "{err:?}");
         }
-        assert!(parse_token("{}", now).is_err());
+        assert!(parse_login("{}").is_err());
     }
 }

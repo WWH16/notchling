@@ -29,8 +29,14 @@ exe's path, so moving it later means installing the hooks again.
 
 Start `ai-notch.exe`. Only one copy runs at a time.
 
-- **Hover** the pill to see RAM, VRAM, tokens, burn rate, the reset countdown and any
-  incident on the provider's status page.
+The pill shows CPU, GPU and a ring with the share of the selected provider's limit.
+The ring turns amber at 80% and red at 95%.
+
+- **Hover** the pill to see RAM, VRAM, and the provider's limits as rings with the
+  clock time each one resets ("resets 2:20 PM", "resets Fri 7:00 AM"), plus tokens,
+  burn rate and any incident on its status page.
+- **Drag** it with the left button to move it along the top edge. It stays there
+  next time.
 - **Right-click** it to pick the provider shown (Claude, ChatGPT or Gemini), open the
   settings, or quit.
 - **Click** a "Done" or "Needs your input" alert to bring that Claude Code window to
@@ -74,21 +80,24 @@ when Claude finishes or waits for you, and after two hours at the latest.
 
 | Provider | Source | Exact or estimated |
 |---|---|---|
-| Claude | The usage endpoint behind Claude Code's `/usage` screen, signed in with Claude Code's own login | Exact 5-hour and weekly % |
-| Claude | Claude Code's logs in `%USERPROFILE%\.claude\projects` | Tokens and burn rate; estimated reset time when the endpoint is unavailable |
+| Claude | The usage endpoint behind Claude Code's `/usage` screen, signed in with Claude Code's own login | Exact 5-hour and weekly %, with their reset times |
+| Claude | Claude Code's logs in `%USERPROFILE%\.claude\projects` | Tokens and burn rate; an estimated reset time when the endpoint is unavailable |
 | ChatGPT | Codex CLI sessions in `%USERPROFILE%\.codex\sessions` | Exact, as of your last Codex turn |
 | Gemini | Gemini CLI sessions in `%USERPROFILE%\.gemini\tmp` | Estimated: requests today against the daily limit you set |
 
 About the Claude account source:
 
-- It reads the access token from `%USERPROFILE%\.claude\.credentials.json`. It never
-  refreshes or changes the login, so it cannot sign Claude Code out, and the token is
-  never logged.
+- It uses the login in `%USERPROFILE%\.claude\.credentials.json`. Only the Claude
+  Code CLI refreshes that file; the desktop app keeps its own login. So when the
+  stored token has expired, ai-notch refreshes it the same way Claude Code does
+  (`platform.claude.com`, Claude Code's client id) and writes the new tokens back,
+  leaving every other field as it was. The CLI then carries on with them.
+- If the CLI refreshes at the very same moment, the CLI may ask you to sign in once
+  (`claude /login`). The desktop app is not affected.
+- Tokens are never logged or shown in errors.
 - The endpoint is unofficial and may change. When it fails, the notch falls back to
-  the local logs and shows an "ESTIMATED" badge.
-- The token in that file is refreshed by the Claude Code CLI. If you only use Claude
-  Code in the desktop app, the token can stay expired and the notch shows the
-  estimate until you run `claude` in a terminal.
+  the local logs: the ring stays empty, tokens and burn rate still show, and an
+  "ESTIMATED" badge appears.
 - You can turn this source off in the settings.
 
 Usage alerts appear at 80% and 95% of a limit, once per usage window.
@@ -104,7 +113,8 @@ Right-click the notch and choose **Settings…**, or edit
 | `usage_alerts` | `[80, 95]` | Percentages that raise an alert |
 | `hook_timeout_secs` | `120` | How long a permission request waits for you (5 to 580) |
 | `gemini_daily_requests` | `1000` | Your Gemini CLI daily request limit |
-| `claude_account` | `true` | Read exact Claude usage from the account endpoint |
+| `claude_account` | `true` | Read exact Claude usage from the account endpoint, refreshing Claude Code's login when needed |
+| `position` | `0.5` | Where the notch sits along the top edge, from 0 (left) to 1 (right); set by dragging |
 | `monitor` | primary display | Display the notch sits on, as Windows names it: `monitor = '\\.\DISPLAY2'` (single quotes, so the backslashes stay as they are) |
 
 A longer permission wait reaches Claude Code only after running `--install-hooks`
@@ -115,13 +125,17 @@ ignored, and the settings window will not overwrite it.
 
 ai-notch sends no telemetry. It connects to:
 
-- `api.anthropic.com`, for the Claude account usage (only when that source is on);
+- `api.anthropic.com`, for the Claude account usage, and `platform.claude.com`, to
+  refresh Claude Code's login when it has expired (only when that source is on);
 - the public status pages `status.claude.com`, `status.openai.com` and
   `status.cloud.google.com`, for the provider shown, every 5 minutes.
 
 It writes:
 
-- `%APPDATA%\ai-notch\config.toml`, when you save settings or pick a provider;
+- `%APPDATA%\ai-notch\config.toml`, when you save settings, pick a provider or move
+  the notch;
+- `%USERPROFILE%\.claude\.credentials.json`, the new tokens only, when it refreshes
+  Claude Code's expired login;
 - `%LOCALAPPDATA%\ai-notch\crash.log`, only if it crashes;
 - `%USERPROFILE%\.claude\settings.json` and its backups, when you install or remove
   the hooks;

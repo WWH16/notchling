@@ -171,6 +171,7 @@ fn usage(limits: &RateLimits, now: DateTime<Utc>) -> Usage {
         used: primary.map(|(used, _)| used),
         resets_at: primary.and_then(|(_, resets_at)| resets_at),
         weekly_used: weekly.map(|(used, _)| used),
+        weekly_resets_at: weekly.and_then(|(_, resets_at)| resets_at),
         estimated: primary.is_some_and(|(_, resets_at)| resets_at.is_none()),
         ..Usage::default()
     }
@@ -238,6 +239,10 @@ mod tests {
         assert_eq!(usage_before.used, Some(0.41));
         assert_eq!(usage_before.resets_at, Some(time("2026-10-27T05:00:00Z")));
         assert_eq!(usage_before.weekly_used, Some(0.07));
+        assert_eq!(
+            usage_before.weekly_resets_at,
+            Some(time("2026-10-30T00:00:00Z"))
+        );
         assert!(!usage_before.estimated);
 
         let usage_after = usage(&limits, time("2026-10-27T05:00:00Z"));

@@ -180,6 +180,96 @@ component Badge inherits Rectangle {
     }
 }
 
+// A thin circular progress ring; an empty track when the share is unknown (below 0).
+component Ring inherits Rectangle {
+    in property <float> fraction;
+    in property <color> fill;
+    in property <length> thickness: 2px;
+    width: 14px;
+    height: 14px;
+
+    Rectangle {
+        border-radius: self.width / 2;
+        border-width: root.thickness;
+        border-color: Theme.track;
+    }
+
+    // In viewbox units: the radius that centres the stroke on the track.
+    property <float> radius: (root.width - root.thickness) / root.width * 50;
+    // A full turn would start and end at the same point and draw nothing.
+    property <angle> sweep-angle: min(root.fraction, 0.999) * 360deg;
+    if root.fraction > 0.005: Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        stroke: root.fill;
+        stroke-width: root.thickness;
+
+        MoveTo {
+            x: 50;
+            y: 50 - root.radius;
+        }
+        ArcTo {
+            x: 50 + root.radius * sin(root.sweep-angle);
+            y: 50 - root.radius * cos(root.sweep-angle);
+            radius-x: root.radius;
+            radius-y: root.radius;
+            large-arc: root.fraction > 0.5;
+            sweep: true;
+        }
+    }
+}
+
+// One usage limit: a ring, the share used, the window's name and when it resets.
+component Gauge inherits HorizontalLayout {
+    in property <float> fraction;
+    in property <color> fill;
+    in property <string> value;
+    in property <string> label;
+    in property <string> detail;
+    spacing: 8px;
+
+    Ring {
+        width: 24px;
+        height: 24px;
+        thickness: 3px;
+        fraction: root.fraction;
+        fill: root.fill;
+        y: (parent.height - self.height) / 2;
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 1px;
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
+            Text {
+                text: root.value;
+                color: Theme.text;
+                font-family: Theme.font;
+                font-size: 13px;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.label;
+                color: Theme.muted;
+                font-family: Theme.font;
+                font-size: 10px;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+        Text {
+            text: root.detail;
+            color: Theme.muted;
+            font-family: Theme.font;
+            font-size: 10px;
+        }
+    }
+}
+
 // What the user picked on a permission request.
 export enum Choice { allow, deny, ask-in-app }
 
@@ -201,19 +291,28 @@ export component Notch inherits Window {
     in property <string> ram-text: "-";
     in property <string> vram-text: "-";
 
-    // AI usage of the selected provider; texts are formatted by Rust.
+    // AI usage of the selected provider; texts are formatted by Rust. Shares are
+    // fractions in 0..1, or below 0 when unknown.
     in property <Provider> usage-provider;
-    // The idle pill's value: the share used, or the token count when no limit is known.
-    in property <string> usage-short;
-    in property <string> usage-tokens;
-    in property <string> usage-rate;
-    // The weekly limit, when the provider reports one; empty otherwise.
-    in property <string> usage-weekly;
-    in property <Health> status;
+    // The main limit (5-hour, plan or daily window).
+    in property <float> usage-fraction: -1;
+    in property <string> usage-short: "-";
+    in property <string> usage-label;
     in property <string> usage-reset;
+    // The weekly limit; its gauge shows only when the share is known.
+    in property <float> weekly-fraction: -1;
+    in property <string> weekly-short;
+    in property <string> weekly-reset;
+    // Tokens and burn rate from local logs, when there are any.
+    in property <string> usage-detail;
+    in property <Health> status;
     in property <bool> usage-estimated;
     private property <color> accent: self.usage-provider == Provider.chatgpt ? Theme.chatgpt
         : self.usage-provider == Provider.gemini ? Theme.gemini : Theme.claude;
+    // The provider's colour, turning amber and then red as a limit runs out.
+    pure function level(fraction: float) -> color {
+        return fraction >= 0.95 ? Theme.bad : fraction >= 0.8 ? Theme.warn : self.accent;
+    }
     private property <string> provider-name: self.usage-provider == Provider.chatgpt ? "ChatGPT"
         : self.usage-provider == Provider.gemini ? "Gemini" : "Claude";
 
@@ -232,10 +331,10 @@ export component Notch inherits Window {
     in property <string> alert-text;
     callback alert-clicked();
 
-    // The clickable window region: the shape's current size or where it is heading,
-    // whichever is larger. Rust clips the window to it, so clicks elsewhere pass through.
-    out property <length> shape-width: max(pill.width, self.target-width);
-    out property <length> shape-height: max(pill.height, self.target-height);
+    // The size the shape is heading to. Rust clips the window to it, growing the region
+    // at once and shrinking it after the animation, so clicks elsewhere pass through.
+    out property <length> shape-width: self.target-width;
+    out property <length> shape-height: self.target-height;
     callback shape-changed();
     changed shape-width => {
         self.shape-changed();
@@ -248,7 +347,31 @@ export component Notch inherits Window {
     // clipped by the window region.
     callback menu-requested();
 
-    private property <bool> expanded: hover.has-hover;
+    // Dragging the notch with the left button: press, each move, and release. Rust moves
+    // the window along the top edge by how far the cursor travelled on screen, since the
+    // pill itself resizes during a drag.
+    callback drag-started();
+    callback dragged();
+    callback drag-ended();
+
+    // Opens after a short hover and closes after a short absence, so grazing the edge or
+    // passing over it does not make the shape flicker.
+    private property <bool> expanded;
+    Timer {
+        interval: 120ms;
+        running: hover.has-hover && !root.expanded;
+        triggered => {
+            root.expanded = true;
+        }
+    }
+    Timer {
+        interval: 250ms;
+        running: !hover.has-hover && root.expanded;
+        triggered => {
+            root.expanded = false;
+        }
+    }
+
     private property <length> target-width: self.has-request ? request-width
         : self.alert-active ? alert-width
         : self.expanded ? open-width : idle-width;
@@ -258,7 +381,7 @@ export component Notch inherits Window {
     private property <length> idle-width: 250px;
     private property <length> idle-height: 30px;
     private property <length> open-width: 460px;
-    private property <length> open-height: 92px;
+    private property <length> open-height: 106px;
     private property <length> request-width: 460px;
     private property <length> request-height: 196px;
     private property <length> alert-width: 290px;
@@ -285,9 +408,19 @@ export component Notch inherits Window {
         clip: true;
 
         hover := TouchArea {
+            mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.default;
+            moved => {
+                root.dragged();
+            }
             pointer-event(event) => {
                 if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
                     root.menu-requested();
+                }
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                    root.drag-started();
+                }
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                    root.drag-ended();
                 }
             }
         }
@@ -305,8 +438,10 @@ export component Notch inherits Window {
             }
             HorizontalLayout {
                 spacing: 6px;
-                Dot {
-                    fill: root.accent;
+                Ring {
+                    y: (parent.height - self.height) / 2;
+                    fraction: root.usage-fraction;
+                    fill: root.level(root.usage-fraction);
                 }
                 Text {
                     text: root.usage-short;
@@ -352,66 +487,59 @@ export component Notch inherits Window {
             }
 
             HorizontalLayout {
-                spacing: 10px;
-                Dot {
-                    fill: root.accent;
-                }
-                Text {
-                    text: root.provider-name;
-                    color: Theme.text;
-                    font-family: Theme.font;
-                    font-size: 11px;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
-                // Only incidents show; a healthy or unknown status takes no space.
-                if root.status == Health.degraded || root.status == Health.down: HorizontalLayout {
-                    spacing: 4px;
-                    Dot {
-                        fill: root.status == Health.down ? Theme.bad : Theme.warn;
-                    }
-                    Text {
-                        text: root.status == Health.down ? "Outage" : "Degraded";
-                        color: root.status == Health.down ? Theme.bad : Theme.warn;
-                        font-family: Theme.font;
-                        font-size: 11px;
-                        font-weight: 600;
-                        vertical-alignment: center;
-                    }
-                }
-                Text {
-                    text: root.usage-tokens;
-                    color: Theme.muted;
-                    font-family: Theme.font;
-                    font-size: 11px;
-                    vertical-alignment: center;
-                }
-                Text {
-                    text: root.usage-rate;
-                    color: Theme.muted;
-                    font-family: Theme.font;
-                    font-size: 11px;
-                    vertical-alignment: center;
-                }
-                Rectangle {
+                spacing: 18px;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3px;
                     horizontal-stretch: 1;
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Dot {
+                            fill: root.accent;
+                        }
+                        Text {
+                            text: root.provider-name;
+                            color: Theme.text;
+                            font-family: Theme.font;
+                            font-size: 12px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        // Only incidents show; a healthy or unknown status takes no space.
+                        if root.status == Health.degraded || root.status == Health.down: Text {
+                            text: root.status == Health.down ? "· Outage" : "· Degraded";
+                            color: root.status == Health.down ? Theme.bad : Theme.warn;
+                            font-family: Theme.font;
+                            font-size: 11px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        if root.usage-estimated: Badge {
+                            label: "ESTIMATED";
+                        }
+                    }
+                    if root.usage-detail != "": Text {
+                        text: root.usage-detail;
+                        color: Theme.muted;
+                        font-family: Theme.font;
+                        font-size: 10px;
+                    }
                 }
-                if root.usage-weekly != "": Text {
-                    text: root.usage-weekly;
-                    color: Theme.muted;
-                    font-family: Theme.font;
-                    font-size: 11px;
-                    vertical-alignment: center;
+
+                Gauge {
+                    fraction: root.usage-fraction;
+                    fill: root.level(root.usage-fraction);
+                    value: root.usage-short;
+                    label: root.usage-label;
+                    detail: root.usage-reset;
                 }
-                Text {
-                    text: root.usage-reset;
-                    color: Theme.text;
-                    font-family: Theme.font;
-                    font-size: 11px;
-                    vertical-alignment: center;
-                }
-                if root.usage-estimated: Badge {
-                    label: "ESTIMATED";
+                if root.weekly-fraction >= 0: Gauge {
+                    fraction: root.weekly-fraction;
+                    fill: root.level(root.weekly-fraction);
+                    value: root.weekly-short;
+                    label: "week";
+                    detail: root.weekly-reset;
                 }
             }
         }

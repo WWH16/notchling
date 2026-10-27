@@ -100,6 +100,7 @@ mod tests {
             used: None,
             resets_at: Some(time("2026-10-27T06:00:00Z")),
             weekly_used: None,
+            weekly_resets_at: None,
             tokens: Some(2100),
             tokens_by_model: BTreeMap::from([("claude-opus-5-5".to_owned(), 2100)]),
             burn_rate: Some(35.0),

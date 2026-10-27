@@ -13,10 +13,11 @@ pub use gemini::Gemini;
 pub use thresholds::{Crossing, Thresholds};
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::thread;
 use std::time::Duration;
 
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, DurationRound, TimeDelta, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 /// An AI provider the notch can show usage for. Written in the config in lowercase.
@@ -53,6 +54,8 @@ pub struct Usage {
     pub resets_at: Option<DateTime<Utc>>,
     /// Share of the weekly limit in use, from 0 to 1, when the provider has one.
     pub weekly_used: Option<f32>,
+    /// When the weekly limit resets.
+    pub weekly_resets_at: Option<DateTime<Utc>>,
     /// Tokens used in the current window, when the source counts them.
     pub tokens: Option<u64>,
     /// `tokens` split by model name, when the source knows the models.
@@ -119,17 +122,26 @@ pub fn compact(count: u64) -> String {
     }
 }
 
-/// Formats the time left until a reset, e.g. "18d 4h", "4h 25m" or "25m". Rounds up
-/// to the minute, so a reset never shows as due before it is.
+/// When a limit resets, in the time zone of `at`: "2:20 PM" today, "Thu 7:00 AM" within
+/// the coming week, "Nov 14" after that. Rounded to the nearest minute, since providers
+/// report resets a fraction of a second off the minute.
 #[must_use]
-pub fn countdown(left: TimeDelta) -> String {
-    let minutes = (left.num_seconds().max(0) + 59) / 60;
-    let (days, hours, minutes) = (minutes / (24 * 60), minutes / 60 % 24, minutes % 60);
-    match (days, hours) {
-        (0, 0) => format!("{minutes}m"),
-        (0, hours) => format!("{hours}h {minutes}m"),
-        (days, hours) => format!("{days}d {hours}h"),
-    }
+pub fn reset_time<Tz: TimeZone>(at: DateTime<Tz>, now: &DateTime<Tz>) -> String
+where
+    Tz::Offset: fmt::Display,
+{
+    // Only fails for dates centuries away, where the exact minute is moot.
+    let at = at
+        .clone()
+        .duration_round(TimeDelta::minutes(1))
+        .unwrap_or(at);
+    let days_ahead = (at.date_naive() - now.date_naive()).num_days();
+    let format = match days_ahead {
+        ..=0 => "%-I:%M %p",
+        1..=6 => "%a %-I:%M %p",
+        _ => "%b %-d",
+    };
+    at.format(format).to_string()
 }
 
 #[cfg(test)]
@@ -156,19 +168,23 @@ mod tests {
     }
 
     #[test]
-    fn countdown_rounds_up_to_the_minute() {
+    fn reset_time_is_a_clock_time_in_the_viewers_zone() {
+        let manila = chrono::FixedOffset::east_opt(8 * 3600).expect("valid offset");
+        let at = |text: &str| {
+            DateTime::parse_from_rfc3339(text)
+                .expect("valid test timestamp")
+                .with_timezone(&manila)
+        };
+        let now = at("2026-10-27T11:47:00+08:00");
         let cases = [
-            (TimeDelta::seconds(-5), "0m"),
-            (TimeDelta::seconds(0), "0m"),
-            (TimeDelta::seconds(1), "1m"),
-            (TimeDelta::minutes(59), "59m"),
-            (TimeDelta::minutes(60), "1h 0m"),
-            (TimeDelta::seconds(4 * 3600 + 24 * 60 + 10), "4h 25m"),
-            (TimeDelta::hours(24), "1d 0h"),
-            (TimeDelta::minutes(18 * 24 * 60 + 4 * 60 + 30), "18d 4h"),
+            ("2026-10-27T06:19:59.904791Z", "2:20 PM"),
+            ("2026-10-27T15:59:00+08:00", "3:59 PM"),
+            ("2026-10-29T23:00:00.114010Z", "Fri 7:00 AM"),
+            ("2026-10-28T00:30:00+08:00", "Wed 12:30 AM"),
+            ("2026-11-14T04:06:25Z", "Nov 14"),
         ];
-        for (left, want) in cases {
-            assert_eq!(countdown(left), want, "left {left}");
+        for (reset, want) in cases {
+            assert_eq!(reset_time(at(reset), &now), want, "reset {reset}");
         }
     }
 

@@ -23,7 +23,7 @@ const MAX_HOOK_TIMEOUT_SECS: u64 = 580;
 pub const HOOK_ENTRY_MARGIN_SECS: u64 = 10;
 
 /// Settings with their defaults; every field is optional in the file.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     /// Seconds a permission request waits for a click before Claude Code shows its
@@ -43,6 +43,9 @@ pub struct Config {
     /// Whether to ask the account endpoint for Claude's exact usage, with Claude Code's
     /// login. Off, the notch shows the local estimate only.
     claude_account: bool,
+    /// Where the notch sits along the top edge, from 0 (left) to 1 (right); set by
+    /// dragging it.
+    position: f32,
 }
 
 impl Default for Config {
@@ -55,6 +58,7 @@ impl Default for Config {
             usage_alerts: vec![80, 95],
             monitor: None,
             claude_account: true,
+            position: 0.5,
         }
     }
 }
@@ -142,6 +146,20 @@ impl Config {
         self.claude_account = enabled;
     }
 
+    /// Where the notch sits along the top edge, from 0 (left) to 1 (right).
+    #[must_use]
+    pub fn position(&self) -> f32 {
+        if self.position.is_finite() {
+            self.position.clamp(0.0, 1.0)
+        } else {
+            0.5
+        }
+    }
+
+    pub fn set_position(&mut self, position: f32) {
+        self.position = position;
+    }
+
     /// Changes the config file and keeps every other setting, returning the new
     /// config. Comments in the file are not kept.
     ///
@@ -208,6 +226,16 @@ mod tests {
         assert_eq!(Config::default().usage_alerts(), [80, 95]);
         let alerts = Config::parse("usage_alerts = [50, 90]").expect("valid TOML");
         assert_eq!(alerts.usage_alerts(), [50, 90]);
+    }
+
+    #[test]
+    fn position_defaults_to_the_center_and_stays_on_the_edge() {
+        assert_eq!(Config::default().position(), 0.5);
+        let read = |text: &str| Config::parse(text).expect("valid TOML").position();
+        assert_eq!(read("position = 0.2"), 0.2);
+        assert_eq!(read("position = -3.0"), 0.0);
+        assert_eq!(read("position = 7.5"), 1.0);
+        assert_eq!(read("position = nan"), 0.5);
     }
 
     #[test]

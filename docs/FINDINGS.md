@@ -102,6 +102,19 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   desktop app does not seem to refresh that file; the terminal CLI does. So the exact %
   is only there while the CLI login is fresh, and the local estimate covers the rest.
   Without a token the endpoint answers 401.
+- Confirmed later the same day: desktop Code sessions get
+  `CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH=1` and no token in their environment; the
+  desktop app handles their login. `claude auth status` does not refresh the file
+  either. Claude Code 2.1.307 refreshes with a JSON `POST` to
+  `https://platform.claude.com/v1/oauth/token`: `grant_type: "refresh_token"`,
+  `refresh_token`, `client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e"` and `scope` (the
+  stored scopes joined by spaces). The reply has `access_token`, optionally a new
+  `refresh_token`, `expires_in` and `refresh_token_expires_in` (seconds) and `scope`.
+  The file is one line of compact JSON. With the user's approval, ai-notch now
+  refreshes an expired login this way and writes the new tokens back; the first live
+  refresh worked and kept every other field. The local 5-hour estimate had been 17
+  minutes off the account's reset time (2:03 PM against 2:20 PM), because the logs do
+  not see usage from claude.ai.
 
 ## Status pages (checked at step 6.1, 2026-10-27)
 

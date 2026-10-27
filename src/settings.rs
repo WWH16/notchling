@@ -43,6 +43,7 @@ pub fn open(
     settings.set_permission_wait(int(config.hook_timeout().as_secs()));
     settings.set_gemini_limit(int(config.gemini_daily_requests()));
     settings.set_claude_account(config.claude_account());
+    settings.set_request_shortcuts(config.request_shortcuts());
     settings.set_error(SharedString::new());
 
     let weak = settings.as_weak();
@@ -70,12 +71,14 @@ pub fn open(
         let wait = u64::try_from(settings.get_permission_wait()).unwrap_or(0);
         let gemini = u32::try_from(settings.get_gemini_limit()).unwrap_or(1);
         let account = settings.get_claude_account();
+        let shortcuts = settings.get_request_shortcuts();
         let updated = Config::update(|config| {
             config.set_monitor(monitor);
             config.set_usage_alerts(alerts);
             config.set_hook_timeout_secs(wait);
             config.set_gemini_daily_requests(gemini);
             config.set_claude_account(account);
+            config.set_request_shortcuts(shortcuts);
         });
         match updated {
             Ok(config) => {

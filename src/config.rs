@@ -44,6 +44,9 @@ pub struct Config {
     /// Whether to ask the account endpoint for Claude's exact usage, with Claude Code's
     /// login. Off, the notch shows the local estimate only.
     claude_account: bool,
+    /// Whether Ctrl+Alt+Y and Ctrl+Alt+N answer the permission request on the notch.
+    /// Off by default: a global key that allows commands is opt-in.
+    request_shortcuts: bool,
     /// The screen edge the notch sticks to; set by dragging it.
     edge: Option<Edge>,
     /// Where along that edge the notch sits, from 0 to 1: left to right on the top and
@@ -65,6 +68,7 @@ impl Default for Config {
             usage_alerts: vec![80, 95],
             monitor: None,
             claude_account: true,
+            request_shortcuts: false,
             edge: None,
             position: 0.5,
             position_y: None,
@@ -153,6 +157,16 @@ impl Config {
 
     pub fn set_claude_account(&mut self, enabled: bool) {
         self.claude_account = enabled;
+    }
+
+    /// Whether Ctrl+Alt+Y and Ctrl+Alt+N answer the permission request on the notch.
+    #[must_use]
+    pub fn request_shortcuts(&self) -> bool {
+        self.request_shortcuts
+    }
+
+    pub fn set_request_shortcuts(&mut self, enabled: bool) {
+        self.request_shortcuts = enabled;
     }
 
     /// The screen edge the notch sticks to.
@@ -283,12 +297,17 @@ mod tests {
     }
 
     #[test]
-    fn monitor_and_account_toggle_round_trip() {
+    fn monitor_and_toggles_round_trip() {
         let mut config = Config::default();
         assert_eq!(config.monitor(), None);
         assert!(config.claude_account());
+        assert!(
+            !config.request_shortcuts(),
+            "keys that allow commands are opt-in"
+        );
         config.set_monitor(Some(r"\\.\DISPLAY2".to_owned()));
         config.set_claude_account(false);
+        config.set_request_shortcuts(true);
         let text = toml::to_string(&config).expect("config serializes");
         assert_eq!(Config::parse(&text), Ok(config));
         assert!(

@@ -207,8 +207,13 @@ sessions (needs the user, since it changes the global settings).
 
 ## Phase 8: Audit fixes and features (see [AUDIT.md](AUDIT.md))
 
-- [ ] **8.1** Harden the permission card: an arming delay on Allow and Deny, the
+- [x] **8.1** Harden the permission card: an arming delay on Allow and Deny, the
   overflow fade with "+N lines", accessible roles and labels, and a global shortcut.
+  Allow and Deny wait 500 ms, filling up meanwhile. Ctrl+Alt+Y and Ctrl+Alt+N are
+  opt-in (`request_shortcuts`), claimed only while a card shows and ignored while the
+  notch hides. Checked offscreen with the software renderer: the sweep, the armed
+  buttons and "+7 lines" on a 14-line command. Commit `feat: harden the permission
+  card`.
 - [ ] **8.2** Click the pill to toggle the hover panel, and a longer hover delay.
 - [ ] **8.3** Follow Windows "Show animations".
 - [ ] **8.4** Tuck mode on the side edges; check and fix the upright panel width.

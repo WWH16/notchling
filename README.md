@@ -69,7 +69,12 @@ restart. After updating ai-notch, run it again so new events are added.
 How a permission request works:
 
 - The notch shows the tool and the **full** command or input, with Allow, Deny and
-  "Open in app".
+  "Open in app". A command too long for the card fades out at the bottom with
+  "+N lines"; scroll to read the rest.
+- Allow and Deny ignore clicks for half a second after a card appears, filling up
+  meanwhile, so a click meant for the window behind cannot answer it.
+- With the shortcuts turned on in the settings, Ctrl+Alt+Y allows and Ctrl+Alt+N
+  denies the request on the notch. The keys are only taken while a card shows.
 - ai-notch never approves anything by itself. If the notch is not running, if you do
   not answer within the permission wait (120 s by default), or if anything goes wrong,
   Claude Code shows its normal dialog.
@@ -123,6 +128,7 @@ Right-click the notch and choose **Settings…**, or edit
 | `hook_timeout_secs` | `120` | How long a permission request waits for you (5 to 580) |
 | `gemini_daily_requests` | `1000` | Your Gemini CLI daily request limit |
 | `claude_account` | `true` | Read exact Claude usage from the account endpoint, refreshing Claude Code's login when needed |
+| `request_shortcuts` | `false` | Ctrl+Alt+Y allows and Ctrl+Alt+N denies the request on the notch |
 | `edge` | `"top"` | The screen edge the notch sticks to: `"top"`, `"bottom"`, `"left"` or `"right"`; set by dragging |
 | `position` | `0.5` | Where along that edge it sits, from 0 to 1 (left to right, or top to bottom on a side edge); set by dragging |
 | `monitor` | primary display | Display the notch sits on, as Windows names it: `monitor = '\\.\DISPLAY2'` (single quotes, so the backslashes stay as they are) |

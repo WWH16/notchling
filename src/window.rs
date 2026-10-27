@@ -1,5 +1,6 @@
 //! Win32 window tweaks that Slint does not expose: tool-window styles and placement.
 
+use std::cell::RefCell;
 use std::ffi::c_void;
 use std::mem;
 use std::sync::OnceLock;
@@ -12,19 +13,22 @@ use windows::Win32::Graphics::Gdi::{
     MONITOR_DEFAULTTONEAREST, MONITORINFO, MONITORINFOEXW, MonitorFromPoint, SetWindowRgn,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey, VIRTUAL_KEY, VK_N, VK_Y,
+};
 use windows::Win32::UI::Shell::{
     QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CallWindowProcW, CheckMenuRadioItem, CreatePopupMenu, CreateWindowExW,
     DestroyMenu, DestroyWindow, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetCursorPos,
-    GetWindowLongPtrW, HMENU, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND, MF_SEPARATOR,
-    MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, PostMessageW, SW_HIDE, SW_SHOWNOACTIVATE,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
-    WM_NCACTIVATE, WM_NCPAINT, WM_NULL, WNDPROC, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SIZEBOX,
-    WS_SYSMENU,
+    GetWindowLongPtrW, HMENU, IsWindowVisible, MB_ICONERROR, MB_ICONINFORMATION, MB_OK,
+    MF_BYCOMMAND, MF_SEPARATOR, MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, PostMessageW,
+    SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, TrackPopupMenu, WM_HOTKEY, WM_NCACTIVATE, WM_NCPAINT, WM_NULL, WNDPROC,
+    WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SIZEBOX, WS_SYSMENU,
 };
 use windows::core::{BOOL, HSTRING, PCWSTR, w};
 
@@ -33,9 +37,51 @@ use crate::usage::Provider;
 /// DPI that Windows treats as 100% scaling.
 const BASE_DPI: f32 = 96.0;
 
-/// winit's window procedure for the notch, which [`skip_frame_painting`] hands every
-/// other message to.
+/// winit's window procedure for the notch, which [`notch_procedure`] hands every other
+/// message to.
 static WINIT_WNDPROC: OnceLock<WNDPROC> = OnceLock::new();
+
+/// What the notch does when one of its [`Shortcut`]s is pressed.
+type ShortcutHandler = Box<dyn Fn(Shortcut)>;
+
+thread_local! {
+    static ON_SHORTCUT: RefCell<Option<ShortcutHandler>> = const { RefCell::new(None) };
+}
+
+/// A global shortcut that answers the permission request on the notch: Ctrl+Alt and a
+/// letter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shortcut {
+    /// Ctrl+Alt+Y.
+    Allow,
+    /// Ctrl+Alt+N.
+    Deny,
+}
+
+impl Shortcut {
+    const ALL: [Self; 2] = [Self::Allow, Self::Deny];
+
+    /// The hotkey id, unique within the notch window.
+    fn id(self) -> i32 {
+        match self {
+            Self::Allow => 1,
+            Self::Deny => 2,
+        }
+    }
+
+    fn key(self) -> VIRTUAL_KEY {
+        match self {
+            Self::Allow => VK_Y,
+            Self::Deny => VK_N,
+        }
+    }
+
+    fn from_id(id: usize) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|shortcut| usize::try_from(shortcut.id()) == Ok(id))
+    }
+}
 
 /// Menu command id for [`MenuChoice::Quit`]; 0 is reserved for "dismissed".
 const MENU_QUIT: usize = 1;
@@ -405,17 +451,15 @@ impl NotchWindow {
             );
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
         }
-        self.skip_frame_painting();
+        self.take_over_procedure();
     }
 
-    /// Puts [`skip_frame_painting`] in front of winit's window procedure. Even without
-    /// caption styles, Windows paints a title bar over a window that has a region when
-    /// it is activated or deactivated, which clicking the notch and opening its menu do.
-    fn skip_frame_painting(&self) {
+    /// Puts [`notch_procedure`] in front of winit's window procedure.
+    fn take_over_procedure(&self) {
         // SAFETY: `hwnd` is a live window of this thread. The previous procedure is saved
         // before the new one can run, and the new one only forwards to it.
         unsafe {
-            let ours = skip_frame_painting as unsafe extern "system" fn(_, _, _, _) -> _;
+            let ours = notch_procedure as unsafe extern "system" fn(_, _, _, _) -> _;
             let previous = SetWindowLongPtrW(self.hwnd, GWLP_WNDPROC, ours as usize as isize);
             // SAFETY: a window procedure address read back as an integer is that
             // procedure; 0 would mean none, which `WNDPROC` models as `None`.
@@ -444,6 +488,38 @@ impl NotchWindow {
         let _ = unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
     }
 
+    /// Runs `handler` on the UI thread whenever a claimed [`Shortcut`] is pressed while the
+    /// notch is visible. It runs inside the window procedure, so it should defer any work
+    /// that changes the window.
+    pub fn on_shortcut(&self, handler: impl Fn(Shortcut) + 'static) {
+        ON_SHORTCUT.with_borrow_mut(|slot| *slot = Some(Box::new(handler)));
+    }
+
+    /// Claims the [`Shortcut`]s from every other app. A key another app already holds
+    /// stays with it.
+    pub fn claim_shortcuts(&self) {
+        for shortcut in Shortcut::ALL {
+            let modifiers = MOD_CONTROL | MOD_ALT | MOD_NOREPEAT;
+            // SAFETY: `hwnd` is a live window of this thread, which receives WM_HOTKEY.
+            let _ = unsafe {
+                RegisterHotKey(
+                    Some(self.hwnd),
+                    shortcut.id(),
+                    modifiers,
+                    shortcut.key().0.into(),
+                )
+            };
+        }
+    }
+
+    /// Gives the [`Shortcut`]s back to other apps; harmless when they were not claimed.
+    pub fn release_shortcuts(&self) {
+        for shortcut in Shortcut::ALL {
+            // SAFETY: `hwnd` is a live window of this thread.
+            let _ = unsafe { UnregisterHotKey(Some(self.hwnd), shortcut.id()) };
+        }
+    }
+
     /// Limits drawing and mouse input to `rect`; clicks outside it reach the windows below.
     pub fn clip_to(&self, rect: RECT) {
         // SAFETY: `hwnd` is live. On success the system owns the region; on failure we
@@ -458,8 +534,12 @@ impl NotchWindow {
 }
 
 /// The notch's window procedure: drops the frame painting Windows does on activation,
-/// and passes everything else to winit.
-unsafe extern "system" fn skip_frame_painting(
+/// answers [`Shortcut`]s, and passes everything else to winit.
+///
+/// Even without caption styles, Windows paints a title bar over a window that has a
+/// region when it is activated or deactivated, which clicking the notch and opening its
+/// menu do.
+unsafe extern "system" fn notch_procedure(
     hwnd: HWND,
     message: u32,
     wparam: WPARAM,
@@ -470,6 +550,19 @@ unsafe extern "system" fn skip_frame_painting(
         WM_NCACTIVATE => LRESULT(1),
         // The notch has no frame to paint.
         WM_NCPAINT => LRESULT(0),
+        WM_HOTKEY => {
+            // SAFETY: `hwnd` is the live window this procedure belongs to.
+            let visible = unsafe { IsWindowVisible(hwnd) }.as_bool();
+            // A notch hidden behind a fullscreen app shows no request to answer.
+            if let (true, Some(shortcut)) = (visible, Shortcut::from_id(wparam.0)) {
+                ON_SHORTCUT.with_borrow(|handler| {
+                    if let Some(handler) = handler {
+                        handler(shortcut);
+                    }
+                });
+            }
+            LRESULT(0)
+        }
         _ => {
             let winit = WINIT_WNDPROC.get().copied().flatten();
             // SAFETY: `winit` is the procedure this window had before ours, and these are

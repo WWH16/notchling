@@ -46,7 +46,7 @@ use status::Health;
 use system::SystemLoad;
 use ui::{AlertKind, Choice, Notch};
 use usage::{Claude, Codex, Crossing, Gemini, Provider, Reading, Thresholds, Usage};
-use window::{Edge, MenuChoice, MessageKind, NotchWindow, Placement};
+use window::{Edge, MenuChoice, MessageKind, NotchWindow, Placement, Shortcut};
 use windows::Win32::Foundation::POINT;
 
 /// One frame at 60 Hz; how often to check whether the native window exists yet.
@@ -158,6 +158,7 @@ fn main() -> anyhow::Result<()> {
             let shape_clip = Rc::clone(&clip);
             notch.on_shape_changed(move || shape_clip());
             drag_and_stick(&notch, &placement, &clip);
+            answer_with_shortcuts(&notch, &native);
 
             let weak = notch.as_weak();
             let settings = RefCell::new(None);
@@ -283,6 +284,36 @@ fn clip_to_shape(notch: &Notch, native: Rc<NotchWindow>) -> Rc<dyn Fn()> {
             }
         });
     })
+}
+
+/// Lets Ctrl+Alt+Y and Ctrl+Alt+N answer the request on the notch, when the config allows
+/// it. The keys are claimed only while a request shows.
+fn answer_with_shortcuts(notch: &Notch, native: &Rc<NotchWindow>) {
+    let weak = notch.as_weak();
+    native.on_shortcut(move |shortcut| {
+        let weak = weak.clone();
+        // Answered once the window procedure has returned, not inside it.
+        Timer::single_shot(Duration::ZERO, move || {
+            if let Some(notch) = weak.upgrade() {
+                notch.invoke_answer(shortcut.into());
+            }
+        });
+    });
+
+    let weak = notch.as_weak();
+    let native = Rc::clone(native);
+    notch.on_request_shown_changed(move || {
+        let Some(notch) = weak.upgrade() else {
+            return;
+        };
+        let enabled = notch.get_has_request() && Config::load().request_shortcuts();
+        if enabled {
+            native.claim_shortcuts();
+        } else {
+            native.release_shortcuts();
+        }
+        notch.set_shortcuts(enabled);
+    });
 }
 
 /// The notch window's fixed size in logical pixels.
@@ -831,6 +862,15 @@ impl From<Health> for ui::Health {
             Health::Operational => Self::Operational,
             Health::Degraded => Self::Degraded,
             Health::Down => Self::Down,
+        }
+    }
+}
+
+impl From<Shortcut> for Choice {
+    fn from(shortcut: Shortcut) -> Self {
+        match shortcut {
+            Shortcut::Allow => Self::Allow,
+            Shortcut::Deny => Self::Deny,
         }
     }
 }

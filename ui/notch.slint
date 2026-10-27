@@ -117,21 +117,38 @@ component StackedPair inherits VerticalLayout {
 component PillButton inherits Rectangle {
     in property <string> label;
     in property <bool> primary;
+    // Until armed the button ignores clicks and fills up as `progress` runs from 0 to 1.
+    in property <bool> armed: true;
+    in property <float> progress: 1;
     callback clicked();
     width: max(68px, label-text.preferred-width + 28px);
     height: 28px;
     border-radius: 14px;
     border-width: self.primary ? 0 : 1px;
     border-color: #3a3a3c;
-    background: self.primary
+    clip: true;
+    background: !self.armed ? (self.primary ? #3a3a3c : transparent)
+        : self.primary
         ? (touch.pressed ? #d1d1d6 : touch.has-hover ? #f2f2f7 : #ffffff)
         : (touch.pressed ? #3a3a3c : touch.has-hover ? #2c2c2e : transparent);
+    accessible-role: button;
+    accessible-label: self.label;
+    accessible-enabled: self.armed;
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    if !root.armed: Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.progress, 0, 1);
+        background: root.primary ? #8e8e93 : #2c2c2e;
+    }
 
     label-text := Text {
         width: parent.width;
         height: parent.height;
         text: root.label;
-        color: root.primary ? #000000 : Theme.text;
+        color: root.primary && root.armed ? #000000 : Theme.text;
         font-family: Theme.font;
         font-size: 12px;
         font-weight: 600;
@@ -140,6 +157,7 @@ component PillButton inherits Rectangle {
     }
 
     touch := TouchArea {
+        enabled: root.armed;
         clicked => {
             root.clicked();
         }
@@ -151,6 +169,11 @@ component LinkButton inherits Rectangle {
     callback clicked();
     width: link-text.preferred-width;
     height: 28px;
+    accessible-role: button;
+    accessible-label: self.label;
+    accessible-action-default => {
+        root.clicked();
+    }
 
     link-text := Text {
         height: parent.height;
@@ -253,6 +276,10 @@ component Gauge inherits HorizontalLayout {
     in property <string> label;
     in property <string> detail;
     spacing: 8px;
+    accessible-role: progress-indicator;
+    accessible-label: self.label;
+    accessible-value: self.value;
+    accessible-description: self.detail;
 
     Ring {
         width: 24px;
@@ -394,7 +421,50 @@ export component Notch inherits Window {
     in property <string> request-project;
     in property <string> request-detail;
     in property <int> request-more;
+    // Whether Ctrl+Alt+Y and Ctrl+Alt+N answer the request; Rust claims the keys.
+    in property <bool> shortcuts;
     callback decide(int, Choice);
+    // Runs when a request card appears or goes, so Rust can claim or release the keys.
+    callback request-shown-changed();
+    changed has-request => {
+        if self.has-request {
+            self.arm();
+        }
+        self.request-shown-changed();
+    }
+    changed request-id => {
+        self.arm();
+    }
+
+    // Allow and Deny ignore clicks for a moment after a card appears, so a click meant
+    // for the window behind the notch cannot answer a request nobody has read.
+    out property <bool> request-armed;
+    private property <duration> arm-delay: 500ms;
+    private property <duration> armed-from;
+    private property <float> arming: self.request-armed ? 1
+        : clamp((animation-tick() - self.armed-from) / self.arm-delay, 0, 1);
+    function arm() {
+        self.request-armed = false;
+        self.armed-from = animation-tick();
+        arm-timer.stop();
+        arm-timer.start();
+    }
+    arm-timer := Timer {
+        interval: root.arm-delay;
+        running: false;
+        triggered => {
+            root.request-armed = true;
+            self.stop();
+        }
+    }
+
+    // Answers the request on the card, once it is armed; the buttons and shortcuts
+    // both come through here.
+    public function answer(choice: Choice) {
+        if self.has-request && self.request-armed {
+            self.decide(self.request-id, choice);
+        }
+    }
 
     // A short attention message; Rust sets and clears it.
     in property <bool> alert-active;
@@ -518,6 +588,9 @@ export component Notch inherits Window {
         border-bottom-left-radius: self.corner * min(self.round-bottom, self.round-left);
         border-bottom-right-radius: self.corner * min(self.round-bottom, self.round-right);
         clip: true;
+        accessible-role: groupbox;
+        accessible-label: "ai-notch";
+        accessible-description: "CPU \{round(root.cpu * 100)}%, GPU \{round(root.gpu * 100)}%, \{root.provider-name} \{root.usage-short}";
 
         hover := TouchArea {
             mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.default;
@@ -724,6 +797,9 @@ export component Notch inherits Window {
             padding-top: 12px;
             padding-bottom: 14px;
             spacing: 10px;
+            accessible-role: groupbox;
+            accessible-label: "Claude wants to use \{root.request-tool}";
+            accessible-description: root.request-detail;
 
             HorizontalLayout {
                 spacing: 8px;
@@ -758,13 +834,13 @@ export component Notch inherits Window {
                 }
             }
 
-            Rectangle {
+            code-box := Rectangle {
                 height: 104px;
                 background: #161618;
                 border-radius: 10px;
                 clip: true;
 
-                Flickable {
+                code := Flickable {
                     x: 10px;
                     y: 8px;
                     width: parent.width - 20px;
@@ -782,6 +858,34 @@ export component Notch inherits Window {
                         wrap: char-wrap;
                     }
                 }
+
+                // One line of the command's font, to count the lines scrolled out of view.
+                line := Text {
+                    visible: false;
+                    text: "0";
+                    font-family: command.font-family;
+                    font-size: command.font-size;
+                }
+                // The viewport moves up, below zero, as the command scrolls.
+                property <int> hidden-lines: ceil(
+                    (command.preferred-height + code.content-y - code.height) / line.preferred-height);
+                // The full command must be read before it is allowed, so say what is cut off.
+                if self.hidden-lines > 0: Rectangle {
+                    y: parent.height - self.height;
+                    height: 34px;
+                    background: @linear-gradient(180deg, #16161800 0%, #161618 75%);
+
+                    Text {
+                        x: parent.width - self.width - 12px;
+                        y: parent.height - self.height - 6px;
+                        text: code-box.hidden-lines == 1 ? "+1 line"
+                            : "+\{code-box.hidden-lines} lines";
+                        color: Theme.muted;
+                        font-family: Theme.font;
+                        font-size: 10px;
+                        font-weight: 600;
+                    }
+                }
             }
 
             HorizontalLayout {
@@ -795,17 +899,28 @@ export component Notch inherits Window {
                 Rectangle {
                     horizontal-stretch: 1;
                 }
+                if root.shortcuts: Text {
+                    text: "Ctrl+Alt+Y · N";
+                    color: Theme.muted;
+                    font-family: Theme.font;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
                 PillButton {
                     label: "Deny";
+                    armed: root.request-armed;
+                    progress: root.arming;
                     clicked => {
-                        root.decide(root.request-id, Choice.deny);
+                        root.answer(Choice.deny);
                     }
                 }
                 PillButton {
                     label: "Allow";
                     primary: true;
+                    armed: root.request-armed;
+                    progress: root.arming;
                     clicked => {
-                        root.decide(root.request-id, Choice.allow);
+                        root.answer(Choice.allow);
                     }
                 }
             }
@@ -818,6 +933,11 @@ export component Notch inherits Window {
             spacing: 9px;
             padding-left: 18px;
             padding-right: 18px;
+            accessible-role: button;
+            accessible-label: root.alert-text;
+            accessible-action-default => {
+                root.alert-clicked();
+            }
 
             Rectangle {
                 width: 8px;

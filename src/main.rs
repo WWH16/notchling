@@ -66,6 +66,9 @@ const SHRINK_DELAY: Duration = Duration::from_millis(350);
 /// Windows has applied that display's scale.
 const MONITOR_MOVE_SETTLE: Duration = Duration::from_millis(200);
 
+/// How long the notch takes to glide onto an edge once let go; as long as its morph.
+const GLIDE: Duration = Duration::from_millis(260);
+
 /// How often the notch checks for a fullscreen app to hide from.
 const FULLSCREEN_CHECK: Duration = Duration::from_secs(1);
 
@@ -237,13 +240,21 @@ fn hide_during_fullscreen(timer: &Timer, native: Rc<NotchWindow>, alert: Arc<Mut
 /// off; a shrinking one keeps the old room until the morph has finished.
 fn clip_to_shape(notch: &Notch, native: Rc<NotchWindow>) -> Rc<dyn Fn()> {
     let weak = notch.as_weak();
+    // Both the size the shape heads to and the size it has now, against its edge: when
+    // the notch sticks to another edge, the morph starts from the old size.
     let target = Rc::new(move || {
         let notch = weak.upgrade()?;
-        Some(window::shape_rect(
-            window_size(&notch),
-            slint::LogicalSize::new(notch.get_shape_width(), notch.get_shape_height()),
-            notch.window().scale_factor(),
-            Edge::from(notch.get_edge()),
+        let rect = |width, height| {
+            window::shape_rect(
+                window_size(&notch),
+                slint::LogicalSize::new(width, height),
+                notch.window().scale_factor(),
+                Edge::from(notch.get_edge()),
+            )
+        };
+        Some(window::union(
+            rect(notch.get_shape_width(), notch.get_shape_height()),
+            rect(notch.get_drawn_width(), notch.get_drawn_height()),
         ))
     });
     let applied = Rc::new(Cell::new(None));
@@ -285,12 +296,13 @@ fn show_placement(notch: &Notch, placement: &Placement) {
 }
 
 /// Lets the user drag the notch anywhere, onto any display. While dragged it floats
-/// with the cursor; let go, it sticks to the screen edge nearest the cursor, and that
+/// with the cursor; let go, it glides onto the screen edge nearest the cursor, and that
 /// spot is remembered.
 fn drag_and_stick(notch: &Notch, placement: &Rc<RefCell<Placement>>, clip: &Rc<dyn Fn()>) {
     // Where the cursor and the window were when the button went down. The drag follows
     // the cursor on screen, so the pill resizing under it does not matter.
     let start: Rc<Cell<Option<(POINT, slint::PhysicalPosition)>>> = Rc::new(Cell::new(None));
+    let glide = Rc::new(Timer::default());
     let started = Rc::clone(&start);
     let weak = notch.as_weak();
     notch.on_drag_started(move || {
@@ -300,12 +312,15 @@ fn drag_and_stick(notch: &Notch, placement: &Rc<RefCell<Placement>>, clip: &Rc<d
 
     let weak = notch.as_weak();
     let dragging = Rc::clone(&start);
+    let caught = Rc::clone(&glide);
     notch.on_dragged(move || {
         let (Some(notch), Some((cursor_start, window_start)), Some(cursor)) =
             (weak.upgrade(), dragging.get(), window::cursor())
         else {
             return;
         };
+        // Picked up mid-glide, it stays in the hand; a mere click lets the glide finish.
+        caught.stop();
         notch.set_floating(true);
         notch.window().set_position(slint::PhysicalPosition::new(
             window_start.x + cursor.x - cursor_start.x,
@@ -325,13 +340,32 @@ fn drag_and_stick(notch: &Notch, placement: &Rc<RefCell<Placement>>, clip: &Rc<d
             return;
         }
         notch.set_floating(false);
+        let window = notch.window();
+        let size = window_size(&notch);
         let mut placement = placement.borrow_mut();
+        let from_edge = placement.edge;
         // Fails only when Windows reports no display; the notch then stays where it was let go.
-        let _ = placement.stick_near(notch.window(), window_size(&notch), cursor);
+        let Ok(target) = placement.stick_near(size, cursor) else {
+            return;
+        };
+        // The pill moves within the window when the edge changes, so shift the window to
+        // keep the pill where it was let go; from there it glides and morphs onto the edge.
+        let drawn = slint::LogicalSize::new(notch.get_drawn_width(), notch.get_drawn_height());
+        let scale = window.scale_factor();
+        let was = window::center(window::shape_rect(size, drawn, scale, from_edge));
+        let will_be = window::center(window::shape_rect(size, drawn, scale, placement.edge));
+        let position = window.position();
+        let from = slint::PhysicalPosition::new(
+            position.x + was.x - will_be.x,
+            position.y + was.y - will_be.y,
+        );
+        window.set_position(from);
         show_placement(&notch, &placement);
+        clip();
+        glide_window(&notch, &glide, from, target);
         // A move to a display with another scale resizes the window a moment later.
         let settled = Rc::clone(&clip);
-        Timer::single_shot(MONITOR_MOVE_SETTLE, move || settled());
+        Timer::single_shot(GLIDE + MONITOR_MOVE_SETTLE, move || settled());
         let spot = placement.clone();
         // On failure the spot only lasts until the notch restarts.
         let _ = Config::update(|config| {
@@ -339,6 +373,35 @@ fn drag_and_stick(notch: &Notch, placement: &Rc<RefCell<Placement>>, clip: &Rc<d
             config.set_edge(spot.edge);
             config.set_position(spot.position);
         });
+    });
+}
+
+/// Moves the notch window from `from` to `to` over `GLIDE`, easing out, unless `timer`
+/// is stopped or restarted first.
+fn glide_window(
+    notch: &Notch,
+    timer: &Rc<Timer>,
+    from: slint::PhysicalPosition,
+    to: slint::PhysicalPosition,
+) {
+    let weak = notch.as_weak();
+    let own = Rc::downgrade(timer);
+    let started = Instant::now();
+    timer.start(TimerMode::Repeated, FRAME, move || {
+        let progress = (started.elapsed().as_secs_f32() / GLIDE.as_secs_f32()).min(1.0);
+        // Cubic ease-out: quick off the hand, settling softly onto the edge.
+        let eased = 1.0 - (1.0 - progress).powi(3);
+        // Screen pixels are far inside f32's exact range; rounding to whole ones is intended.
+        let step = |from: i32, to: i32| from + ((to - from) as f32 * eased).round() as i32;
+        if let Some(notch) = weak.upgrade() {
+            let position = slint::PhysicalPosition::new(step(from.x, to.x), step(from.y, to.y));
+            notch.window().set_position(position);
+        }
+        if progress >= 1.0
+            && let Some(timer) = own.upgrade()
+        {
+            timer.stop();
+        }
     });
 }
 

@@ -193,6 +193,11 @@ sessions (needs the user, since it changes the global settings).
   top, bottom, left or right, flat side against it, and grows away from it. While
   dragged it is a round pill. Saved as `edge` and `position`; an old `position_y` is
   read once to pick top or bottom. Commit `feat: stick the notch to the nearest edge`.
+- [x] **7.8** Let go, the notch glides onto the edge (260 ms, easing out) from where it
+  was dropped, morphing its shape and corners on the way. On the left or right edge it
+  stands upright: CPU, GPU and the usage ring stacked in the idle pill, and a tall hover
+  panel. Requests and alerts stay wide. Commit `feat: glide onto the edge, upright on
+  the sides`.
 
 ## Deviations from SPEC.md
 

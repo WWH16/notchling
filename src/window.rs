@@ -198,10 +198,8 @@ pub struct Placement {
 }
 
 impl Placement {
-    /// Moves the window there, keeping it on its display; the position is clamped to
-    /// match. `size` is the window size in logical pixels, since Slint reports no size
-    /// before the window exists. Before the first `show()` this keeps the window from
-    /// appearing anywhere else first.
+    /// Moves the window there at once. Before the first `show()` this keeps the window
+    /// from appearing anywhere else first.
     ///
     /// # Errors
     ///
@@ -211,32 +209,43 @@ impl Placement {
         window: &slint::Window,
         size: slint::LogicalSize,
     ) -> anyhow::Result<()> {
+        window.set_position(self.origin(size)?);
+        Ok(())
+    }
+
+    /// The window's top-left corner for this placement, keeping the window on its
+    /// display; the position is clamped to match. `size` is the window size in logical
+    /// pixels, since Slint reports no size before the window exists.
+    ///
+    /// # Errors
+    ///
+    /// Fails when Windows reports no display, or not its DPI.
+    pub fn origin(&mut self, size: slint::LogicalSize) -> anyhow::Result<slint::PhysicalPosition> {
         let area = Area::of(&self.monitor()?)?;
         let (x, y, position) = area.origin(size, self.edge, self.position);
         self.position = position;
-        window.set_position(slint::PhysicalPosition::new(x, y));
-        Ok(())
+        Ok(slint::PhysicalPosition::new(x, y))
     }
 
     /// Sticks the notch to whichever edge of whichever display is nearest `point`, in
     /// screen pixels, at the spot along that edge closest to it; where a drag lets go.
+    /// Returns where the window belongs, leaving the move to the caller.
     ///
     /// # Errors
     ///
     /// Fails when Windows reports no display, or not its DPI.
     pub fn stick_near(
         &mut self,
-        window: &slint::Window,
         size: slint::LogicalSize,
         point: POINT,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<slint::PhysicalPosition> {
         // SAFETY: MonitorFromPoint has no preconditions; with DEFAULTTONEAREST it always
         // returns a display.
         let monitor = monitor_info(unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST) })?;
         // Pixel counts are far inside f32's exact range.
         (self.edge, self.position) = Area::of(&monitor)?.nearest(point.x as f32, point.y as f32);
         self.device = Some(monitor.device);
-        self.apply(window, size)
+        self.origin(size)
     }
 
     fn monitor(&self) -> anyhow::Result<Monitor> {
@@ -554,6 +563,15 @@ unsafe fn fill_menu(menu: HMENU, shown: Provider) -> windows::core::Result<()> {
         AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(menu, MF_STRING, MENU_SETTINGS, w!("Settings…"))?;
         AppendMenuW(menu, MF_STRING, MENU_QUIT, w!("Quit ai-notch"))
+    }
+}
+
+/// The middle of `rect`.
+#[must_use]
+pub fn center(rect: RECT) -> POINT {
+    POINT {
+        x: (rect.left + rect.right) / 2,
+        y: (rect.top + rect.bottom) / 2,
     }
 }
 

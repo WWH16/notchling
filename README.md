@@ -1,7 +1,7 @@
 # ai-notch
 
-A "Dynamic Island" style notch for Windows 11. A small black pill hangs from the top
-edge of the screen and shows:
+A "Dynamic Island" style notch for Windows 11. A small black pill sits against an
+edge of the screen, the top one to start with, and shows:
 
 - CPU and GPU load, plus RAM and VRAM on hover;
 - how much of your Claude, ChatGPT (Codex) or Gemini usage limit is used, when it
@@ -35,9 +35,10 @@ The ring turns amber at 80% and red at 95%.
 - **Hover** the pill to see RAM, VRAM, and the provider's limits as rings with the
   clock time each one resets ("resets 2:20 PM", "resets Fri 7:00 AM"), plus tokens,
   burn rate and any incident on its status page.
-- **Drag** it with the left button anywhere, on any display. Let go and it sticks to
-  the screen edge nearest the cursor (top, bottom, left or right), flat side against
-  it, and expands away from that edge. It stays put next time.
+- **Drag** it with the left button anywhere, on any display. Let go and it glides
+  onto the screen edge nearest the cursor (top, bottom, left or right), flat side
+  against it, and expands away from that edge. On the left or right edge it stands
+  upright, with its readings stacked. It stays put next time.
 - **Right-click** it to pick the provider shown (Claude, ChatGPT or Gemini), open the
   settings, or quit.
 - **Click** a "Done" or "Needs your input" alert to bring that Claude Code window to

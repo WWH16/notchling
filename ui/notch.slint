@@ -1,4 +1,4 @@
-// Notch UI: one black shape hanging from the top edge that morphs between states.
+// Notch UI: one black shape against a screen edge that morphs between states.
 
 export { Settings } from "settings.slint";
 
@@ -87,6 +87,30 @@ component Pair inherits HorizontalLayout {
         font-size: 12px;
         font-weight: 600;
         vertical-alignment: center;
+    }
+}
+
+// A label over its value, for the narrow notch on a side edge.
+component StackedPair inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 1px;
+
+    Text {
+        text: root.label;
+        color: Theme.muted;
+        font-family: Theme.font;
+        font-size: 10px;
+        font-weight: 600;
+        horizontal-alignment: center;
+    }
+    Text {
+        text: root.value;
+        color: Theme.text;
+        font-family: Theme.font;
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: center;
     }
 }
 
@@ -285,6 +309,50 @@ export enum NotchEdge { top, bottom, left, right }
 // Why the notch is asking for attention.
 export enum AlertKind { done, needs-input, usage-high, usage-critical }
 
+// The provider's name and any incident, over its tokens and burn rate when known.
+component ProviderInfo inherits VerticalLayout {
+    in property <color> accent;
+    in property <string> name;
+    in property <Health> status;
+    in property <bool> estimated;
+    in property <string> detail;
+    alignment: center;
+    spacing: 3px;
+
+    HorizontalLayout {
+        spacing: 6px;
+        Dot {
+            fill: root.accent;
+        }
+        Text {
+            text: root.name;
+            color: Theme.text;
+            font-family: Theme.font;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        // Only incidents show; a healthy or unknown status takes no space.
+        if root.status == Health.degraded || root.status == Health.down: Text {
+            text: root.status == Health.down ? "· Outage" : "· Degraded";
+            color: root.status == Health.down ? Theme.bad : Theme.warn;
+            font-family: Theme.font;
+            font-size: 11px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        if root.estimated: Badge {
+            label: "ESTIMATED";
+        }
+    }
+    if root.detail != "": Text {
+        text: root.detail;
+        color: Theme.muted;
+        font-family: Theme.font;
+        font-size: 10px;
+    }
+}
+
 export component Notch inherits Window {
     // Loads as fractions in 0..1; text values are formatted by Rust.
     in property <float> cpu;
@@ -338,6 +406,9 @@ export component Notch inherits Window {
     // at once and shrinking it after the animation, so clicks elsewhere pass through.
     out property <length> shape-width: self.target-width;
     out property <length> shape-height: self.target-height;
+    // The size the shape has right now, partway through a morph.
+    out property <length> drawn-width: pill.width;
+    out property <length> drawn-height: pill.height;
     callback shape-changed();
     changed shape-width => {
         self.shape-changed();
@@ -384,10 +455,24 @@ export component Notch inherits Window {
     private property <length> target-height: self.has-request ? request-height
         : self.alert-active ? alert-height
         : self.expanded ? open-height : idle-height;
-    private property <length> idle-width: 250px;
-    private property <length> idle-height: 30px;
-    private property <length> open-width: 460px;
-    private property <length> open-height: 106px;
+    // On a side edge the notch stands upright; requests and alerts stay wide, since their
+    // text needs the room.
+    private property <bool> vertical: self.edge == NotchEdge.left || self.edge == NotchEdge.right;
+    private property <length> idle-width: self.vertical ? 54px : 250px;
+    private property <length> idle-height: self.vertical ? 140px : 30px;
+    private property <length> open-width: self.vertical ? 210px : 460px;
+    private property <length> open-height: self.vertical ? 304px : 106px;
+    // The idle and open sizes as drawn, easing into the other orientation when the notch
+    // moves between a side edge and the top or bottom. The window region follows the
+    // targets above instead, since re-clipping on every frame made the notch flicker.
+    private property <length> drawn-idle-width: self.idle-width;
+    private property <length> drawn-idle-height: self.idle-height;
+    private property <length> drawn-open-width: self.open-width;
+    private property <length> drawn-open-height: self.open-height;
+    animate drawn-idle-width, drawn-idle-height, drawn-open-width, drawn-open-height {
+        duration: 260ms;
+        easing: ease-out;
+    }
     private property <length> request-width: 460px;
     private property <length> request-height: 196px;
     private property <length> alert-width: 290px;
@@ -400,7 +485,7 @@ export component Notch inherits Window {
     // Fixed size large enough for the biggest state; only the shape is drawn.
     // Exposed because Rust positions the window before Slint knows its size.
     out property <length> fixed-width: 520px;
-    out property <length> fixed-height: 280px;
+    out property <length> fixed-height: 320px;
     width: self.fixed-width;
     height: self.fixed-height;
 
@@ -413,19 +498,25 @@ export component Notch inherits Window {
         y: root.edge == NotchEdge.top ? 0
             : root.edge == NotchEdge.bottom ? parent.height - self.height
             : (parent.height - self.height) / 2;
-        width: root.idle-width;
-        height: root.idle-height;
+        width: root.drawn-idle-width;
+        height: root.drawn-idle-height;
         background: Theme.surface;
         // The side against the screen edge stays square; every other corner is round.
-        property <length> corner: min(self.height / 2, 22px);
-        property <bool> square-top: !root.floating && root.edge == NotchEdge.top;
-        property <bool> square-bottom: !root.floating && root.edge == NotchEdge.bottom;
-        property <bool> square-left: !root.floating && root.edge == NotchEdge.left;
-        property <bool> square-right: !root.floating && root.edge == NotchEdge.right;
-        border-top-left-radius: self.square-top || self.square-left ? 0 : self.corner;
-        border-top-right-radius: self.square-top || self.square-right ? 0 : self.corner;
-        border-bottom-left-radius: self.square-bottom || self.square-left ? 0 : self.corner;
-        border-bottom-right-radius: self.square-bottom || self.square-right ? 0 : self.corner;
+        // Each side's roundness runs from 0 (square) to 1 (round), easing between the two
+        // as the notch is picked up and sticks again.
+        property <length> corner: min(min(self.width, self.height) / 2, 22px);
+        property <float> round-top: !root.floating && root.edge == NotchEdge.top ? 0 : 1;
+        property <float> round-bottom: !root.floating && root.edge == NotchEdge.bottom ? 0 : 1;
+        property <float> round-left: !root.floating && root.edge == NotchEdge.left ? 0 : 1;
+        property <float> round-right: !root.floating && root.edge == NotchEdge.right ? 0 : 1;
+        animate round-top, round-bottom, round-left, round-right {
+            duration: 260ms;
+            easing: ease-out;
+        }
+        border-top-left-radius: self.corner * min(self.round-top, self.round-left);
+        border-top-right-radius: self.corner * min(self.round-top, self.round-right);
+        border-bottom-left-radius: self.corner * min(self.round-bottom, self.round-left);
+        border-bottom-right-radius: self.corner * min(self.round-bottom, self.round-right);
         clip: true;
 
         hover := TouchArea {
@@ -446,45 +537,137 @@ export component Notch inherits Window {
             }
         }
 
-        idle-row := HorizontalLayout {
-            alignment: center;
-            spacing: 18px;
-            Pair {
-                label: "CPU";
-                value: "\{round(root.cpu * 100)}%";
-            }
-            Pair {
-                label: "GPU";
-                value: "\{round(root.gpu * 100)}%";
-            }
-            HorizontalLayout {
-                spacing: 6px;
-                Ring {
-                    y: (parent.height - self.height) / 2;
-                    fraction: root.usage-fraction;
-                    fill: root.level(root.usage-fraction);
+        idle-row := Rectangle {
+            if !root.vertical: HorizontalLayout {
+                alignment: center;
+                spacing: 18px;
+                Pair {
+                    label: "CPU";
+                    value: "\{round(root.cpu * 100)}%";
                 }
-                Text {
-                    text: root.usage-short;
-                    color: Theme.text;
-                    font-family: Theme.font;
-                    font-size: 12px;
-                    font-weight: 600;
-                    vertical-alignment: center;
+                Pair {
+                    label: "GPU";
+                    value: "\{round(root.gpu * 100)}%";
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Ring {
+                        y: (parent.height - self.height) / 2;
+                        fraction: root.usage-fraction;
+                        fill: root.level(root.usage-fraction);
+                    }
+                    Text {
+                        text: root.usage-short;
+                        color: Theme.text;
+                        font-family: Theme.font;
+                        font-size: 12px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            if root.vertical: VerticalLayout {
+                alignment: center;
+                spacing: 10px;
+                StackedPair {
+                    label: "CPU";
+                    value: "\{round(root.cpu * 100)}%";
+                }
+                StackedPair {
+                    label: "GPU";
+                    value: "\{round(root.gpu * 100)}%";
+                }
+                VerticalLayout {
+                    spacing: 3px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Ring {
+                            fraction: root.usage-fraction;
+                            fill: root.level(root.usage-fraction);
+                        }
+                    }
+                    Text {
+                        text: root.usage-short;
+                        color: Theme.text;
+                        font-family: Theme.font;
+                        font-size: 12px;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
                 }
             }
         }
 
-        detail := VerticalLayout {
+        detail := Rectangle {
             opacity: 0;
-            padding-left: 20px;
-            padding-right: 20px;
-            padding-top: 14px;
-            padding-bottom: 18px;
-            spacing: 14px;
 
-            HorizontalLayout {
-                spacing: 18px;
+            if !root.vertical: VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 14px;
+                padding-bottom: 18px;
+                spacing: 14px;
+
+                HorizontalLayout {
+                    spacing: 18px;
+                    Stat {
+                        label: "CPU";
+                        value: "\{round(root.cpu * 100)}%";
+                        fraction: root.cpu;
+                    }
+                    Stat {
+                        label: "GPU";
+                        value: "\{round(root.gpu * 100)}%";
+                        fraction: root.gpu;
+                    }
+                    Stat {
+                        label: "RAM";
+                        value: root.ram-text;
+                        fraction: root.ram;
+                    }
+                    Stat {
+                        label: "VRAM";
+                        value: root.vram-text;
+                        fraction: root.vram;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 18px;
+                    ProviderInfo {
+                        horizontal-stretch: 1;
+                        accent: root.accent;
+                        name: root.provider-name;
+                        status: root.status;
+                        estimated: root.usage-estimated;
+                        detail: root.usage-detail;
+                    }
+                    Gauge {
+                        fraction: root.usage-fraction;
+                        fill: root.level(root.usage-fraction);
+                        value: root.usage-short;
+                        label: root.usage-label;
+                        detail: root.usage-reset;
+                    }
+                    if root.weekly-fraction >= 0: Gauge {
+                        fraction: root.weekly-fraction;
+                        fill: root.level(root.weekly-fraction);
+                        value: root.weekly-short;
+                        label: "week";
+                        detail: root.weekly-reset;
+                    }
+                }
+            }
+
+            // The same, stacked: stats, then the provider and its limits.
+            if root.vertical: VerticalLayout {
+                alignment: center;
+                padding-left: 18px;
+                padding-right: 18px;
+                padding-top: 16px;
+                padding-bottom: 16px;
+                spacing: 10px;
+
                 Stat {
                     label: "CPU";
                     value: "\{round(root.cpu * 100)}%";
@@ -505,49 +688,17 @@ export component Notch inherits Window {
                     value: root.vram-text;
                     fraction: root.vram;
                 }
-            }
-
-            HorizontalLayout {
-                spacing: 18px;
-
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 3px;
-                    horizontal-stretch: 1;
-                    HorizontalLayout {
-                        spacing: 6px;
-                        Dot {
-                            fill: root.accent;
-                        }
-                        Text {
-                            text: root.provider-name;
-                            color: Theme.text;
-                            font-family: Theme.font;
-                            font-size: 12px;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                        }
-                        // Only incidents show; a healthy or unknown status takes no space.
-                        if root.status == Health.degraded || root.status == Health.down: Text {
-                            text: root.status == Health.down ? "· Outage" : "· Degraded";
-                            color: root.status == Health.down ? Theme.bad : Theme.warn;
-                            font-family: Theme.font;
-                            font-size: 11px;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                        }
-                        if root.usage-estimated: Badge {
-                            label: "ESTIMATED";
-                        }
-                    }
-                    if root.usage-detail != "": Text {
-                        text: root.usage-detail;
-                        color: Theme.muted;
-                        font-family: Theme.font;
-                        font-size: 10px;
-                    }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.track;
                 }
-
+                ProviderInfo {
+                    accent: root.accent;
+                    name: root.provider-name;
+                    status: root.status;
+                    estimated: root.usage-estimated;
+                    detail: root.usage-detail;
+                }
                 Gauge {
                     fraction: root.usage-fraction;
                     fill: root.level(root.usage-fraction);
@@ -738,8 +889,8 @@ export component Notch inherits Window {
                 }
             }
             open when root.expanded: {
-                pill.width: root.open-width;
-                pill.height: root.open-height;
+                pill.width: root.drawn-open-width;
+                pill.height: root.drawn-open-height;
                 idle-row.opacity: 0;
                 detail.opacity: 1;
                 in {

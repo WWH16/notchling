@@ -14,38 +14,32 @@ use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, TimeDelta, Utc, Weekday};
 use serde::Deserialize;
 
 use super::{Provider, Source, Usage};
+use crate::config::Config;
 
-/// Counts today's Gemini CLI requests across all projects.
+/// Counts today's Gemini CLI requests across all projects, against the daily limit
+/// in the config.
 #[derive(Debug)]
 pub struct Gemini {
     /// `~/.gemini/tmp`, holding one folder per project.
     projects: PathBuf,
-    daily_limit: u32,
 }
 
 impl Gemini {
-    /// Reads the current Windows user's Gemini CLI logs, counting against
-    /// `daily_limit` requests a day.
+    /// Reads the current Windows user's Gemini CLI logs.
     ///
     /// # Errors
     ///
     /// Fails when `USERPROFILE` is not set.
-    pub fn try_new(daily_limit: u32) -> anyhow::Result<Self> {
+    pub fn try_new() -> anyhow::Result<Self> {
         let home = env::var_os("USERPROFILE").context("USERPROFILE is not set")?;
-        Ok(Self::at(
-            Path::new(&home).join(".gemini").join("tmp"),
-            daily_limit,
-        ))
+        Ok(Self::at(Path::new(&home).join(".gemini").join("tmp")))
     }
 
-    fn at(projects: PathBuf, daily_limit: u32) -> Self {
-        Self {
-            projects,
-            daily_limit: daily_limit.max(1),
-        }
+    fn at(projects: PathBuf) -> Self {
+        Self { projects }
     }
 
-    fn usage(&self, now: DateTime<Utc>) -> anyhow::Result<Usage> {
+    fn usage(&self, now: DateTime<Utc>, daily_limit: u32) -> anyhow::Result<Usage> {
         let (day_start, next_day) = pacific_day(now);
         let since: SystemTime = day_start.into();
         let projects = fs::read_dir(&self.projects)
@@ -75,7 +69,7 @@ impl Gemini {
             }
         }
         // Display only; precision loss on huge counts does not matter.
-        let used = requests as f32 / self.daily_limit as f32;
+        let used = requests as f32 / daily_limit.max(1) as f32;
         Ok(Usage {
             used: Some(used),
             resets_at: Some(next_day),
@@ -92,7 +86,7 @@ impl Source for Gemini {
     }
 
     fn read(&mut self) -> anyhow::Result<Usage> {
-        self.usage(Utc::now())
+        self.usage(Utc::now(), Config::load().gemini_daily_requests())
     }
 }
 
@@ -208,15 +202,15 @@ mod tests {
         fs::write(chats.join("session-example.jsonl"), FIXTURE).expect("temp file is writable");
         fs::write(chats.join("notes.jsonl"), FIXTURE).expect("temp file is writable");
 
-        let usage = Gemini::at(dir.clone(), 100)
-            .usage(time("2026-06-18T12:00:00Z"))
+        let usage = Gemini::at(dir.clone())
+            .usage(time("2026-06-18T12:00:00Z"), 100)
             .expect("projects folder exists");
 
         assert_eq!(usage.used, Some(0.02));
         assert_eq!(usage.resets_at, Some(time("2026-06-19T07:00:00Z")));
         assert_eq!(usage.tokens, Some(13_255));
         assert!(usage.estimated);
-        assert!(Gemini::at(dir.join("missing"), 100).read().is_err());
+        assert!(Gemini::at(dir.join("missing")).read().is_err());
         let _ = fs::remove_dir_all(dir);
     }
 }

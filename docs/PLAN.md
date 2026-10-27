@@ -147,8 +147,11 @@ sessions (needs the user, since it changes the global settings).
   Checked every second; busy, D3D fullscreen and presentation mode hide the window
   natively, since hiding Slint's last window would end its event loop.
   Commit `feat: hide during fullscreen`.
-- [ ] **6.4** Settings window: monitor picker, thresholds, hook timeout, account source
-  toggle. Commit `feat: settings window`.
+- [x] **6.4** Settings window: monitor picker, thresholds, hook timeout, account source
+  toggle. Opened from the right-click menu; also edits the Gemini daily limit. Saving
+  moves the notch and resets the alerts at once; the usage sources read their settings
+  from the config on every poll. A longer hook timeout needs `--install-hooks` again.
+  Commit `feat: settings window`.
 - [ ] **6.5** Windows toast only while the notch is hidden.
   Commit `feat: toast fallback when hidden`.
 

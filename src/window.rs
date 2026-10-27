@@ -5,10 +5,10 @@ use std::mem;
 
 use anyhow::{Context, bail};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    CreateRectRgn, DeleteObject, GetMonitorInfoW, HMONITOR, MONITOR_DEFAULTTOPRIMARY, MONITORINFO,
-    MonitorFromPoint, SetWindowRgn,
+    CreateRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
+    MONITORINFOEXW, SetWindowRgn,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Shell::{
@@ -17,11 +17,11 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CheckMenuRadioItem, CreatePopupMenu, DestroyMenu, GWL_EXSTYLE, GetCursorPos,
     GetWindowLongPtrW, HMENU, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND, MF_SEPARATOR,
-    MF_STRING, MessageBoxW, SW_HIDE, SW_SHOWNOACTIVATE, SetForegroundWindow, SetWindowLongPtrW,
-    ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW,
+    MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, SW_HIDE, SW_SHOWNOACTIVATE, SetForegroundWindow,
+    SetWindowLongPtrW, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WS_EX_APPWINDOW,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
-use windows::core::{HSTRING, PCWSTR, w};
+use windows::core::{BOOL, HSTRING, PCWSTR, w};
 
 use crate::usage::Provider;
 
@@ -30,6 +30,9 @@ const BASE_DPI: f32 = 96.0;
 
 /// Menu command id for [`MenuChoice::Quit`]; 0 is reserved for "dismissed".
 const MENU_QUIT: usize = 1;
+
+/// Menu command id for [`MenuChoice::Settings`].
+const MENU_SETTINGS: usize = 2;
 
 /// Menu command id of the first provider; the others follow in [`Provider::ALL`] order.
 const MENU_FIRST_PROVIDER: usize = 10;
@@ -63,6 +66,7 @@ pub fn message_box(title: &str, text: &str, kind: MessageKind) {
 pub enum MenuChoice {
     /// Show this provider's usage on the notch.
     Show(Provider),
+    Settings,
     Quit,
 }
 
@@ -80,38 +84,105 @@ pub fn fullscreen_app_in_front() -> bool {
     })
 }
 
-/// Moves a not-yet-shown window to the top center of the primary monitor.
+/// A display connected to the PC.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Monitor {
+    /// Windows' device name, such as `\\.\DISPLAY1`; what the config stores.
+    pub device: String,
+    pub primary: bool,
+    /// The whole display in physical pixels, taskbar included.
+    pub bounds: RECT,
+    handle: HMONITOR,
+}
+
+impl Monitor {
+    /// How the settings window lists the display, e.g. "DISPLAY1 · 2560 × 1440 · primary".
+    #[must_use]
+    pub fn label(&self) -> String {
+        let name = self.device.trim_start_matches(r"\\.\");
+        let width = self.bounds.right - self.bounds.left;
+        let height = self.bounds.bottom - self.bounds.top;
+        let primary = if self.primary { " · primary" } else { "" };
+        format!("{name} · {width} × {height}{primary}")
+    }
+}
+
+/// Every display connected to the PC, in Windows' order.
+#[must_use]
+pub fn monitors() -> Vec<Monitor> {
+    unsafe extern "system" fn collect(
+        monitor: HMONITOR,
+        _: HDC,
+        _: *mut RECT,
+        found: LPARAM,
+    ) -> BOOL {
+        // SAFETY: `found` is the `Vec` below, which outlives the enumeration.
+        let found = unsafe { &mut *(found.0 as *mut Vec<HMONITOR>) };
+        found.push(monitor);
+        true.into()
+    }
+    let mut handles: Vec<HMONITOR> = Vec::new();
+    // SAFETY: `collect` only runs during this call, while `handles` is alive and not
+    // otherwise borrowed.
+    let _ = unsafe {
+        EnumDisplayMonitors(None, None, Some(collect), LPARAM(&raw mut handles as isize))
+    };
+    handles
+        .into_iter()
+        .filter_map(|handle| monitor_info(handle).ok())
+        .collect()
+}
+
+fn monitor_info(handle: HMONITOR) -> anyhow::Result<Monitor> {
+    let mut info = MONITORINFOEXW::default();
+    info.monitorInfo.cbSize = mem::size_of::<MONITORINFOEXW>() as u32;
+    // SAFETY: `info` is a MONITORINFOEXW whose cbSize says so, and the pointer covers
+    // the whole struct the call writes into.
+    if !unsafe { GetMonitorInfoW(handle, (&raw mut info).cast::<MONITORINFO>()) }.as_bool() {
+        bail!("GetMonitorInfoW failed for monitor {handle:?}");
+    }
+    let name_len = info
+        .szDevice
+        .iter()
+        .position(|&unit| unit == 0)
+        .unwrap_or(info.szDevice.len());
+    Ok(Monitor {
+        device: String::from_utf16_lossy(&info.szDevice[..name_len]),
+        primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
+        bounds: info.monitorInfo.rcMonitor,
+        handle,
+    })
+}
+
+/// Moves the window to the top center of the display named `device`, or of the
+/// primary display when `device` is `None` or no longer connected.
 ///
-/// Call this before `show()`, so the window never appears anywhere else first.
+/// Before the first `show()` this keeps the window from appearing anywhere else first.
 /// `logical_width` is the window width in logical pixels, since Slint reports no size
 /// before the window exists.
 ///
 /// # Errors
 ///
-/// Fails when Windows cannot report the primary monitor's bounds or DPI.
-pub fn place_top_center(window: &slint::Window, logical_width: f32) -> anyhow::Result<()> {
-    // SAFETY: MonitorFromPoint has no preconditions; with DEFAULTTOPRIMARY it never fails.
-    let monitor = unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY) };
-    let bounds = monitor_bounds(monitor)?;
-    let scale = monitor_scale(monitor)?;
+/// Fails when Windows reports no display, or not its DPI.
+pub fn place_top_center(
+    window: &slint::Window,
+    logical_width: f32,
+    device: Option<&str>,
+) -> anyhow::Result<()> {
+    let monitors = monitors();
+    let monitor = monitors
+        .iter()
+        .find(|monitor| Some(monitor.device.as_str()) == device)
+        .or_else(|| monitors.iter().find(|monitor| monitor.primary))
+        .context("Windows reports no display")?;
+    let scale = monitor_scale(monitor.handle)?;
+    let bounds = monitor.bounds;
 
     // Rounding to whole pixels is intended.
     let width = (logical_width * scale).round() as i32;
     let x = bounds.left + (bounds.right - bounds.left - width) / 2;
     window.set_position(slint::PhysicalPosition::new(x, bounds.top));
     Ok(())
-}
-
-fn monitor_bounds(monitor: HMONITOR) -> anyhow::Result<RECT> {
-    let mut info = MONITORINFO {
-        cbSize: mem::size_of::<MONITORINFO>() as u32,
-        ..Default::default()
-    };
-    // SAFETY: `info` is a valid, correctly sized MONITORINFO the call writes into.
-    if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
-        bail!("GetMonitorInfoW failed for monitor {monitor:?}");
-    }
-    Ok(info.rcMonitor)
 }
 
 fn monitor_scale(monitor: HMONITOR) -> anyhow::Result<f32> {
@@ -200,6 +271,7 @@ impl NotchWindow {
         };
         match picked {
             MENU_QUIT => Some(MenuChoice::Quit),
+            MENU_SETTINGS => Some(MenuChoice::Settings),
             id => id
                 .checked_sub(MENU_FIRST_PROVIDER)
                 .and_then(|index| Provider::ALL.get(index))
@@ -246,6 +318,7 @@ unsafe fn fill_menu(menu: HMENU, shown: Provider) -> windows::core::Result<()> {
             MF_BYCOMMAND.0,
         )?;
         AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        AppendMenuW(menu, MF_STRING, MENU_SETTINGS, w!("Settings…"))?;
         AppendMenuW(menu, MF_STRING, MENU_QUIT, w!("Quit ai-notch"))
     }
 }
@@ -270,6 +343,14 @@ pub fn shape_rect(window_width: f32, shape_width: f32, shape_height: f32, scale:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn there_is_one_primary_monitor() {
+        let monitors = monitors();
+        let primaries = monitors.iter().filter(|monitor| monitor.primary).count();
+        assert_eq!(primaries, 1, "{monitors:?}");
+        assert!(monitors.iter().all(|monitor| !monitor.device.is_empty()));
+    }
 
     #[test]
     fn shape_rect_is_centered_at_100_percent() {

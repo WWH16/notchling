@@ -12,6 +12,7 @@ mod process;
 mod protocol;
 mod requests;
 mod server;
+mod settings;
 mod status;
 mod system;
 mod usage;
@@ -22,7 +23,7 @@ mod ui {
     slint::include_modules!();
 }
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::env;
 use std::mem;
@@ -54,6 +55,10 @@ const NATIVE_WINDOW_ATTEMPTS: u32 = 60;
 
 /// How often the CPU, GPU and RAM readings refresh, matching Task Manager's default.
 const STATS_INTERVAL: Duration = Duration::from_secs(1);
+
+/// How long after a move to another display the notch re-clips its window, once
+/// Windows has applied that display's scale.
+const MONITOR_MOVE_SETTLE: Duration = Duration::from_millis(200);
 
 /// How often the notch checks for a fullscreen app to hide from.
 const FULLSCREEN_CHECK: Duration = Duration::from_secs(1);
@@ -110,7 +115,7 @@ fn main() -> anyhow::Result<()> {
     let alert = Arc::new(Mutex::new(Alert::default()));
 
     let notch = Notch::new()?;
-    window::place_top_center(notch.window(), notch.get_fixed_width())?;
+    window::place_top_center(notch.window(), notch.get_fixed_width(), config.monitor())?;
     show_usage(&notch, config.provider(), None);
     notch.show()?;
     let status_switch = start_status(&notch, &usages);
@@ -124,56 +129,53 @@ fn main() -> anyhow::Result<()> {
         move |notch, native| {
             native.apply_tool_styles();
             let native = Rc::new(native);
-
-            let menu_native = Rc::clone(&native);
-            let fullscreen_native = Rc::clone(&native);
-            let hidden = Cell::new(false);
-            fullscreen_timer.start(TimerMode::Repeated, FULLSCREEN_CHECK, move || {
-                let hide = window::fullscreen_app_in_front();
-                if hide != hidden.replace(hide) {
-                    if hide {
-                        fullscreen_native.hide();
-                    } else {
-                        fullscreen_native.show();
-                    }
-                }
-            });
-            let weak = notch.as_weak();
-            notch.on_menu_requested(move || {
-                let shown = lock_usages(&menu_usages).shown;
-                match menu_native.show_menu(shown) {
-                    Some(MenuChoice::Quit) => {
-                        // Only fails when the loop already stopped, which is what we want anyway.
-                        let _ = slint::quit_event_loop();
-                    }
-                    Some(MenuChoice::Show(provider)) => {
-                        if let Some(notch) = weak.upgrade() {
-                            select_provider(&notch, &menu_usages, &status_switch, provider);
-                        }
-                    }
-                    None => {}
-                }
-            });
+            hide_during_fullscreen(&fullscreen_timer, Rc::clone(&native));
 
             let weak = notch.as_weak();
-            let clip = move || {
+            let clip_native = Rc::clone(&native);
+            let clip: Rc<dyn Fn()> = Rc::new(move || {
                 let Some(notch) = weak.upgrade() else {
                     return;
                 };
-                native.clip_to(window::shape_rect(
+                clip_native.clip_to(window::shape_rect(
                     notch.get_fixed_width(),
                     notch.get_shape_width(),
                     notch.get_shape_height(),
                     notch.window().scale_factor(),
                 ));
-            };
+            });
             clip();
-            notch.on_shape_changed(clip);
+            let shape_clip = Rc::clone(&clip);
+            notch.on_shape_changed(move || shape_clip());
+
+            let weak = notch.as_weak();
+            let settings = RefCell::new(None);
+            notch.on_menu_requested(move || {
+                let Some(notch) = weak.upgrade() else {
+                    return;
+                };
+                let shown = lock_usages(&menu_usages).shown;
+                match native.show_menu(shown) {
+                    Some(MenuChoice::Quit) => {
+                        // Only fails when the loop already stopped, which is what we want anyway.
+                        let _ = slint::quit_event_loop();
+                    }
+                    Some(MenuChoice::Show(provider)) => {
+                        select_provider(&notch, &menu_usages, &status_switch, provider);
+                    }
+                    Some(MenuChoice::Settings) => {
+                        let saved = apply_settings(&notch, &menu_usages, &clip);
+                        // A window that cannot open leaves everything as it is.
+                        let _ = settings::open(&settings, saved);
+                    }
+                    None => {}
+                }
+            });
         },
     );
 
     let _stats = start_stats(&notch);
-    start_usage(&notch, &usages, &alert, &config);
+    start_usage(&notch, &usages, &alert);
     let _awake_check = serve_hooks(&notch, listener, &alert);
 
     slint::run_event_loop()?;
@@ -199,6 +201,44 @@ fn report_settings_change(verb: &str, outcome: anyhow::Result<install::Outcome>)
             let text = format!("Nothing was changed.\n\n{err:#}");
             window::message_box("ai-notch", &text, MessageKind::Error);
         }
+    }
+}
+
+/// Hides the notch while a fullscreen app, game or presentation is in front, checking
+/// until `timer` is dropped.
+fn hide_during_fullscreen(timer: &Timer, native: Rc<NotchWindow>) {
+    let hidden = Cell::new(false);
+    timer.start(TimerMode::Repeated, FULLSCREEN_CHECK, move || {
+        let hide = window::fullscreen_app_in_front();
+        if hide != hidden.replace(hide) {
+            if hide {
+                native.hide();
+            } else {
+                native.show();
+            }
+        }
+    });
+}
+
+/// Applies saved settings to the running notch: its display and the usage alerts. The
+/// usage sources and hook mode read the rest from the config file themselves.
+fn apply_settings(
+    notch: &Notch,
+    usages: &Arc<Mutex<Usages>>,
+    clip: &Rc<dyn Fn()>,
+) -> impl Fn(&Config) + 'static {
+    let weak = notch.as_weak();
+    let usages = Arc::clone(usages);
+    let clip = Rc::clone(clip);
+    move |config| {
+        lock_usages(&usages).thresholds = Thresholds::new(config.usage_alerts());
+        let Some(notch) = weak.upgrade() else {
+            return;
+        };
+        // Fails only when Windows reports no display; the notch then stays put.
+        let _ = window::place_top_center(notch.window(), notch.get_fixed_width(), config.monitor());
+        let clip = Rc::clone(&clip);
+        Timer::single_shot(MONITOR_MOVE_SETTLE, move || clip());
     }
 }
 
@@ -256,12 +296,7 @@ fn lock_usages(usages: &Mutex<Usages>) -> std::sync::MutexGuard<'_, Usages> {
 
 /// Polls every provider's usage in the background and keeps the notch showing the
 /// selected one. A provider whose source cannot start shows as "no data".
-fn start_usage(
-    notch: &Notch,
-    usages: &Arc<Mutex<Usages>>,
-    alert: &Arc<Mutex<Alert>>,
-    config: &Config,
-) {
+fn start_usage(notch: &Notch, usages: &Arc<Mutex<Usages>>, alert: &Arc<Mutex<Alert>>) {
     let weak = notch.as_weak();
     let usages = Arc::clone(usages);
     let alert = Arc::clone(alert);
@@ -296,7 +331,7 @@ fn start_usage(
     if let Ok(source) = Codex::try_new() {
         usage::spawn(source, CLI_LOG_INTERVAL, notify.clone());
     }
-    if let Ok(source) = Gemini::try_new(config.gemini_daily_requests()) {
+    if let Ok(source) = Gemini::try_new() {
         usage::spawn(source, CLI_LOG_INTERVAL, notify);
     }
 }

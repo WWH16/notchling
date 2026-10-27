@@ -36,6 +36,13 @@ pub struct Config {
     provider: Provider,
     /// Usage percentages that raise an alert, each once per usage window.
     usage_alerts: Vec<u32>,
+    /// Windows' device name of the display the notch sits on; the primary display
+    /// when missing or disconnected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    monitor: Option<String>,
+    /// Whether to ask the account endpoint for Claude's exact usage, with Claude Code's
+    /// login. Off, the notch shows the local estimate only.
+    claude_account: bool,
 }
 
 impl Default for Config {
@@ -46,6 +53,8 @@ impl Default for Config {
             gemini_daily_requests: 1000,
             provider: Provider::Claude,
             usage_alerts: vec![80, 95],
+            monitor: None,
+            claude_account: true,
         }
     }
 }
@@ -101,20 +110,52 @@ impl Config {
         &self.usage_alerts
     }
 
-    /// Changes the config file and keeps every other setting. Comments in the file are
-    /// not kept.
+    pub fn set_usage_alerts(&mut self, percents: Vec<u32>) {
+        self.usage_alerts = percents;
+    }
+
+    pub fn set_hook_timeout_secs(&mut self, secs: u64) {
+        self.hook_timeout_secs = secs;
+    }
+
+    pub fn set_gemini_daily_requests(&mut self, requests: u32) {
+        self.gemini_daily_requests = requests;
+    }
+
+    /// Windows' device name of the display the notch sits on, if one was chosen.
+    #[must_use]
+    pub fn monitor(&self) -> Option<&str> {
+        self.monitor.as_deref()
+    }
+
+    pub fn set_monitor(&mut self, device: Option<String>) {
+        self.monitor = device;
+    }
+
+    /// Whether to ask the account endpoint for Claude's exact usage.
+    #[must_use]
+    pub fn claude_account(&self) -> bool {
+        self.claude_account
+    }
+
+    pub fn set_claude_account(&mut self, enabled: bool) {
+        self.claude_account = enabled;
+    }
+
+    /// Changes the config file and keeps every other setting, returning the new
+    /// config. Comments in the file are not kept.
     ///
     /// # Errors
     ///
     /// Fails when `APPDATA` is not set, when the file cannot be written, and when the
     /// file is invalid, so a typo is never overwritten with defaults.
-    pub fn update(change: impl FnOnce(&mut Self)) -> anyhow::Result<()> {
+    pub fn update(change: impl FnOnce(&mut Self)) -> anyhow::Result<Self> {
         let path = config_path().context("APPDATA is not set")?;
         update_file(&path, change)
     }
 }
 
-fn update_file(path: &Path, change: impl FnOnce(&mut Config)) -> anyhow::Result<()> {
+fn update_file(path: &Path, change: impl FnOnce(&mut Config)) -> anyhow::Result<Config> {
     let mut config = match fs::read_to_string(path) {
         Ok(text) => Config::parse(&text)
             .with_context(|| format!("{} has an error; fix it first", path.display()))?,
@@ -126,7 +167,8 @@ fn update_file(path: &Path, change: impl FnOnce(&mut Config)) -> anyhow::Result<
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     let text = toml::to_string(&config).context("writing the config as TOML")?;
-    fs::write(path, text).with_context(|| format!("writing {}", path.display()))
+    fs::write(path, text).with_context(|| format!("writing {}", path.display()))?;
+    Ok(config)
 }
 
 /// `%APPDATA%\ai-notch\config.toml`, or `None` when `APPDATA` is not set.
@@ -166,6 +208,22 @@ mod tests {
         assert_eq!(Config::default().usage_alerts(), [80, 95]);
         let alerts = Config::parse("usage_alerts = [50, 90]").expect("valid TOML");
         assert_eq!(alerts.usage_alerts(), [50, 90]);
+    }
+
+    #[test]
+    fn monitor_and_account_toggle_round_trip() {
+        let mut config = Config::default();
+        assert_eq!(config.monitor(), None);
+        assert!(config.claude_account());
+        config.set_monitor(Some(r"\\.\DISPLAY2".to_owned()));
+        config.set_claude_account(false);
+        let text = toml::to_string(&config).expect("config serializes");
+        assert_eq!(Config::parse(&text), Ok(config));
+        assert!(
+            !toml::to_string(&Config::default())
+                .expect("serializes")
+                .contains("monitor")
+        );
     }
 
     #[test]

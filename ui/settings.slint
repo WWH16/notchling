@@ -1,0 +1,125 @@
+// Settings window: a normal framed window, opened from the notch's right-click menu.
+
+import { Button, CheckBox, ComboBox, Palette, SpinBox } from "std-widgets.slint";
+
+component Label inherits Text {
+    vertical-alignment: center;
+    color: Palette.foreground;
+}
+
+component Hint inherits Text {
+    wrap: word-wrap;
+    font-size: 11px;
+    color: Palette.foreground.transparentize(40%);
+}
+
+export component Settings inherits Window {
+    title: "ai-notch settings";
+    preferred-width: 440px;
+    background: Palette.background;
+
+    in property <[string]> monitors;
+    in-out property <int> monitor-index;
+    // 0 turns an alert off.
+    in-out property <int> first-alert;
+    in-out property <int> second-alert;
+    in-out property <int> permission-wait;
+    in-out property <int> gemini-limit;
+    in-out property <bool> claude-account;
+    // Why the last save failed; empty when it did not.
+    in property <string> error;
+    callback save();
+    callback cancel();
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 14px;
+
+        GridLayout {
+            spacing: 10px;
+            Row {
+                Label {
+                    text: "Monitor";
+                }
+                ComboBox {
+                    model: root.monitors;
+                    current-index <=> root.monitor-index;
+                }
+            }
+            Row {
+                Label {
+                    text: "First usage alert (%)";
+                }
+                SpinBox {
+                    minimum: 0;
+                    maximum: 100;
+                    value <=> root.first-alert;
+                }
+            }
+            Row {
+                Label {
+                    text: "Second usage alert (%)";
+                }
+                SpinBox {
+                    minimum: 0;
+                    maximum: 100;
+                    value <=> root.second-alert;
+                }
+            }
+            Row {
+                Label {
+                    text: "Permission wait (seconds)";
+                }
+                SpinBox {
+                    minimum: 5;
+                    maximum: 580;
+                    value <=> root.permission-wait;
+                }
+            }
+            Row {
+                Label {
+                    text: "Gemini requests per day";
+                }
+                SpinBox {
+                    minimum: 1;
+                    maximum: 100000;
+                    step-size: 100;
+                    value <=> root.gemini-limit;
+                }
+            }
+        }
+
+        CheckBox {
+            text: "Exact Claude usage from your Claude Code login";
+            checked <=> root.claude-account;
+        }
+
+        Hint {
+            text: "A usage alert set to 0 is off. A longer permission wait reaches Claude Code only after running ai-notch --install-hooks again.";
+        }
+
+        if root.error != "": Text {
+            text: root.error;
+            wrap: word-wrap;
+            color: #ff453a;
+        }
+
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            Button {
+                text: "Cancel";
+                clicked => {
+                    root.cancel();
+                }
+            }
+            Button {
+                text: "Save";
+                primary: true;
+                clicked => {
+                    root.save();
+                }
+            }
+        }
+    }
+}

@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use super::claude_account::ClaudeAccount;
 use super::claude_local::ClaudeLocal;
 use super::{Provider, Source, Usage};
+use crate::config::Config;
 
 /// How often the account endpoint is asked. It is unofficial, so it is asked rarely;
 /// the local logs keep the token details current in between.
@@ -36,8 +37,13 @@ impl Claude {
     }
 
     /// The account's latest limits, asking again once [`ACCOUNT_INTERVAL`] has passed.
-    /// A failed request counts as asked, so a broken endpoint is not hammered.
+    /// A failed request counts as asked, so a broken endpoint is not hammered. Turned
+    /// off in the config, nothing is asked and the local estimate shows.
     fn account(&mut self) -> Option<&Usage> {
+        if !Config::load().claude_account() {
+            self.account_checked = None;
+            return None;
+        }
         let due = self
             .account_checked
             .as_ref()

@@ -95,8 +95,11 @@ How a permission request works:
   also where you type an answer of your own.
 - When Claude finishes a turn, the notch shows its last message with a reply box.
   Type and press Enter, and Claude carries on with your reply as its next message,
-  without you switching to Claude Code. Leave the card alone and it closes after
-  8 seconds; "Open in app" brings that Claude window to the front instead.
+  without you switching to Claude Code. Start the reply with a slash command, such as
+  `/simplify` or `/beautiful-rust:rust-best-practices tidy main.rs`, and Claude loads
+  that skill first. Built-in commands such as `/clear` only work in the app. Leave the
+  card alone and it closes after 8 seconds; "Open in app" brings that Claude window to
+  the front instead.
 - ai-notch never approves anything by itself. If the notch is not running, if you do
   not answer within the permission wait (120 s by default), or if anything goes wrong,
   Claude Code shows its normal dialog.

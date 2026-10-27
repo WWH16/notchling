@@ -289,6 +289,11 @@ sessions (needs the user, since it changes the global settings).
   Permission requests and questions from other sessions go ahead of waiting reply
   cards. Stop now has the permission wait as its timeout, so this needs
   `--install-hooks` again. Commit `feat: reply to claude from the notch`.
+- [x] **8.16** A reply that starts with a slash command runs that skill. Claude Code
+  expands slash commands only in prompts typed in the app, so the hook turns
+  `/name arguments` into an instruction to invoke skill `name` with the Skill tool,
+  then follow it with the arguments, or say no skill has that name. Commit
+  `feat: run skills from notch replies`.
 
 ## Deviations from SPEC.md
 

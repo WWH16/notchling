@@ -142,6 +142,31 @@ fn to_event(input: &HookInput, ancestors: Vec<u32>) -> Option<Event> {
     }
 }
 
+/// What Claude reads for a reply typed on the notch. Claude Code expands a slash
+/// command only in a prompt typed in the app, so a reply such as
+/// `/beautiful-rust:rust-best-practices tidy this` becomes an instruction to load that
+/// skill with the Skill tool and then act on the rest.
+fn reply_context(message: &str) -> String {
+    let command = message
+        .strip_prefix('/')
+        .map(|rest| rest.split_once(char::is_whitespace).unwrap_or((rest, "")))
+        .filter(|(name, _)| !name.is_empty());
+    let Some((name, arguments)) = command else {
+        return format!("{REPLY_PREFIX}{message}");
+    };
+    let arguments = arguments.trim();
+    let then = if arguments.is_empty() {
+        "then follow it".to_owned()
+    } else {
+        format!("with these arguments, then follow it: {arguments}")
+    };
+    format!(
+        "The user replied from the ai-notch overlay with the slash command /{name}. \
+         Treat it as their next message: invoke the skill \"{name}\" with the Skill tool, \
+         {then}. If no skill has that name, say so."
+    )
+}
+
 /// What Claude says a call does, from the tool input's `description`, as Claude Code
 /// shows it above the command; empty when there is none.
 fn tool_description(tool_input: &Value) -> String {
@@ -188,7 +213,7 @@ fn decision_output(input: &HookInput, decision: Decision) -> Option<String> {
         ("Stop", Decision::Replied { message }) => json!({
             "hookSpecificOutput": {
                 "hookEventName": "Stop",
-                "additionalContext": format!("{REPLY_PREFIX}{message}"),
+                "additionalContext": reply_context(&message),
             }
         }),
         ("PreToolUse", Decision::Answered { answers }) => {
@@ -426,6 +451,32 @@ mod tests {
             None,
             "no reply lets Claude stop"
         );
+    }
+
+    #[test]
+    fn slash_replies_load_their_skill() {
+        let with_arguments = reply_context("/beautiful-rust:rust-best-practices  tidy main.rs ");
+        assert!(
+            with_arguments.contains("invoke the skill \"beautiful-rust:rust-best-practices\""),
+            "{with_arguments}"
+        );
+        assert!(
+            with_arguments
+                .ends_with("then follow it: tidy main.rs. If no skill has that name, say so."),
+            "{with_arguments}"
+        );
+
+        let bare = reply_context("/simplify");
+        assert!(bare.contains("invoke the skill \"simplify\""), "{bare}");
+        assert!(bare.contains("then follow it."), "{bare}");
+
+        for plain in ["Now add a test", "/ not a command", "path /tmp is fine"] {
+            assert_eq!(
+                reply_context(plain),
+                format!("{REPLY_PREFIX}{plain}"),
+                "{plain:?}"
+            );
+        }
     }
 
     #[test]

@@ -160,7 +160,7 @@ fn main() -> anyhow::Result<()> {
                     return;
                 };
                 let shown = lock_usages(&menu_usages).shown;
-                match native.show_menu(shown) {
+                match window::show_menu(shown) {
                     Some(MenuChoice::Quit) => {
                         // Only fails when the loop already stopped, which is what we want anyway.
                         let _ = slint::quit_event_loop();

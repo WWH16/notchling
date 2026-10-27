@@ -2,10 +2,11 @@
 
 use std::ffi::c_void;
 use std::mem;
+use std::sync::OnceLock;
 
 use anyhow::{Context, bail};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     CreateRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
     MONITORINFOEXW, SetWindowRgn,
@@ -15,13 +16,15 @@ use windows::Win32::UI::Shell::{
     QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CheckMenuRadioItem, CreatePopupMenu, DestroyMenu, GWL_EXSTYLE, GWL_STYLE,
-    GetCursorPos, GetWindowLongPtrW, HMENU, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND,
-    MF_SEPARATOR, MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, SW_HIDE, SW_SHOWNOACTIVATE,
+    AppendMenuW, CallWindowProcW, CheckMenuRadioItem, CreatePopupMenu, CreateWindowExW,
+    DestroyMenu, DestroyWindow, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetCursorPos,
+    GetWindowLongPtrW, HMENU, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MF_BYCOMMAND, MF_SEPARATOR,
+    MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, PostMessageW, SW_HIDE, SW_SHOWNOACTIVATE,
     SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
     SetWindowLongPtrW, SetWindowPos, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
-    WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SIZEBOX, WS_SYSMENU,
+    WM_NCACTIVATE, WM_NCPAINT, WM_NULL, WNDPROC, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SIZEBOX,
+    WS_SYSMENU,
 };
 use windows::core::{BOOL, HSTRING, PCWSTR, w};
 
@@ -29,6 +32,10 @@ use crate::usage::Provider;
 
 /// DPI that Windows treats as 100% scaling.
 const BASE_DPI: f32 = 96.0;
+
+/// winit's window procedure for the notch, which [`skip_frame_painting`] hands every
+/// other message to.
+static WINIT_WNDPROC: OnceLock<WNDPROC> = OnceLock::new();
 
 /// Menu command id for [`MenuChoice::Quit`]; 0 is reserved for "dismissed".
 const MENU_QUIT: usize = 1;
@@ -302,6 +309,30 @@ impl NotchWindow {
             );
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
         }
+        self.skip_frame_painting();
+    }
+
+    /// Puts [`skip_frame_painting`] in front of winit's window procedure. Even without
+    /// caption styles, Windows paints a title bar over a window that has a region when
+    /// it is activated or deactivated, which clicking the notch and opening its menu do.
+    fn skip_frame_painting(&self) {
+        // SAFETY: `hwnd` is a live window of this thread. The previous procedure is saved
+        // before the new one can run, and the new one only forwards to it.
+        unsafe {
+            let ours = skip_frame_painting as unsafe extern "system" fn(_, _, _, _) -> _;
+            let previous = SetWindowLongPtrW(self.hwnd, GWLP_WNDPROC, ours as usize as isize);
+            // SAFETY: a window procedure address read back as an integer is that
+            // procedure; 0 would mean none, which `WNDPROC` models as `None`.
+            let previous = mem::transmute::<isize, WNDPROC>(previous);
+            if WINIT_WNDPROC.set(previous).is_err() {
+                // Installed twice; put the first one back rather than forward to ourselves.
+                SetWindowLongPtrW(
+                    self.hwnd,
+                    GWLP_WNDPROC,
+                    previous.map_or(0, |p| p as usize as isize),
+                );
+            }
+        }
     }
 
     /// Hides the window behind Slint's back: hiding Slint's last window would end the
@@ -317,37 +348,6 @@ impl NotchWindow {
         let _ = unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
     }
 
-    /// Shows the right-click menu at the cursor, with `shown` marked as the provider on
-    /// the notch, and waits for a pick.
-    ///
-    /// Returns `None` when the menu is dismissed or cannot be shown.
-    pub fn show_menu(&self, shown: Provider) -> Option<MenuChoice> {
-        // SAFETY: the menu is created, used and destroyed here; `hwnd` is live and owns
-        // the menu while it tracks.
-        let picked = unsafe {
-            let menu = CreatePopupMenu().ok()?;
-            let picked = fill_menu(menu, shown).ok().and_then(|()| {
-                let mut cursor = POINT::default();
-                GetCursorPos(&mut cursor).ok()?;
-                // Without this the menu does not close when clicking elsewhere.
-                let _ = SetForegroundWindow(self.hwnd);
-                let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
-                let id = TrackPopupMenu(menu, flags, cursor.x, cursor.y, None, self.hwnd, None);
-                usize::try_from(id.0).ok()
-            });
-            let _ = DestroyMenu(menu);
-            picked?
-        };
-        match picked {
-            MENU_QUIT => Some(MenuChoice::Quit),
-            MENU_SETTINGS => Some(MenuChoice::Settings),
-            id => id
-                .checked_sub(MENU_FIRST_PROVIDER)
-                .and_then(|index| Provider::ALL.get(index))
-                .map(|&provider| MenuChoice::Show(provider)),
-        }
-    }
-
     /// Limits drawing and mouse input to `rect`; clicks outside it reach the windows below.
     pub fn clip_to(&self, rect: RECT) {
         // SAFETY: `hwnd` is live. On success the system owns the region; on failure we
@@ -358,6 +358,84 @@ impl NotchWindow {
                 let _ = DeleteObject(region.into());
             }
         }
+    }
+}
+
+/// The notch's window procedure: drops the frame painting Windows does on activation,
+/// and passes everything else to winit.
+unsafe extern "system" fn skip_frame_painting(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match message {
+        // Activation still changes; only the repaint is skipped. TRUE lets it deactivate.
+        WM_NCACTIVATE => LRESULT(1),
+        // The notch has no frame to paint.
+        WM_NCPAINT => LRESULT(0),
+        _ => {
+            let winit = WINIT_WNDPROC.get().copied().flatten();
+            // SAFETY: `winit` is the procedure this window had before ours, and these are
+            // the arguments Windows passed us for it.
+            unsafe { CallWindowProcW(winit, hwnd, message, wparam, lparam) }
+        }
+    }
+}
+
+/// Shows the right-click menu at the cursor, with `shown` marked as the provider on the
+/// notch, and waits for a pick.
+///
+/// The menu belongs to a hidden helper window, not the notch. A menu's owner has to be
+/// the foreground window, and activating the notch makes Windows paint a caption over
+/// it, whatever its styles say.
+///
+/// Returns `None` when the menu is dismissed or cannot be shown.
+#[must_use]
+pub fn show_menu(shown: Provider) -> Option<MenuChoice> {
+    // SAFETY: the helper window and the menu are created, used and destroyed here on
+    // this thread; the helper owns the menu while it tracks.
+    let picked = unsafe {
+        let owner = CreateWindowExW(
+            WS_EX_TOOLWINDOW,
+            w!("STATIC"),
+            PCWSTR::null(),
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .ok()?;
+        let picked = CreatePopupMenu().ok().and_then(|menu| {
+            let picked = fill_menu(menu, shown).ok().and_then(|()| {
+                let mut cursor = POINT::default();
+                GetCursorPos(&mut cursor).ok()?;
+                // Without this the menu does not close when clicking elsewhere.
+                let _ = SetForegroundWindow(owner);
+                let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
+                let id = TrackPopupMenu(menu, flags, cursor.x, cursor.y, None, owner, None);
+                // The TrackPopupMenu docs advise this, so the next menu closes properly.
+                let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
+                usize::try_from(id.0).ok()
+            });
+            let _ = DestroyMenu(menu);
+            picked
+        });
+        let _ = DestroyWindow(owner);
+        picked?
+    };
+    match picked {
+        MENU_QUIT => Some(MenuChoice::Quit),
+        MENU_SETTINGS => Some(MenuChoice::Settings),
+        id => id
+            .checked_sub(MENU_FIRST_PROVIDER)
+            .and_then(|index| Provider::ALL.get(index))
+            .map(|&provider| MenuChoice::Show(provider)),
     }
 }
 

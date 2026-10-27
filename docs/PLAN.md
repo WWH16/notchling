@@ -180,6 +180,11 @@ sessions (needs the user, since it changes the global settings).
   `PermissionDenied` hooks settle it, and `Stop` clears the session); a Windows caption
   no longer appears over the notch after the right-click menu. Needs
   `--install-hooks` again. Commit `fix: settle requests answered in claude code`.
+- [x] **7.5** The title bar still showed after the right-click menu: Windows paints it
+  on activation whatever the styles say. The notch now skips that painting in its own
+  window procedure, and the menu belongs to a hidden helper window. Checked on the live
+  notch with the menu open and after it closed.
+  Commit `fix: stop windows painting a title bar over the notch`.
 
 ## Deviations from SPEC.md
 

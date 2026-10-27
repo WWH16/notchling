@@ -68,9 +68,14 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   the tool call; the installer uses it for those three events, which fire on every
   tool call.
 - winit keeps `WS_CAPTION` on frameless windows and hides it in `WM_NCCALCSIZE`. With a
-  window region set, activating the window (`SetForegroundWindow` for the right-click
-  menu) made Windows paint a classic caption and its buttons over the notch. The notch
-  now drops the caption and frame styles and is a plain `WS_POPUP`.
+  window region set, activating or deactivating the window (a click on the notch, or
+  `SetForegroundWindow` for the right-click menu) made Windows paint a classic title
+  bar, title text and all, across the top of the window, even outside its region.
+  Dropping the caption styles (plain `WS_POPUP`) was not enough: the bar still came
+  with the menu. What stopped it: the notch's own window procedure, put in front of
+  winit's, answers `WM_NCACTIVATE` and `WM_NCPAINT` without the default painting, and
+  the menu now belongs to a hidden helper window, so opening it no longer activates
+  the notch.
 
 ## V2: Codex CLI (confirmed, exact %)
 

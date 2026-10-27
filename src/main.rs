@@ -84,8 +84,9 @@ const NEEDS_INPUT_ALERT: Duration = Duration::from_secs(15);
 /// How long a usage alert stays on the notch.
 const USAGE_ALERT: Duration = Duration::from_secs(10);
 
-/// How often silent sessions are checked against the keep-awake safety window.
-const AWAKE_CHECK: Duration = Duration::from_secs(60);
+/// How often silent sessions are checked against the keep-awake safety window, and the
+/// working time on the notch ticks; it shows whole minutes.
+const AWAKE_CHECK: Duration = Duration::from_secs(15);
 
 /// How often Claude Code's logs are checked; each check parses only appended lines.
 /// Also how often Claude's reset countdown ticks, which shows whole minutes. The account
@@ -750,11 +751,13 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
     let awake = Arc::new(Mutex::new(KeepAwake::default()));
     let awake_check = Timer::default();
     let expiring = Arc::clone(&awake);
+    let weak = notch.as_weak();
     awake_check.start(TimerMode::Repeated, AWAKE_CHECK, move || {
-        expiring
-            .lock()
-            .expect("keep-awake lock poisoned")
-            .expire(Instant::now());
+        let mut awake = lock_awake(&expiring);
+        awake.expire(Instant::now());
+        if let Some(notch) = weak.upgrade() {
+            show_activity(&notch, &awake);
+        }
     });
 
     let weak = notch.as_weak();
@@ -770,12 +773,16 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
                 show_requests(&notch, &requests.lock().expect("requests lock poisoned"));
             }
             Update::Session(Event::TaskDone { origin }) => {
-                lock_awake(&awake).stopped(&origin.session_id);
+                let mut awake = lock_awake(&awake);
+                awake.stopped(&origin.session_id);
+                show_activity(&notch, &awake);
                 let text = session_alert_text("Done", &origin.project);
                 show_alert(&notch, &alert, AlertKind::Done, text, origin.ancestors);
             }
             Update::Session(Event::NeedsInput { origin, .. }) => {
-                lock_awake(&awake).stopped(&origin.session_id);
+                let mut awake = lock_awake(&awake);
+                awake.stopped(&origin.session_id);
+                show_activity(&notch, &awake);
                 let text = session_alert_text("Needs your input", &origin.project);
                 show_alert(
                     &notch,
@@ -786,7 +793,9 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
                 );
             }
             Update::Session(Event::PromptSubmitted { origin }) => {
-                lock_awake(&awake).started(origin.session_id, Instant::now());
+                let mut awake = lock_awake(&awake);
+                awake.started(origin.session_id, Instant::now());
+                show_activity(&notch, &awake);
             }
             // The server turns these into `Update::Requests`.
             // The server turns these into `Update::Requests`.
@@ -798,6 +807,27 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
 
 fn lock_awake(awake: &Mutex<KeepAwake>) -> std::sync::MutexGuard<'_, KeepAwake> {
     awake.lock().expect("keep-awake lock poisoned")
+}
+
+/// Shows how long Claude has been working on the idle notch, or nothing while it rests.
+fn show_activity(notch: &Notch, awake: &KeepAwake) {
+    let (sessions, time) = awake
+        .activity(Instant::now())
+        .map_or((0, String::new()), |(sessions, longest)| {
+            (sessions, working_time(longest))
+        });
+    notch.set_activity(time.into());
+    notch.set_activity_sessions(i32::try_from(sessions).unwrap_or(i32::MAX));
+}
+
+/// "<1m", "3m" or "1h 05m": how long a session has worked, in whole minutes.
+fn working_time(elapsed: Duration) -> String {
+    let minutes = elapsed.as_secs() / 60;
+    match minutes {
+        0 => "<1m".to_owned(),
+        1..60 => format!("{minutes}m"),
+        _ => format!("{}h {:02}m", minutes / 60, minutes % 60),
+    }
 }
 
 /// The alert on screen: which one it is, and the session a click focuses, if any.
@@ -953,4 +983,23 @@ fn on_native_window(
             Err(_) => on_native_window(notch, attempts_left - 1, ready),
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn working_time_shows_whole_minutes() {
+        let cases = [
+            (59, "<1m"),
+            (180, "3m"),
+            (3599, "59m"),
+            (3900, "1h 05m"),
+            (7200, "2h 00m"),
+        ];
+        for (secs, want) in cases {
+            assert_eq!(working_time(Duration::from_secs(secs)), want, "{secs} s");
+        }
+    }
 }

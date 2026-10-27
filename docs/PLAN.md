@@ -237,7 +237,10 @@ sessions (needs the user, since it changes the global settings).
   placed again when its size changes. A short command now starts at the top of its
   box instead of the middle. Checked offscreen at 100% and 150%. Commit
   `feat: theme tokens and windows text size`.
-- [ ] **8.6** Live Claude activity in the idle pill.
+- [x] **8.6** Live Claude activity in the idle pill. From the keep-awake tracker:
+  while sessions work, the pill grows by a dot and the longest session's time ("12m",
+  "2 · 1h 05m"); upright, the count stacks under the time as "×2". Ticks every 15 s.
+  Commit `feat: show claude's working time on the notch`.
 - [ ] **8.7** Limit forecast in the hover panel.
 - [ ] **8.8** "Start at sign-in" toggle in Settings.
 - [ ] **8.9** Investigate "Always allow" through the hook API; build it if supported.

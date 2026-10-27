@@ -1,4 +1,5 @@
-//! Keeps the PC from sleeping while any Claude Code session is working.
+//! Keeps the PC from sleeping while any Claude Code session is working, and says how
+//! long they have been at it.
 //!
 //! The display may still turn off; only system sleep is blocked. Windows ties the
 //! request to the calling thread, so every method must run on the UI thread.
@@ -31,6 +32,18 @@ impl KeepAwake {
     pub fn stopped(&mut self, session_id: &str) {
         self.working.remove(session_id);
         self.apply();
+    }
+
+    /// How many sessions are working at `now`, and for how long the longest-running one
+    /// has, or `None` while none is.
+    #[must_use]
+    pub fn activity(&self, now: Instant) -> Option<(usize, Duration)> {
+        let longest = self
+            .working
+            .values()
+            .map(|since| now.saturating_duration_since(*since))
+            .max()?;
+        Some((self.working.len(), longest))
     }
 
     /// Forgets sessions that have been silent for longer than [`SAFETY_RELEASE`].
@@ -78,6 +91,19 @@ mod tests {
         assert!(awake.holding, "b is still working");
         awake.stopped("b");
         assert!(!awake.holding);
+    }
+
+    #[test]
+    fn activity_counts_sessions_and_times_the_longest() {
+        let start = Instant::now();
+        let mut awake = KeepAwake::default();
+        assert_eq!(awake.activity(start), None);
+        awake.started("a".to_owned(), start);
+        awake.started("b".to_owned(), start + Duration::from_secs(60));
+        let later = start + Duration::from_secs(300);
+        assert_eq!(awake.activity(later), Some((2, Duration::from_secs(300))));
+        awake.stopped("a");
+        assert_eq!(awake.activity(later), Some((1, Duration::from_secs(240))));
     }
 
     #[test]

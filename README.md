@@ -30,7 +30,8 @@ exe's path, so moving it later means installing the hooks again.
 Start `ai-notch.exe`. Only one copy runs at a time.
 
 The pill shows CPU, GPU and a ring with the share of the selected provider's limit.
-The ring turns amber at 80% and red at 95%.
+The ring turns amber at 80% and red at 95%. While Claude Code is working, an orange dot
+shows how long, such as "12m", or "2 · 12m" for two sessions.
 
 - **Hover** the pill for a moment, or **click** it, to see RAM, VRAM, and the
   provider's limits as rings with the clock time each one resets ("resets 2:20 PM",

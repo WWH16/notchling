@@ -426,6 +426,10 @@ export component Notch inherits Window {
     in property <string> usage-detail;
     in property <Health> status;
     in property <bool> usage-estimated;
+    // How long the longest-working Claude session has been at it, e.g. "3m", and how many
+    // sessions are working; empty and 0 while Claude rests.
+    in property <string> activity;
+    in property <int> activity-sessions;
     private property <color> accent: self.usage-provider == Provider.chatgpt ? Theme.chatgpt
         : self.usage-provider == Provider.gemini ? Theme.gemini : Theme.claude;
     // The provider's colour, turning amber and then red as a limit runs out.
@@ -572,10 +576,11 @@ export component Notch inherits Window {
     private property <bool> vertical: self.edge == NotchEdge.left || self.edge == NotchEdge.right;
     private property <bool> tucked: self.tuck && self.vertical && !self.hovered && !self.expanded
         && !self.has-request && !self.alert-active && !self.floating;
+    private property <bool> working: self.activity != "";
     private property <length> idle-width: self.tucked ? 6px
-        : (self.vertical ? 54px : 250px) * Theme.text-scale;
+        : (self.vertical ? 54px : self.working ? 330px : 250px) * Theme.text-scale;
     private property <length> idle-height: self.tucked ? 96px
-        : (self.vertical ? 140px : 30px) * Theme.text-scale;
+        : (self.vertical ? (self.working ? 196px : 140px) : 30px) * Theme.text-scale;
     // Wide enough for "ChatGPT · Outage" and the ESTIMATED badge on one line.
     private property <length> open-width: (self.vertical ? 230px : 460px) * Theme.text-scale;
     private property <length> open-height: (self.vertical ? 304px : 106px) * Theme.text-scale;
@@ -642,7 +647,8 @@ export component Notch inherits Window {
         clip: true;
         accessible-role: groupbox;
         accessible-label: "ai-notch";
-        accessible-description: "CPU \{round(root.cpu * 100)}%, GPU \{round(root.gpu * 100)}%, \{root.provider-name} \{root.usage-short}";
+        accessible-description: "CPU \{round(root.cpu * 100)}%, GPU \{round(root.gpu * 100)}%, \{root.provider-name} \{root.usage-short}"
+            + (root.working ? ", Claude working \{root.activity}" : "");
 
         hover := TouchArea {
             mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.default;
@@ -705,6 +711,21 @@ export component Notch inherits Window {
                         vertical-alignment: center;
                     }
                 }
+                if root.working: HorizontalLayout {
+                    spacing: 6px;
+                    Dot {
+                        fill: Theme.claude;
+                    }
+                    Text {
+                        text: root.activity-sessions > 1
+                            ? "\{root.activity-sessions} · \{root.activity}" : root.activity;
+                        color: Theme.text;
+                        font-family: Theme.font;
+                        font-size: Theme.size-value;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
             }
             if root.vertical: VerticalLayout {
                 alignment: center;
@@ -731,6 +752,32 @@ export component Notch inherits Window {
                         color: Theme.text;
                         font-family: Theme.font;
                         font-size: Theme.size-value;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
+                }
+                if root.working: VerticalLayout {
+                    spacing: 3px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Dot {
+                            height: 6px;
+                            fill: Theme.claude;
+                        }
+                    }
+                    Text {
+                        text: root.activity;
+                        color: Theme.text;
+                        font-family: Theme.font;
+                        font-size: Theme.size-label;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
+                    if root.activity-sessions > 1: Text {
+                        text: "×\{root.activity-sessions}";
+                        color: Theme.muted;
+                        font-family: Theme.font;
+                        font-size: Theme.size-label;
                         font-weight: 600;
                         horizontal-alignment: center;
                     }

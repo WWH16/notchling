@@ -404,10 +404,11 @@ Motion (each follows Windows "Show animations", and the agent motion has its own
 - [x] **10.11** Moving logo: while working, the agent's logo slides along the pill to the
   right and back, or nudges right on each new tool call; it settles when the agent
   stops. Commit `feat: slide the working agent logo along the pill`.
-- [ ] **10.12** Request pulse: when Claude asks for something (a permission, a
+- [x] **10.12** Request pulse: when Claude asks for something (a permission, a
   question, a reply), the pill gives two or three quick pulses, brighter outline and a
   slight swell, in under half a second, then grows into the card. Follows
-  `agent_motion` and "Show animations"; with motion off the card just appears.
+  `agent_motion` and "Show animations"; with motion off the card just appears. Commit
+  `feat: pulse the pill before opening a request card`.
 - [ ] **10.13** Card transitions: the pill grows into the request card and shrinks back
   into the outcome pill (10.4) with one spring-like motion instead of a cut.
 

@@ -777,8 +777,8 @@ export component Notch inherits Window {
     private property <bool> reply-touched;
     Timer {
         interval: 8s;
-        running: root.has-request && root.request-kind == RequestKind.reply && !root.reply-touched
-            && root.reply-text == "" && !reply-input.has-focus;
+        running: root.has-request && !root.request-pulsing && root.request-kind == RequestKind.reply
+            && !root.reply-touched && root.reply-text == "" && !reply-input.has-focus;
         triggered => {
             root.decide(root.request-id, Choice.ask-in-app);
         }
@@ -788,14 +788,46 @@ export component Notch inherits Window {
     callback request-shown-changed();
     changed has-request => {
         if self.has-request {
-            self.arm();
+            if self.animate-agent {
+                self.request-pulsing = true;
+                self.pulse-from = animation-tick();
+                self.request-armed = false;
+                arm-timer.stop();
+                pulse-timer.stop();
+                pulse-timer.start();
+            } else {
+                self.request-pulsing = false;
+                self.arm();
+            }
+        } else {
+            self.request-pulsing = false;
+            pulse-timer.stop();
         }
         self.request-shown-changed();
     }
     changed request-id => {
-        self.arm();
+        if !self.request-pulsing {
+            self.arm();
+        }
         self.reply-text = "";
         self.reply-touched = false;
+    }
+
+    // Three quick pulses on the pill before it grows into a request card.
+    private property <bool> request-pulsing;
+    private property <duration> pulse-duration: 360ms;
+    private property <duration> pulse-from;
+    private property <float> pulse-wave: self.request-pulsing
+        ? 0.5 - 0.5 * cos(clamp((animation-tick() - self.pulse-from) / self.pulse-duration, 0, 1) * 3 * 360deg)
+        : 0;
+    pulse-timer := Timer {
+        interval: root.pulse-duration;
+        running: false;
+        triggered => {
+            root.request-pulsing = false;
+            self.stop();
+            root.arm();
+        }
     }
 
     // Allow and Deny ignore clicks for a moment after a card appears, so a click meant
@@ -1021,8 +1053,8 @@ export component Notch inherits Window {
         y: root.edge == NotchEdge.top ? 0
             : root.edge == NotchEdge.bottom ? parent.height - self.height
             : (parent.height - self.height) / 2;
-        width: root.drawn-idle-width;
-        height: root.drawn-idle-height;
+        width: root.drawn-idle-width + (root.vertical ? 4px : 10px) * Theme.text-scale * root.pulse-wave;
+        height: root.drawn-idle-height + (root.vertical ? 10px : 4px) * Theme.text-scale * root.pulse-wave;
         background: Theme.surface;
         // The side against the screen edge stays square, where the shoulders join it;
         // every other corner is round. Each side's roundness runs from 0 (square) to 1
@@ -1676,9 +1708,19 @@ export component Notch inherits Window {
             radius-bottom-left: pill.border-bottom-left-radius;
             radius-bottom-right: pill.border-bottom-right-radius;
         }
+        if root.request-pulsing: PillOutline {
+            pill-width: pill.width;
+            pill-height: pill.height;
+            radius-top-left: pill.border-top-left-radius;
+            radius-top-right: pill.border-top-right-radius;
+            radius-bottom-left: pill.border-bottom-left-radius;
+            radius-bottom-right: pill.border-bottom-right-radius;
+            stroke: 2px;
+            fill: Theme.claude.with-alpha(0.35 + 0.65 * root.pulse-wave);
+        }
 
         states [
-            request when root.has-request: {
+            request when root.has-request && !root.request-pulsing: {
                 pill.width: root.request-width;
                 pill.height: root.request-height;
                 idle-row.opacity: 0;

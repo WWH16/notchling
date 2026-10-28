@@ -551,14 +551,15 @@ fn replace(notch: &Notch, placement: &mut Placement, clip: &Rc<dyn Fn()>) {
     Timer::single_shot(MONITOR_MOVE_SETTLE, move || clip());
 }
 
-/// Keeps the notch in line with Windows' "Show animations" and text size settings until
-/// the returned timer is dropped.
+/// Keeps the notch in line with Windows' "Show animations", text size and app mode
+/// settings until the returned timer is dropped.
 fn follow_system_settings(notch: &Notch) -> Timer {
     notch
         .global::<ui::Theme>()
         .set_mono(window::mono_font().into());
     let apply = |notch: &Notch| {
         let theme = notch.global::<ui::Theme>();
+        theme.set_light(window::light_theme());
         theme.set_reduce_motion(!window::animations_enabled());
         theme.set_text_scale(window::text_scale());
     };

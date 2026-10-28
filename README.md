@@ -52,7 +52,9 @@ circles the notch's outline in the provider's colour.
   you track), open the settings, or quit.
 - **Click** a "Needs your input" alert to bring that Claude Code window to the front.
 
-The notch grows with Windows' text size (Settings, Accessibility, Text size).
+The notch grows with Windows' text size (Settings, Accessibility, Text size), and the
+hover panel and Settings window follow Windows' Light or Dark app mode (Settings,
+Personalization, Colors).
 
 With Windows' "Show animations" turned off (Settings, Accessibility, Visual effects),
 the notch changes shape at once instead of morphing and gliding.

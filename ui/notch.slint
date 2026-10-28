@@ -4,15 +4,21 @@
 export { Settings } from "settings.slint";
 
 export global Theme {
-    // Near-black, tinted a touch cool, so the shape reads as a cut-out of the screen.
-    out property <color> surface: #0b0b0d;
-    out property <color> text: #f5f5f7;
-    out property <color> muted: #8e8e93;
-    out property <color> track: #2c2c2e;
+    // Windows' app mode: when Light, the open hover panel switches to light colours while
+    // the idle pill stays near-black against the screen edge.
+    in property <bool> light;
+    in-out property <bool> panel-open;
+    out property <bool> light-panel: self.light && self.panel-open;
+    // Near-black, tinted a touch cool, so the shape reads as a cut-out of the screen;
+    // warm off-white when the panel opens in Windows Light mode.
+    out property <color> surface: self.light-panel ? #f5f5f7 : #0b0b0d;
+    out property <color> text: self.light-panel ? #1c1c1e : #f5f5f7;
+    out property <color> muted: self.light-panel ? #68686d : #8e8e93;
+    out property <color> track: self.light-panel ? #e0e0e6 : #2c2c2e;
     // The hairline between the panel's usage and its system readings.
-    out property <color> rule: #1f1f22;
+    out property <color> rule: self.light-panel ? #d8d8de : #1f1f22;
     // Borders, and an outline button while pressed.
-    out property <color> outline: #3a3a3c;
+    out property <color> outline: self.light-panel ? #c7c7cc : #3a3a3c;
     // The command box on a request card.
     out property <color> code-surface: #161618;
     out property <color> code-text: #e5e5ea;
@@ -23,9 +29,9 @@ export global Theme {
     out property <color> claude: #d97757;
     out property <color> chatgpt: #10a37f;
     out property <color> gemini: #4c8df6;
-    out property <color> good: #30d158;
-    out property <color> warn: #ff9f0a;
-    out property <color> bad: #ff453a;
+    out property <color> good: self.light-panel ? #248a3d : #30d158;
+    out property <color> warn: self.light-panel ? #c93400 : #ff9f0a;
+    out property <color> bad: self.light-panel ? #d70015 : #ff453a;
     // A limit's colour: green while there is room, amber from 80% used, red from 95%,
     // where the usage alerts fire by default.
     public pure function level(fraction: float) -> color {
@@ -1056,6 +1062,10 @@ export component Notch inherits Window {
     // off the edge for an instant does not shut it. A click keeps it open until the next
     // click, which closes it until the pointer leaves.
     private property <bool> expanded;
+    private property <bool> panel-open: self.expanded && !self.has-request && !self.alert-active;
+    changed panel-open => {
+        Theme.panel-open = self.panel-open;
+    }
     private property <bool> pinned;
     private property <bool> dismissed;
     private property <bool> hovered: hover.has-hover;
@@ -1884,6 +1894,16 @@ export component Notch inherits Window {
             }
         }
 
+        if Theme.light-panel && !root.working && !root.request-pulsing: PillOutline {
+            pill-width: pill.width;
+            pill-height: pill.height;
+            radius-top-left: pill.border-top-left-radius;
+            radius-top-right: pill.border-top-right-radius;
+            radius-bottom-left: pill.border-bottom-left-radius;
+            radius-bottom-right: pill.border-bottom-right-radius;
+            stroke: 1px;
+            fill: Theme.outline;
+        }
         if root.working: WorkingGlow {
             fill: root.accent;
             animate-glow: root.animate-agent;

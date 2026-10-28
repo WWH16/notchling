@@ -428,7 +428,8 @@ Suggested UI polish:
   `feat: show all tracked providers' rings in the panel`.
 - [x] **10.19** Optional sound when a request arrives, off by default. Commit
   `feat: optional sound when a request arrives`.
-- [ ] **10.20** Light theme for the panel and Settings, following Windows' app mode.
+- [x] **10.20** Light theme for the panel and Settings, following Windows' app mode.
+  Commit `feat: follow windows light mode in the panel and settings`.
 
 ## Deviations from SPEC.md
 

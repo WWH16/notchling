@@ -34,6 +34,13 @@ export component Settings inherits Window {
     in-out property <bool> track-claude;
     in-out property <bool> track-chatgpt;
     in-out property <bool> track-gemini;
+    in property <bool> light;
+    changed light => {
+        Palette.color-scheme = self.light ? ColorScheme.light : ColorScheme.dark;
+    }
+    init => {
+        Palette.color-scheme = self.light ? ColorScheme.light : ColorScheme.dark;
+    }
     // Why the last save failed; empty when it did not.
     in property <string> error;
     callback save();

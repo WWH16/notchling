@@ -190,6 +190,27 @@ pub fn animations_enabled() -> bool {
     enabled.as_bool()
 }
 
+/// Whether Windows' "Choose your default app mode" is Light. Assumed Dark when unset.
+#[must_use]
+pub fn light_theme() -> bool {
+    let mut light = 0u32;
+    let mut size = mem::size_of::<u32>() as u32;
+    // SAFETY: the key and value names are static wide strings; RRF_RT_REG_DWORD makes the
+    // call write at most `size` bytes, one u32, into `light`, which outlives it.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize"),
+            w!("AppsUseLightTheme"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&raw mut light).cast()),
+            Some(&mut size),
+        )
+    };
+    status.is_ok() && light != 0
+}
+
 /// Windows' text size (Settings, Accessibility, Text size) as a factor, 1 at 100%.
 #[must_use]
 pub fn text_scale() -> f32 {

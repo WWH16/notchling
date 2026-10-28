@@ -52,6 +52,7 @@ pub fn open(
     settings.set_track_claude(config.tracks(Provider::Claude));
     settings.set_track_chatgpt(config.tracks(Provider::ChatGpt));
     settings.set_track_gemini(config.tracks(Provider::Gemini));
+    settings.set_light(window::light_theme());
     settings.set_error(SharedString::new());
 
     let weak = settings.as_weak();

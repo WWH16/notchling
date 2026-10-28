@@ -417,7 +417,8 @@ Suggested UI polish:
 
 - [x] **10.14** The usage ring fills smoothly to a new value instead of jumping. Commit
   `feat: ease the usage ring to each new reading`.
-- [ ] **10.15** A pulse on the ring when a usage alert fires, amber or red as the alert.
+- [x] **10.15** A pulse on the ring when a usage alert fires, amber or red as the alert.
+  Commit `feat: pulse the usage ring on a usage alert`.
 - [ ] **10.16** Several pending requests: small dots under the card, one per request,
   instead of only "2 more".
 - [ ] **10.17** Keyboard hints on the buttons when shortcuts are on (Ctrl+Alt+Y,

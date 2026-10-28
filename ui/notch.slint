@@ -206,15 +206,29 @@ component MarkRing inherits Rectangle {
     in property <color> level;
     in property <color> mark;
     in property <length> size: 22px * Theme.text-scale;
+    // From 0 to 1 during a usage-alert pulse; 0 when still.
+    in property <float> pulse;
+    in property <color> pulse-color: self.level;
     width: self.size;
     min-height: self.size;
 
+    if root.pulse > 0.01: Rectangle {
+        private property <length> halo: root.size + 6px * Theme.text-scale * root.pulse;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: self.halo;
+        height: self.halo;
+        background: transparent;
+        border-radius: self.width / 2;
+        border-width: 1.5px;
+        border-color: root.pulse-color.with-alpha(0.65 * (1 - root.pulse));
+    }
     Ring {
         y: (parent.height - self.height) / 2;
         width: root.size;
         fraction: root.fraction;
-        fill: root.level;
-        thickness: 2px;
+        fill: root.pulse > 0.01 ? root.pulse-color : root.level;
+        thickness: 2px + 0.8px * sin(root.pulse * 180deg);
     }
     Logo {
         x: (parent.width - self.width) / 2;
@@ -874,10 +888,37 @@ export component Notch inherits Window {
     in property <Provider> alert-provider;
     in property <string> alert-text;
     callback alert-clicked();
+    private property <bool> usage-alert: self.alert-kind == AlertKind.usage-high
+        || self.alert-kind == AlertKind.usage-critical;
     private property <color> alert-mark: self.alert-kind == AlertKind.usage-critical ? Theme.bad
         : self.alert-kind == AlertKind.usage-high ? Theme.warn
         : self.alert-provider == Provider.chatgpt ? Theme.chatgpt
         : self.alert-provider == Provider.gemini ? Theme.gemini : Theme.claude;
+    // Two pulses on the usage ring when a usage alert fires and when it settles.
+    private property <bool> ring-pulsing;
+    private property <duration> ring-pulse-duration: 1200ms;
+    private property <duration> ring-pulse-from;
+    private property <color> ring-pulse-color: Theme.warn;
+    private property <float> ring-pulse: self.ring-pulsing
+        ? mod(clamp((animation-tick() - self.ring-pulse-from) / self.ring-pulse-duration, 0, 1) * 2, 1)
+        : 0;
+    changed alert-active => {
+        if !Theme.reduce-motion && self.usage-alert {
+            self.ring-pulse-color = self.alert-kind == AlertKind.usage-critical ? Theme.bad : Theme.warn;
+            self.ring-pulsing = true;
+            self.ring-pulse-from = animation-tick();
+            ring-pulse-timer.stop();
+            ring-pulse-timer.start();
+        }
+    }
+    ring-pulse-timer := Timer {
+        interval: root.ring-pulse-duration;
+        running: false;
+        triggered => {
+            root.ring-pulsing = false;
+            self.stop();
+        }
+    }
 
     // The size the shape is heading to, shoulders included, with room for the request
     // card's spring. Rust clips the window to it, growing the region at once and
@@ -1142,6 +1183,8 @@ export component Notch inherits Window {
                         fraction: root.usage-fraction;
                         level: Theme.level(root.usage-fraction);
                         mark: root.accent;
+                        pulse: root.ring-pulse;
+                        pulse-color: root.ring-pulse-color;
                     }
                     Value {
                         text: root.usage-short;
@@ -1192,6 +1235,8 @@ export component Notch inherits Window {
                             fraction: root.usage-fraction;
                             level: Theme.level(root.usage-fraction);
                             mark: root.accent;
+                            pulse: root.ring-pulse;
+                            pulse-color: root.ring-pulse-color;
                         }
                     }
                     Value {
@@ -1697,7 +1742,15 @@ export component Notch inherits Window {
                 root.alert-clicked();
             }
 
-            Logo {
+            if root.usage-alert: MarkRing {
+                provider: root.alert-provider;
+                fraction: root.alert-kind == AlertKind.usage-critical ? 0.95 : 0.8;
+                level: root.alert-mark;
+                mark: root.alert-mark;
+                pulse: root.ring-pulse;
+                pulse-color: root.alert-mark;
+            }
+            if !root.usage-alert: Logo {
                 provider: root.alert-provider;
                 fill: root.alert-mark;
             }

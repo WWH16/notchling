@@ -401,9 +401,9 @@ Motion (each follows Windows "Show animations", and the agent motion has its own
   outline and breathes, brightening and fading over about 2 s, in the provider's
   colour. Stops when the agent stops; a still outline when motion is off. Checked
   offscreen with motion on and off. Commit `feat: working glow around the notch`.
-- [ ] **10.11** Moving logo: while working, the agent's logo slides along the pill to the
+- [x] **10.11** Moving logo: while working, the agent's logo slides along the pill to the
   right and back, or nudges right on each new tool call; it settles when the agent
-  stops.
+  stops. Commit `feat: slide the working agent logo along the pill`.
 - [ ] **10.12** Request pulse: when Claude asks for something (a permission, a
   question, a reply), the pill gives two or three quick pulses, brighter outline and a
   slight swell, in under half a second, then grows into the card. Follows

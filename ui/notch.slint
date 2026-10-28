@@ -583,15 +583,15 @@ component WorkingGlow inherits Rectangle {
 // from the hub at `angle` with fixed length and thickness.
 component ClaudeRay inherits Path {
     in property <angle> angle;
-    in property <float> reach: 45.5;
-    in property <float> tip-width: 3.1;
+    in property <float> reach: 46.5;
+    in property <float> tip-width: 2.6;
     in property <color> ray-fill: Theme.claude;
     private property <float> dx: cos(self.angle);
     private property <float> dy: sin(self.angle);
     private property <float> px: self.dy;
     private property <float> py: -self.dx;
-    private property <float> root-dist: 4.0;
-    private property <float> root-width: 2.2;
+    private property <float> root-dist: 6.0;
+    private property <float> root-width: 1.5;
 
     width: 100%;
     height: 100%;
@@ -654,7 +654,7 @@ component WorkingLogo inherits Rectangle {
         height: root.mark-size;
 
         Rectangle {
-            private property <length> hub: root.mark-size * 0.28;
+            private property <length> hub: root.mark-size * 0.25;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             width: self.hub;
@@ -664,11 +664,11 @@ component WorkingLogo inherits Rectangle {
         }
 
         for base-angle[i] in root.base-angles: ClaudeRay {
-            // Minimal continuous drift (±5deg max inside a 30deg slot) so lines stay
-            // clearly separated and never bunch up or pause.
-            private property <float> w1: sin(root.phase + i * 137.5deg);
-            private property <float> w2: cos(root.phase * 2 - i * 223deg);
-            angle: base-angle + 3.5deg * self.w1 + 1.5deg * self.w2;
+            // Smooth neighbor phase step (60deg/30deg instead of opposing phases) so
+            // adjacent lines never pinch toward each other; minimum separation stays ≥27deg.
+            private property <float> w1: sin(root.phase + i * 60deg);
+            private property <float> w2: cos(root.phase * 2 + i * 30deg);
+            angle: base-angle + 2.5deg * self.w1 + 1.0deg * self.w2;
         }
     }
 }

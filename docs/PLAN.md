@@ -397,9 +397,10 @@ Answering requests:
 Motion (each follows Windows "Show animations", and the agent motion has its own
 `agent_motion` setting, on by default, as a checkbox in Settings):
 
-- [ ] **10.10** Working glow: while an agent works, a soft light circles the notch's
+- [x] **10.10** Working glow: while an agent works, a soft light circles the notch's
   outline and breathes, brightening and fading over about 2 s, in the provider's
-  colour. Stops when the agent stops; a still outline when motion is off.
+  colour. Stops when the agent stops; a still outline when motion is off. Checked
+  offscreen with motion on and off. Commit `feat: working glow around the notch`.
 - [ ] **10.11** Moving logo: while working, the agent's logo slides along the pill to the
   right and back, or nudges right on each new tool call; it settles when the agent
   stops.

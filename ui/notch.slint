@@ -406,6 +406,131 @@ component Shoulder inherits Path {
     Close { }
 }
 
+// An outline matching the pill's shape and corners.
+component PillOutline inherits Rectangle {
+    in property <length> pill-width;
+    in property <length> pill-height;
+    in property <length> radius-top-left;
+    in property <length> radius-top-right;
+    in property <length> radius-bottom-left;
+    in property <length> radius-bottom-right;
+    in property <length> stroke: 1.5px;
+    in property <color> fill;
+
+    width: self.pill-width;
+    height: self.pill-height;
+    background: transparent;
+    border-width: self.stroke;
+    border-color: self.fill;
+    border-top-left-radius: self.radius-top-left;
+    border-top-right-radius: self.radius-top-right;
+    border-bottom-left-radius: self.radius-bottom-left;
+    border-bottom-right-radius: self.radius-bottom-right;
+}
+
+// A window onto the pill's outline, so a soft highlight can travel along it.
+component OutlineSpot inherits Rectangle {
+    in property <length> center-x;
+    in property <length> center-y;
+    in property <length> size;
+    in property <length> pill-width;
+    in property <length> pill-height;
+    in property <length> radius-top-left;
+    in property <length> radius-top-right;
+    in property <length> radius-bottom-left;
+    in property <length> radius-bottom-right;
+    in property <color> fill;
+
+    x: self.center-x - self.size / 2;
+    y: self.center-y - self.size / 2;
+    width: self.size;
+    height: self.size;
+    clip: true;
+
+    PillOutline {
+        x: -parent.x;
+        y: -parent.y;
+        pill-width: root.pill-width;
+        pill-height: root.pill-height;
+        radius-top-left: root.radius-top-left;
+        radius-top-right: root.radius-top-right;
+        radius-bottom-left: root.radius-bottom-left;
+        radius-bottom-right: root.radius-bottom-right;
+        stroke: 2px;
+        fill: root.fill;
+    }
+}
+
+// While an agent works, a breathing outline in the provider's colour with a soft light
+// circling it over 2 s; a still outline when motion is off.
+component WorkingGlow inherits Rectangle {
+    in property <color> fill;
+    in property <bool> animate-glow: true;
+    in property <length> radius-top-left;
+    in property <length> radius-top-right;
+    in property <length> radius-bottom-left;
+    in property <length> radius-bottom-right;
+
+    // Only read while `animate-glow` is on, so a still outline redraws once.
+    private property <float> turn: self.animate-glow ? mod(animation-tick(), 2s) / 2s : 0;
+    private property <float> breath: self.animate-glow ? 0.5 - 0.5 * cos(self.turn * 360deg) : 0.5;
+    private property <length> perimeter: 2 * (self.width + self.height);
+    private property <length> along: self.turn * self.perimeter;
+    private property <length> spot-x: self.along < self.width ? self.along
+        : self.along < self.width + self.height ? self.width
+        : self.along < 2 * self.width + self.height ? 2 * self.width + self.height - self.along : 0;
+    private property <length> spot-y: self.along < self.width ? 0
+        : self.along < self.width + self.height ? self.along - self.width
+        : self.along < 2 * self.width + self.height ? self.height : self.perimeter - self.along;
+
+    PillOutline {
+        pill-width: root.width;
+        pill-height: root.height;
+        radius-top-left: root.radius-top-left;
+        radius-top-right: root.radius-top-right;
+        radius-bottom-left: root.radius-bottom-left;
+        radius-bottom-right: root.radius-bottom-right;
+        fill: root.fill.with-alpha(root.animate-glow ? 0.22 + 0.30 * root.breath : 0.55);
+    }
+
+    if root.animate-glow: OutlineSpot {
+        center-x: root.spot-x;
+        center-y: root.spot-y;
+        size: 88px * Theme.text-scale;
+        pill-width: root.width;
+        pill-height: root.height;
+        radius-top-left: root.radius-top-left;
+        radius-top-right: root.radius-top-right;
+        radius-bottom-left: root.radius-bottom-left;
+        radius-bottom-right: root.radius-bottom-right;
+        fill: root.fill.with-alpha(0.22 + 0.16 * root.breath);
+    }
+    if root.animate-glow: OutlineSpot {
+        center-x: root.spot-x;
+        center-y: root.spot-y;
+        size: 48px * Theme.text-scale;
+        pill-width: root.width;
+        pill-height: root.height;
+        radius-top-left: root.radius-top-left;
+        radius-top-right: root.radius-top-right;
+        radius-bottom-left: root.radius-bottom-left;
+        radius-bottom-right: root.radius-bottom-right;
+        fill: root.fill.with-alpha(0.32 + 0.20 * root.breath);
+    }
+    if root.animate-glow: OutlineSpot {
+        center-x: root.spot-x;
+        center-y: root.spot-y;
+        size: 22px * Theme.text-scale;
+        pill-width: root.width;
+        pill-height: root.height;
+        radius-top-left: root.radius-top-left;
+        radius-top-right: root.radius-top-right;
+        radius-bottom-left: root.radius-bottom-left;
+        radius-bottom-right: root.radius-bottom-right;
+        fill: root.fill.with-alpha(0.45 + 0.25 * root.breath);
+    }
+}
+
 // One option of a question: its label over its description, the whole row a button.
 // A multiple-choice option shows a tick box. Until armed it ignores clicks.
 component OptionButton inherits Rectangle {
@@ -722,6 +847,9 @@ export component Notch inherits Window {
     in property <bool> floating;
     // On a side edge, the idle notch tucks into a thin sliver until the pointer reaches it.
     in property <bool> tuck;
+    // Whether the notch animates while an agent works and when a request arrives.
+    in property <bool> agent-motion: true;
+    private property <bool> animate-agent: self.agent-motion && !Theme.reduce-motion;
     callback drag-started();
     callback dragged();
     callback drag-ended();
@@ -1521,6 +1649,15 @@ export component Notch inherits Window {
             clicked => {
                 root.alert-clicked();
             }
+        }
+
+        if root.working: WorkingGlow {
+            fill: root.accent;
+            animate-glow: root.animate-agent;
+            radius-top-left: pill.border-top-left-radius;
+            radius-top-right: pill.border-top-right-radius;
+            radius-bottom-left: pill.border-bottom-left-radius;
+            radius-bottom-right: pill.border-bottom-right-radius;
         }
 
         states [

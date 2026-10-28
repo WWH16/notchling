@@ -560,9 +560,11 @@ fn follow_system_settings(notch: &Notch) -> Timer {
     timer
 }
 
-/// Applies the settings the notch reads directly: tucking and which readings show.
+/// Applies the settings the notch reads directly: tucking, agent motion and which
+/// readings show.
 fn show_preferences(notch: &Notch, config: &Config) {
     notch.set_tuck(config.tuck());
+    notch.set_agent_motion(config.agent_motion());
     notch.set_show_usage(config.shown_provider().is_some());
     notch.set_show_cpu(config.show_cpu());
     notch.set_show_gpu(config.show_gpu());

@@ -32,7 +32,8 @@ Start `notchling.exe`. Only one copy runs at a time.
 The notch flows out of its screen edge in concave curves. It shows the selected
 provider's logo inside a ring with the share of its limit, then CPU and GPU. The ring
 is green, turns amber at 80% and red at 95%. While Claude Code is working, Claude's
-mark shows how long, such as "12m", with "×2" when two sessions are.
+mark shows how long, such as "12m", with "×2" when two sessions are, and a soft light
+circles the notch's outline in the provider's colour.
 
 - **Hover** the pill and the panel opens at once with every limit the provider has,
   each as a bar in the same green, amber and red, with how much is used and left and
@@ -160,6 +161,7 @@ Right-click the notch and choose **Settings…**, or edit
 | `tuck` | `false` | On the left or right edge, the notch waits as a thin sliver until you point at it |
 | `show_cpu` | `true` | Show CPU load on the pill, and RAM in the panel |
 | `show_gpu` | `true` | Show GPU load on the pill, and VRAM in the panel |
+| `agent_motion` | `true` | Animate the notch while Claude works and when a request arrives; a still outline when off |
 | `edge` | `"top"` | The screen edge the notch sticks to: `"top"`, `"bottom"`, `"left"` or `"right"`; set by dragging |
 | `position` | `0.5` | Where along that edge it sits, from 0 to 1 (left to right, or top to bottom on a side edge); set by dragging |
 | `offer_hooks` | `true` | Ask at start to add the Claude Code hooks when they are missing; turned off when you answer No |

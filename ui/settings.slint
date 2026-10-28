@@ -29,6 +29,7 @@ export component Settings inherits Window {
     in-out property <bool> tuck;
     in-out property <bool> show-cpu;
     in-out property <bool> show-gpu;
+    in-out property <bool> agent-motion: true;
     in-out property <bool> track-claude;
     in-out property <bool> track-chatgpt;
     in-out property <bool> track-gemini;
@@ -136,6 +137,11 @@ export component Settings inherits Window {
         CheckBox {
             text: "On the left or right edge, tuck the notch away until you point at it";
             checked <=> root.tuck;
+        }
+
+        CheckBox {
+            text: "Animate the notch while Claude works and when it asks";
+            checked <=> root.agent-motion;
         }
 
         Hint {

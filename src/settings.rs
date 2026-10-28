@@ -47,6 +47,7 @@ pub fn open(
     settings.set_tuck(config.tuck());
     settings.set_show_cpu(config.show_cpu());
     settings.set_show_gpu(config.show_gpu());
+    settings.set_agent_motion(config.agent_motion());
     settings.set_track_claude(config.tracks(Provider::Claude));
     settings.set_track_chatgpt(config.tracks(Provider::ChatGpt));
     settings.set_track_gemini(config.tracks(Provider::Gemini));
@@ -79,6 +80,7 @@ pub fn open(
         let shortcuts = settings.get_request_shortcuts();
         let tuck = settings.get_tuck();
         let (show_cpu, show_gpu) = (settings.get_show_cpu(), settings.get_show_gpu());
+        let agent_motion = settings.get_agent_motion();
         let tracked = [
             settings.get_track_claude(),
             settings.get_track_chatgpt(),
@@ -98,6 +100,7 @@ pub fn open(
             config.set_tuck(tuck);
             config.set_show_cpu(show_cpu);
             config.set_show_gpu(show_gpu);
+            config.set_agent_motion(agent_motion);
             config.set_providers(providers);
         });
         match updated {

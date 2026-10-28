@@ -58,6 +58,9 @@ pub struct Config {
     show_cpu: bool,
     /// Whether the notch shows GPU load, and VRAM in its panel.
     show_gpu: bool,
+    /// Whether the notch animates while an agent works and when a request arrives.
+    /// Follows Windows' "Show animations" setting too.
+    agent_motion: bool,
     /// The screen edge the notch sticks to; set by dragging it.
     edge: Option<Edge>,
     /// Where along that edge the notch sits, from 0 to 1: left to right on the top and
@@ -87,6 +90,7 @@ impl Default for Config {
             tuck: false,
             show_cpu: true,
             show_gpu: true,
+            agent_motion: true,
             edge: None,
             position: 0.5,
             position_y: None,
@@ -245,6 +249,16 @@ impl Config {
 
     pub fn set_show_gpu(&mut self, shown: bool) {
         self.show_gpu = shown;
+    }
+
+    /// Whether the notch animates while an agent works and when a request arrives.
+    #[must_use]
+    pub fn agent_motion(&self) -> bool {
+        self.agent_motion
+    }
+
+    pub fn set_agent_motion(&mut self, enabled: bool) {
+        self.agent_motion = enabled;
     }
 
     /// The screen edge the notch sticks to.
@@ -436,6 +450,8 @@ mod tests {
             "both show by default"
         );
         config.set_show_gpu(false);
+        assert!(config.agent_motion(), "agent motion is on by default");
+        config.set_agent_motion(false);
         config.set_providers(vec![Provider::Gemini]);
         let text = toml::to_string(&config).expect("config serializes");
         assert_eq!(Config::parse(&text), Ok(config));

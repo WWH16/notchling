@@ -44,6 +44,7 @@ pub fn open(
     settings.set_permission_wait(int(config.hook_timeout().as_secs()));
     settings.set_gemini_limit(int(config.gemini_daily_requests()));
     settings.set_request_shortcuts(config.request_shortcuts());
+    settings.set_request_sound(config.request_sound());
     settings.set_tuck(config.tuck());
     settings.set_show_cpu(config.show_cpu());
     settings.set_show_gpu(config.show_gpu());
@@ -78,6 +79,7 @@ pub fn open(
         let wait = u64::try_from(settings.get_permission_wait()).unwrap_or(0);
         let gemini = u32::try_from(settings.get_gemini_limit()).unwrap_or(1);
         let shortcuts = settings.get_request_shortcuts();
+        let request_sound = settings.get_request_sound();
         let tuck = settings.get_tuck();
         let (show_cpu, show_gpu) = (settings.get_show_cpu(), settings.get_show_gpu());
         let agent_motion = settings.get_agent_motion();
@@ -97,6 +99,7 @@ pub fn open(
             config.set_hook_timeout_secs(wait);
             config.set_gemini_daily_requests(gemini);
             config.set_request_shortcuts(shortcuts);
+            config.set_request_sound(request_sound);
             config.set_tuck(tuck);
             config.set_show_cpu(show_cpu);
             config.set_show_gpu(show_gpu);

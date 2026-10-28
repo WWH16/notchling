@@ -426,7 +426,8 @@ Suggested UI polish:
 - [x] **10.18** Hover shows each provider's ring side by side in the panel, so all
   tracked limits are visible at once (overlaps 8.10). Commit
   `feat: show all tracked providers' rings in the panel`.
-- [ ] **10.19** Optional sound when a request arrives, off by default.
+- [x] **10.19** Optional sound when a request arrives, off by default. Commit
+  `feat: optional sound when a request arrives`.
 - [ ] **10.20** Light theme for the panel and Settings, following Windows' app mode.
 
 ## Deviations from SPEC.md

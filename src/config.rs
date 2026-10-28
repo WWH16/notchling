@@ -51,6 +51,8 @@ pub struct Config {
     /// Whether Ctrl+Alt+Y and Ctrl+Alt+N answer the permission request on the notch.
     /// Off by default: a global key that allows commands is opt-in.
     request_shortcuts: bool,
+    /// Whether Windows plays a notification chime when a request card arrives.
+    request_sound: bool,
     /// Whether the idle notch tucks into a thin sliver on the left and right edges until
     /// the pointer reaches it.
     tuck: bool,
@@ -87,6 +89,7 @@ impl Default for Config {
             monitor: None,
             claude_account: None,
             request_shortcuts: false,
+            request_sound: false,
             tuck: false,
             show_cpu: true,
             show_gpu: true,
@@ -209,6 +212,16 @@ impl Config {
 
     pub fn set_request_shortcuts(&mut self, enabled: bool) {
         self.request_shortcuts = enabled;
+    }
+
+    /// Whether a sound plays when a request card arrives on the notch.
+    #[must_use]
+    pub fn request_sound(&self) -> bool {
+        self.request_sound
+    }
+
+    pub fn set_request_sound(&mut self, enabled: bool) {
+        self.request_sound = enabled;
     }
 
     /// Whether the notch offers to add its Claude Code hooks when they are missing.
@@ -442,6 +455,8 @@ mod tests {
         );
         config.set_monitor(Some(r"\\.\DISPLAY2".to_owned()));
         config.set_request_shortcuts(true);
+        assert!(!config.request_sound(), "request sound is off by default");
+        config.set_request_sound(true);
         config.set_tuck(true);
         assert!(config.offer_hooks(), "missing hooks are offered by default");
         config.set_offer_hooks(false);

@@ -158,6 +158,7 @@ Right-click the notch and choose **Settings…**, or edit
 | `hook_timeout_secs` | `120` | How long a permission request waits for you (5 to 580) |
 | `gemini_daily_requests` | `1000` | Your Gemini CLI daily request limit |
 | `request_shortcuts` | `false` | Ctrl+Alt+Y allows and Ctrl+Alt+N denies the request on the notch |
+| `request_sound` | `false` | Play a notification chime when Claude asks for a permission, question or reply |
 | `tuck` | `false` | On the left or right edge, the notch waits as a thin sliver until you point at it |
 | `show_cpu` | `true` | Show CPU load on the pill, and RAM in the panel |
 | `show_gpu` | `true` | Show GPU load on the pill, and VRAM in the panel |

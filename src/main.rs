@@ -1157,7 +1157,9 @@ fn show_requests(notch: &Notch, requests: &mut Requests) {
         notch.set_has_request(false);
         return;
     };
-    notch.set_request_id(front.id.to_ui());
+    let next_id = front.id.to_ui();
+    let new_request = !notch.get_has_request() || notch.get_request_id() != next_id;
+    notch.set_request_id(next_id);
     notch.set_request_project(front.request.project.as_str().into());
     notch.set_request_more(i32::try_from(requests.behind_front()).unwrap_or(i32::MAX));
     let progress = match &front.request.ask {
@@ -1188,6 +1190,9 @@ fn show_requests(notch: &Notch, requests: &mut Requests) {
     };
     notch.set_has_request(true);
     requests.answering = progress;
+    if new_request && Config::load().request_sound() {
+        window::play_request_sound();
+    }
 }
 
 /// Puts the question `progress` has reached on the question card.

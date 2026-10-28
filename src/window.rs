@@ -14,6 +14,7 @@ use windows::Win32::Graphics::Gdi::{
     CreateRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR,
     MONITOR_DEFAULTTONEAREST, MONITORINFO, MONITORINFOEXW, MonitorFromPoint, SetWindowRgn,
 };
+use windows::Win32::System::Diagnostics::Debug::MessageBeep;
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -137,6 +138,12 @@ pub fn ask(title: &str, text: &str) -> bool {
         )
     };
     answer == IDYES
+}
+
+/// Plays Windows' notification chime in the background when a request card arrives.
+pub fn play_request_sound() {
+    // SAFETY: MessageBeep has no preconditions and queues the sound asynchronously.
+    let _ = unsafe { MessageBeep(MB_ICONINFORMATION) };
 }
 
 /// An item picked from the notch's right-click menu.

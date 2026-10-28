@@ -26,6 +26,7 @@ export component Settings inherits Window {
     in-out property <int> permission-wait;
     in-out property <int> gemini-limit;
     in-out property <bool> request-shortcuts;
+    in-out property <bool> request-sound;
     in-out property <bool> tuck;
     in-out property <bool> show-cpu;
     in-out property <bool> show-gpu;
@@ -142,6 +143,11 @@ export component Settings inherits Window {
         CheckBox {
             text: "Animate the notch while Claude works and when it asks";
             checked <=> root.agent-motion;
+        }
+
+        CheckBox {
+            text: "Play a sound when Claude asks for something";
+            checked <=> root.request-sound;
         }
 
         Hint {

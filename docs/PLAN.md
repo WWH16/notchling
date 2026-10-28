@@ -319,7 +319,7 @@ sessions (needs the user, since it changes the global settings).
 
 Local setup after the rename:
 
-- [ ] **9.1** Build `target\release\notchling.exe`, run `--install-hooks` (the Claude Code
+- [x] **9.1** Build `target\release\notchling.exe`, run `--install-hooks` (the Claude Code
   hooks still name the old `ai-notch.exe`), start it, then delete `%APPDATA%\ai-notch`,
   `%LOCALAPPDATA%\ai-notch` and the old `ai-notch.exe`. No commit.
 
@@ -333,6 +333,10 @@ The exe:
   C++ runtime. Commit `build: static c runtime`.
 - [ ] **9.4** README: say that Windows SmartScreen warns about the unsigned exe and how to
   run it anyway. Commit `docs: smartscreen note`.
+- [x] **9.8** Offer the hooks on start: when `settings.json` lacks a hook for any event,
+  or the hooks name another exe, a Yes/No box asks to add them. Yes runs the same
+  install as `--install-hooks`; No sets `offer_hooks = false` so it never asks again.
+  Commit `feat: offer the claude code hooks on start`.
 
 Releases:
 

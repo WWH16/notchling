@@ -64,7 +64,9 @@ the exe in `shell:startup` (type that into the Run dialog, Win+R).
 
 ## Claude Code hooks
 
-Permission requests and task alerts come from Claude Code hooks. To add them:
+Permission requests and task alerts come from Claude Code hooks. When they are missing,
+or name another copy of the exe, notchling asks at start whether to add them; answer
+No and it stops asking. To add them yourself:
 
 ```powershell
 notchling.exe --install-hooks
@@ -160,6 +162,7 @@ Right-click the notch and choose **Settings…**, or edit
 | `show_gpu` | `true` | Show GPU load on the pill, and VRAM in the panel |
 | `edge` | `"top"` | The screen edge the notch sticks to: `"top"`, `"bottom"`, `"left"` or `"right"`; set by dragging |
 | `position` | `0.5` | Where along that edge it sits, from 0 to 1 (left to right, or top to bottom on a side edge); set by dragging |
+| `offer_hooks` | `true` | Ask at start to add the Claude Code hooks when they are missing; turned off when you answer No |
 | `monitor` | primary display | Display the notch sits on, as Windows names it: `monitor = '\\.\DISPLAY2'` (single quotes, so the backslashes stay as they are) |
 
 A longer permission wait reaches Claude Code only after running `--install-hooks`

@@ -67,6 +67,9 @@ pub struct Config {
     /// is read once to pick the edge and never written again.
     #[serde(skip_serializing)]
     position_y: Option<f32>,
+    /// Whether the notch offers to add its Claude Code hooks when they are missing or
+    /// name another exe. Turned off when the user says no.
+    offer_hooks: bool,
 }
 
 impl Default for Config {
@@ -87,6 +90,7 @@ impl Default for Config {
             edge: None,
             position: 0.5,
             position_y: None,
+            offer_hooks: true,
         }
     }
 }
@@ -201,6 +205,16 @@ impl Config {
 
     pub fn set_request_shortcuts(&mut self, enabled: bool) {
         self.request_shortcuts = enabled;
+    }
+
+    /// Whether the notch offers to add its Claude Code hooks when they are missing.
+    #[must_use]
+    pub fn offer_hooks(&self) -> bool {
+        self.offer_hooks
+    }
+
+    pub fn set_offer_hooks(&mut self, offered: bool) {
+        self.offer_hooks = offered;
     }
 
     /// Whether the idle notch tucks into the left and right edges until pointed at.
@@ -415,6 +429,8 @@ mod tests {
         config.set_monitor(Some(r"\\.\DISPLAY2".to_owned()));
         config.set_request_shortcuts(true);
         config.set_tuck(true);
+        assert!(config.offer_hooks(), "missing hooks are offered by default");
+        config.set_offer_hooks(false);
         assert!(
             config.show_cpu() && config.show_gpu(),
             "both show by default"

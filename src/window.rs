@@ -26,13 +26,14 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CallWindowProcW, CheckMenuRadioItem, CreatePopupMenu, CreateWindowExW,
     DestroyMenu, DestroyWindow, GWL_EXSTYLE, GWL_STYLE, GWLP_WNDPROC, GetCursorPos,
-    GetSystemMetrics, GetWindowLongPtrW, HMENU, IsWindowVisible, MB_ICONERROR, MB_ICONINFORMATION,
-    MB_OK, MF_BYPOSITION, MF_SEPARATOR, MF_STRING, MONITORINFOF_PRIMARY, MessageBoxW, PostMessageW,
-    SM_CXDRAG, SM_CYDRAG, SPI_GETCLIENTAREAANIMATION, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WM_HOTKEY, WM_NCACTIVATE, WM_NCPAINT, WM_NULL,
-    WNDPROC, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE,
+    GetSystemMetrics, GetWindowLongPtrW, HMENU, IDYES, IsWindowVisible, MB_ICONERROR,
+    MB_ICONINFORMATION, MB_ICONQUESTION, MB_OK, MB_YESNO, MF_BYPOSITION, MF_SEPARATOR, MF_STRING,
+    MONITORINFOF_PRIMARY, MessageBoxW, PostMessageW, SM_CXDRAG, SM_CYDRAG,
+    SPI_GETCLIENTAREAANIMATION, SW_HIDE, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, TrackPopupMenu, WM_HOTKEY, WM_NCACTIVATE, WM_NCPAINT, WM_NULL, WNDPROC,
+    WS_CAPTION, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE,
     WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SIZEBOX, WS_SYSMENU,
 };
 use windows::core::{BOOL, HSTRING, PCWSTR, w};
@@ -122,6 +123,20 @@ pub fn message_box(title: &str, text: &str, kind: MessageKind) {
             MB_OK | icon,
         )
     };
+}
+
+/// Shows a modal Yes/No question and waits for the answer; `true` means Yes.
+pub fn ask(title: &str, text: &str) -> bool {
+    // SAFETY: both strings are valid wide strings for the duration of the call.
+    let answer = unsafe {
+        MessageBoxW(
+            None,
+            &HSTRING::from(text),
+            &HSTRING::from(title),
+            MB_YESNO | MB_ICONQUESTION,
+        )
+    };
+    answer == IDYES
 }
 
 /// An item picked from the notch's right-click menu.

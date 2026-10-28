@@ -60,6 +60,25 @@ pub fn install_hooks() -> anyhow::Result<Outcome> {
     update_settings(|settings| install(settings, &command, permission_timeout))
 }
 
+/// Whether every notch hook in `settings.json` runs the running exe. `false` when the
+/// hooks are missing, or name another copy, such as one that has since been moved.
+///
+/// # Errors
+///
+/// Fails when the settings file cannot be read or is not valid JSON.
+pub fn hooks_point_here() -> anyhow::Result<bool> {
+    let exe = env::current_exe().context("locating notchling.exe")?;
+    let path = settings_path()?;
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => return Err(err).with_context(|| format!("reading {}", path.display())),
+    };
+    let settings: Value = serde_json::from_str(&text)
+        .with_context(|| format!("{} is not valid JSON", path.display()))?;
+    Ok(runs_everywhere(&settings, &hook_command(&exe)))
+}
+
 /// Removes the notch's hooks.
 ///
 /// # Errors
@@ -72,8 +91,7 @@ pub fn uninstall_hooks() -> anyhow::Result<Outcome> {
 fn update_settings(
     change: impl FnOnce(&mut Value) -> anyhow::Result<()>,
 ) -> anyhow::Result<Outcome> {
-    let home = env::var_os("USERPROFILE").context("USERPROFILE is not set")?;
-    let path = Path::new(&home).join(".claude").join("settings.json");
+    let path = settings_path()?;
     let (mut settings, backup) = match fs::read_to_string(&path) {
         Ok(text) => {
             let settings: Value = serde_json::from_str(&text)
@@ -95,6 +113,12 @@ fn update_settings(
         settings: path,
         backup,
     })
+}
+
+/// `%USERPROFILE%\.claude\settings.json`.
+fn settings_path() -> anyhow::Result<PathBuf> {
+    let home = env::var_os("USERPROFILE").context("USERPROFILE is not set")?;
+    Ok(Path::new(&home).join(".claude").join("settings.json"))
 }
 
 /// Copies the settings next to themselves as `settings.json.notchling-backup-<unix time>`.
@@ -129,6 +153,19 @@ fn is_ours(handler: &Value) -> bool {
             (command.contains("notchling") || command.contains("ai-notch"))
                 && command.ends_with(" --hook")
         })
+}
+
+/// Whether each event the notch listens to has a handler running `command`.
+fn runs_everywhere(settings: &Value, command: &str) -> bool {
+    EVENTS.iter().all(|event| {
+        settings["hooks"][event]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|group| group["hooks"].as_array())
+            .flatten()
+            .any(|handler| handler["command"] == command)
+    })
 }
 
 /// Adds one notchling entry per event, replacing any earlier ones.
@@ -299,6 +336,21 @@ mod tests {
         let stop = &settings["hooks"]["Stop"];
         assert_eq!(stop.as_array().map(Vec::len), Some(1), "{stop}");
         assert_eq!(stop[0]["hooks"][0]["command"], COMMAND);
+    }
+
+    #[test]
+    fn hooks_count_only_when_every_event_runs_this_exe() {
+        let mut settings = json!({});
+        assert!(!runs_everywhere(&settings, COMMAND), "nothing installed");
+        install(&mut settings, "\"D:/old/notchling.exe\" --hook", 130).expect("valid settings");
+        assert!(!runs_everywhere(&settings, COMMAND), "another copy");
+        install(&mut settings, COMMAND, 130).expect("valid settings");
+        assert!(runs_everywhere(&settings, COMMAND));
+        settings["hooks"]
+            .as_object_mut()
+            .expect("hooks object")
+            .remove("Stop");
+        assert!(!runs_everywhere(&settings, COMMAND), "an event is missing");
     }
 
     #[test]

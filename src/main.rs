@@ -122,6 +122,7 @@ fn main() -> anyhow::Result<()> {
     let listener = Listener::bind(&pipe::pipe_name()?)?;
 
     let config = Config::load();
+    offer_hooks(&config);
     let shown = config.shown_provider();
     let usages = Arc::new(Mutex::new(Usages::new(
         shown,
@@ -218,6 +219,25 @@ fn main() -> anyhow::Result<()> {
 
     slint::run_event_loop()?;
     Ok(())
+}
+
+/// Asks to add the Claude Code hooks when they are missing or name another exe, until
+/// the user says no. Without them, requests and alerts never reach the notch.
+fn offer_hooks(config: &Config) {
+    // An unreadable settings file is reported by `--install-hooks`, not on every start.
+    if !config.offer_hooks() || install::hooks_point_here().unwrap_or(true) {
+        return;
+    }
+    let question = "Show Claude Code's permission requests, questions and alerts on the notch?\n\n\
+        This adds notchling's hooks to %USERPROFILE%\\.claude\\settings.json, after backing \
+        it up. Your other settings and hooks are kept.\n\n\
+        Choose No to not be asked again; notchling.exe --install-hooks adds them later.";
+    if window::ask("notchling", question) {
+        report_settings_change("added to", install::install_hooks());
+    } else {
+        // Failing to save only means the question comes back next start.
+        let _ = Config::update(|config| config.set_offer_hooks(false));
+    }
 }
 
 /// Tells the user what `--install-hooks` or `--uninstall-hooks` did. A message box,

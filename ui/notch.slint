@@ -711,6 +711,27 @@ component LinkButton inherits Rectangle {
     }
 }
 
+// A row of small dots at the bottom of a card when several requests are waiting: a
+// bright dot for the request on screen, then up to five muted ones behind it.
+component QueueDots inherits HorizontalLayout {
+    in property <int> more;
+    alignment: center;
+    spacing: 5px;
+
+    Rectangle {
+        width: 5px * Theme.text-scale;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.text;
+    }
+    for _ in min(root.more, 5): Rectangle {
+        width: 5px * Theme.text-scale;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.outline;
+    }
+}
+
 export component Notch inherits Window {
     // Loads as fractions in 0..1; text values are formatted by Rust.
     in property <float> cpu;
@@ -1037,7 +1058,8 @@ export component Notch inherits Window {
     private property <length> request-height: self.request-kind == RequestKind.question
         ? min(question-view.preferred-height, self.card-room)
         : self.request-kind == RequestKind.reply ? min(reply-view.preferred-height, self.card-room)
-        : (self.request-description != "" ? 222px : 196px) * Theme.text-scale;
+        : ((self.request-description != "" ? 222px : 196px) + (self.request-more > 0 ? 12px : 0))
+            * Theme.text-scale;
     private property <length> drawn-request-height: self.request-height;
     animate drawn-request-height {
         duration: root.animate-agent ? 260ms : 0ms;
@@ -1517,6 +1539,10 @@ export component Notch inherits Window {
                     }
                 }
             }
+
+            if root.request-more > 0: QueueDots {
+                more: root.request-more;
+            }
         }
 
         question-view := VerticalLayout {
@@ -1601,6 +1627,10 @@ export component Notch inherits Window {
                         }
                     }
                 }
+            }
+
+            if root.request-more > 0: QueueDots {
+                more: root.request-more;
             }
         }
 
@@ -1726,6 +1756,10 @@ export component Notch inherits Window {
                         root.send-reply();
                     }
                 }
+            }
+
+            if root.request-more > 0: QueueDots {
+                more: root.request-more;
             }
         }
 

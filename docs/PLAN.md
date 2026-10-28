@@ -419,8 +419,8 @@ Suggested UI polish:
   `feat: ease the usage ring to each new reading`.
 - [x] **10.15** A pulse on the ring when a usage alert fires, amber or red as the alert.
   Commit `feat: pulse the usage ring on a usage alert`.
-- [ ] **10.16** Several pending requests: small dots under the card, one per request,
-  instead of only "2 more".
+- [x] **10.16** Several pending requests: small dots under the card, one per request,
+  instead of only "2 more". Commit `feat: queue dots under the request card`.
 - [ ] **10.17** Keyboard hints on the buttons when shortcuts are on (Ctrl+Alt+Y,
   Ctrl+Alt+N).
 - [ ] **10.18** Hover shows each provider's ring side by side in the panel, so all

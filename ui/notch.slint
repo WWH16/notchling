@@ -163,11 +163,18 @@ component Ring inherits Rectangle {
         border-color: Theme.track;
     }
 
+    // Eases to each new reading instead of jumping; 0 when the share is unknown.
+    private property <float> drawn: clamp(root.fraction, 0, 1);
+    animate drawn {
+        duration: Theme.reduce-motion ? 0ms : 300ms;
+        easing: ease-out;
+    }
+
     // In viewbox units: the radius that centres the stroke on the track.
     property <float> radius: (root.width - root.thickness) / root.width * 50;
     // A full turn would start and end at the same point and draw nothing.
-    property <angle> sweep-angle: min(root.fraction, 0.999) * 360deg;
-    if root.fraction > 0.005: Path {
+    property <angle> sweep-angle: min(root.drawn, 0.999) * 360deg;
+    if root.drawn > 0.005: Path {
         width: root.width;
         height: root.height;
         viewbox-width: 100;
@@ -184,7 +191,7 @@ component Ring inherits Rectangle {
             y: 50 - root.radius * cos(root.sweep-angle);
             radius-x: root.radius;
             radius-y: root.radius;
-            large-arc: root.fraction > 0.5;
+            large-arc: root.drawn > 0.5;
             sweep: true;
         }
     }

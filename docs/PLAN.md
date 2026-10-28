@@ -415,7 +415,8 @@ Motion (each follows Windows "Show animations", and the agent motion has its own
 
 Suggested UI polish:
 
-- [ ] **10.14** The usage ring fills smoothly to a new value instead of jumping.
+- [x] **10.14** The usage ring fills smoothly to a new value instead of jumping. Commit
+  `feat: ease the usage ring to each new reading`.
 - [ ] **10.15** A pulse on the ring when a usage alert fires, amber or red as the alert.
 - [ ] **10.16** Several pending requests: small dots under the card, one per request,
   instead of only "2 more".

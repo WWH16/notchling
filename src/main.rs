@@ -164,6 +164,8 @@ fn main() -> anyhow::Result<()> {
     }
 
     let menu_usages = Arc::clone(&usages);
+    let settings = Rc::new(RefCell::new(None));
+    let menu_settings = Rc::clone(&settings);
     let fullscreen_check = Rc::new(Timer::default());
     let fullscreen_timer = Rc::clone(&fullscreen_check);
     let fullscreen_alert = Arc::clone(&alert);
@@ -193,7 +195,6 @@ fn main() -> anyhow::Result<()> {
             });
 
             let weak = notch.as_weak();
-            let settings = RefCell::new(None);
             notch.on_menu_requested(move || {
                 let Some(notch) = weak.upgrade() else {
                     return;
@@ -215,7 +216,7 @@ fn main() -> anyhow::Result<()> {
                         let saved =
                             apply_settings(&notch, &menu_usages, &status_switch, &placement, &clip);
                         // A window that cannot open leaves everything as it is.
-                        let _ = settings::open(&settings, saved);
+                        let _ = settings::open(&menu_settings, saved);
                     }
                     None => {}
                 }
@@ -224,7 +225,7 @@ fn main() -> anyhow::Result<()> {
     );
 
     let _stats = start_stats(&notch);
-    let _system_settings = follow_system_settings(&notch);
+    let _system_settings = follow_system_settings(&notch, &settings);
     start_usage(&notch, &usages, &alert);
     let _awake_check = serve_hooks(&notch, listener, &alert);
 
@@ -553,22 +554,27 @@ fn replace(notch: &Notch, placement: &mut Placement, clip: &Rc<dyn Fn()>) {
 
 /// Keeps the notch in line with Windows' "Show animations", text size and app mode
 /// settings until the returned timer is dropped.
-fn follow_system_settings(notch: &Notch) -> Timer {
+fn follow_system_settings(notch: &Notch, settings: &Rc<RefCell<Option<ui::Settings>>>) -> Timer {
     notch
         .global::<ui::Theme>()
         .set_mono(window::mono_font().into());
-    let apply = |notch: &Notch| {
+    let apply = |notch: &Notch, settings: &RefCell<Option<ui::Settings>>| {
+        let light = window::light_theme();
         let theme = notch.global::<ui::Theme>();
-        theme.set_light(window::light_theme());
+        theme.set_light(light);
         theme.set_reduce_motion(!window::animations_enabled());
         theme.set_text_scale(window::text_scale());
+        if let Some(settings) = settings.borrow().as_ref() {
+            settings.set_light(light);
+        }
     };
-    apply(notch);
+    apply(notch, settings);
     let timer = Timer::default();
     let weak = notch.as_weak();
+    let settings = Rc::clone(settings);
     timer.start(TimerMode::Repeated, SYSTEM_SETTINGS_CHECK, move || {
         if let Some(notch) = weak.upgrade() {
-            apply(&notch);
+            apply(&notch, &settings);
         }
     });
     timer

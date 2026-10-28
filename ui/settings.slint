@@ -164,7 +164,7 @@ export component Settings inherits Window {
         if root.error != "": Text {
             text: root.error;
             wrap: word-wrap;
-            color: #ff453a;
+            color: root.light ? #c9190b : #ff453a;
         }
 
         HorizontalLayout {

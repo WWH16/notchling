@@ -421,8 +421,8 @@ Suggested UI polish:
   Commit `feat: pulse the usage ring on a usage alert`.
 - [x] **10.16** Several pending requests: small dots under the card, one per request,
   instead of only "2 more". Commit `feat: queue dots under the request card`.
-- [ ] **10.17** Keyboard hints on the buttons when shortcuts are on (Ctrl+Alt+Y,
-  Ctrl+Alt+N).
+- [x] **10.17** Keyboard hints on the buttons when shortcuts are on (Ctrl+Alt+Y,
+  Ctrl+Alt+N). Commit `feat: show keyboard shortcuts on the request buttons`.
 - [ ] **10.18** Hover shows each provider's ring side by side in the panel, so all
   tracked limits are visible at once (overlaps 8.10).
 - [ ] **10.19** Optional sound when a request arrives, off by default.

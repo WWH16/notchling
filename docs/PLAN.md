@@ -409,8 +409,9 @@ Motion (each follows Windows "Show animations", and the agent motion has its own
   slight swell, in under half a second, then grows into the card. Follows
   `agent_motion` and "Show animations"; with motion off the card just appears. Commit
   `feat: pulse the pill before opening a request card`.
-- [ ] **10.13** Card transitions: the pill grows into the request card and shrinks back
-  into the outcome pill (10.4) with one spring-like motion instead of a cut.
+- [x] **10.13** Card transitions: the pill grows into the request card and shrinks back
+  into the outcome pill (10.4) with one spring-like motion instead of a cut. Commit
+  `feat: spring transitions for the request card`.
 
 Suggested UI polish:
 

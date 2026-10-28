@@ -872,11 +872,14 @@ export component Notch inherits Window {
         : self.alert-provider == Provider.chatgpt ? Theme.chatgpt
         : self.alert-provider == Provider.gemini ? Theme.gemini : Theme.claude;
 
-    // The size the shape is heading to, shoulders included. Rust clips the window to it,
-    // growing the region at once and shrinking it after the animation, so clicks
-    // elsewhere pass through.
-    out property <length> shape-width: self.target-width + (self.vertical ? 0 : 2 * self.target-shoulder);
-    out property <length> shape-height: self.target-height + (self.vertical ? 2 * self.target-shoulder : 0);
+    // The size the shape is heading to, shoulders included, with room for the request
+    // card's spring. Rust clips the window to it, growing the region at once and
+    // shrinking it after the animation, so clicks elsewhere pass through.
+    private property <length> spring-room: self.has-request ? 16px * Theme.text-scale : 0;
+    out property <length> shape-width: min(self.fixed-width,
+        self.target-width + (self.vertical ? 0 : 2 * self.target-shoulder) + self.spring-room);
+    out property <length> shape-height: min(self.fixed-height,
+        self.target-height + (self.vertical ? 2 * self.target-shoulder : 0) + self.spring-room);
     // The size the shape has right now, partway through a morph.
     out property <length> drawn-width: pill.width + (self.vertical ? 0 : 2 * self.shoulder);
     out property <length> drawn-height: pill.height + (self.vertical ? 2 * self.shoulder : 0);
@@ -987,6 +990,11 @@ export component Notch inherits Window {
         ? min(question-view.preferred-height, self.card-room)
         : self.request-kind == RequestKind.reply ? min(reply-view.preferred-height, self.card-room)
         : (self.request-description != "" ? 222px : 196px) * Theme.text-scale;
+    private property <length> drawn-request-height: self.request-height;
+    animate drawn-request-height {
+        duration: root.animate-agent ? 260ms : 0ms;
+        easing: spring(0.2);
+    }
     private property <length> alert-width: 290px * Theme.text-scale;
     private property <length> alert-height: 36px * Theme.text-scale;
 
@@ -1722,19 +1730,25 @@ export component Notch inherits Window {
         states [
             request when root.has-request && !root.request-pulsing: {
                 pill.width: root.request-width;
-                pill.height: root.request-height;
+                pill.height: root.drawn-request-height;
                 idle-row.opacity: 0;
                 detail.opacity: 0;
                 request-view.opacity: root.request-kind == RequestKind.permission ? 1 : 0;
                 question-view.opacity: root.request-kind == RequestKind.question ? 1 : 0;
                 reply-view.opacity: root.request-kind == RequestKind.reply ? 1 : 0;
                 in {
-                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 220ms; easing: ease-out; }
+                    animate pill.width, pill.height {
+                        duration: root.animate-agent ? 260ms : Theme.reduce-motion ? 0ms : 220ms;
+                        easing: spring(0.2);
+                    }
                     animate idle-row.opacity, detail.opacity { duration: 80ms; }
-                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: 140ms; delay: 160ms; }
+                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: 140ms; delay: 140ms; }
                 }
                 out {
-                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
+                    animate pill.width, pill.height {
+                        duration: root.animate-agent ? 240ms : Theme.reduce-motion ? 0ms : 200ms;
+                        easing: spring(0.15);
+                    }
                     animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: 80ms; }
                     animate idle-row.opacity { duration: 140ms; delay: 120ms; }
                 }

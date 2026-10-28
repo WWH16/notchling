@@ -94,6 +94,15 @@ export struct LimitLine {
     half: bool,
 }
 
+// One tracked provider's summary ring in the hover panel.
+export struct ProviderRing {
+    provider: Provider,
+    name: string,
+    fraction: float,
+    short: string,
+    selected: bool,
+}
+
 component Label inherits Text {
     color: Theme.muted;
     font-family: Theme.font;
@@ -743,6 +752,55 @@ component QueueDots inherits HorizontalLayout {
     }
 }
 
+// A tracked provider's ring and main limit share in the hover panel; clicking it
+// switches the panel and pill to that provider.
+component ProviderRingChip inherits Rectangle {
+    in property <ProviderRing> ring;
+    callback clicked();
+    private property <color> mark: self.ring.provider == Provider.chatgpt ? Theme.chatgpt
+        : self.ring.provider == Provider.gemini ? Theme.gemini : Theme.claude;
+    height: 24px * Theme.text-scale;
+    width: content.preferred-width + 12px;
+    border-radius: self.height / 2;
+    border-width: self.ring.selected ? 1px : 0;
+    border-color: self.ring.selected ? self.mark.with-alpha(0.6) : transparent;
+    background: touch.pressed ? Theme.outline
+        : (touch.has-hover || self.ring.selected) ? Theme.track : transparent;
+    accessible-role: button;
+    accessible-label: "\{self.ring.name} \{self.ring.short}";
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    content := HorizontalLayout {
+        alignment: center;
+        padding-left: 6px;
+        padding-right: 6px;
+        spacing: 5px;
+        MarkRing {
+            size: 16px * Theme.text-scale;
+            provider: root.ring.provider;
+            fraction: root.ring.fraction;
+            mark: root.mark;
+            level: root.ring.fraction < 0 ? Theme.muted : Theme.level(root.ring.fraction);
+        }
+        Text {
+            text: root.ring.short;
+            color: root.ring.selected ? Theme.text : Theme.muted;
+            font-family: Theme.font;
+            font-size: Theme.size-label;
+            font-weight: root.ring.selected ? 600 : 500;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 export component Notch inherits Window {
     // Loads as fractions in 0..1; text values are formatted by Rust.
     in property <float> cpu;
@@ -775,6 +833,10 @@ export component Notch inherits Window {
     in property <string> usage-via;
     in property <Health> status;
     in property <bool> usage-estimated;
+    // Every tracked provider's ring, shown side by side in the panel when more than one
+    // provider is tracked.
+    in property <[ProviderRing]> provider-rings;
+    callback provider-picked(Provider);
     // How long the longest-working Claude session has been at it, e.g. "3m", and how many
     // sessions are working; empty and 0 while Claude rests.
     in property <string> activity;
@@ -1321,6 +1383,17 @@ export component Notch inherits Window {
 
                 if root.show-usage: VerticalLayout {
                     spacing: root.vertical ? 12px : 14px;
+
+                    if root.provider-rings.length > 1: HorizontalLayout {
+                        alignment: start;
+                        spacing: 6px;
+                        for ring in root.provider-rings: ProviderRingChip {
+                            ring: ring;
+                            clicked => {
+                                root.provider-picked(ring.provider);
+                            }
+                        }
+                    }
 
                     HorizontalLayout {
                         spacing: 12px;

@@ -423,8 +423,9 @@ Suggested UI polish:
   instead of only "2 more". Commit `feat: queue dots under the request card`.
 - [x] **10.17** Keyboard hints on the buttons when shortcuts are on (Ctrl+Alt+Y,
   Ctrl+Alt+N). Commit `feat: show keyboard shortcuts on the request buttons`.
-- [ ] **10.18** Hover shows each provider's ring side by side in the panel, so all
-  tracked limits are visible at once (overlaps 8.10).
+- [x] **10.18** Hover shows each provider's ring side by side in the panel, so all
+  tracked limits are visible at once (overlaps 8.10). Commit
+  `feat: show all tracked providers' rings in the panel`.
 - [ ] **10.19** Optional sound when a request arrives, off by default.
 - [ ] **10.20** Light theme for the panel and Settings, following Windows' app mode.
 

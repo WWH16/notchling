@@ -149,8 +149,19 @@ fn main() -> anyhow::Result<()> {
     if let Some(provider) = shown {
         show_usage(&notch, provider, None);
     }
+    show_provider_rings(&notch, &lock_usages(&usages));
     notch.show()?;
     let status_switch = start_status(&notch, &usages);
+    {
+        let weak = notch.as_weak();
+        let usages = Arc::clone(&usages);
+        let status_switch = status_switch.clone();
+        notch.on_provider_picked(move |provider| {
+            if let Some(notch) = weak.upgrade() {
+                select_provider(&notch, &usages, &status_switch, Some(provider.into()));
+            }
+        });
+    }
 
     let menu_usages = Arc::clone(&usages);
     let fullscreen_check = Rc::new(Timer::default());
@@ -521,6 +532,8 @@ fn apply_settings(
         let next = config.shown_provider();
         if next != shown {
             select_provider(&notch, &usages, &status_switch, next);
+        } else {
+            show_provider_rings(&notch, &lock_usages(&usages));
         }
         let mut placement = placement.borrow_mut();
         placement.device = config.monitor().map(str::to_owned);
@@ -660,6 +673,7 @@ fn start_usage(notch: &Notch, usages: &Arc<Mutex<Usages>>, alert: &Arc<Mutex<Ale
                     usages.latest.remove(&reading.provider);
                 }
             }
+            show_provider_rings(&notch, &usages);
             if Some(reading.provider) == usages.shown {
                 show_usage(
                     &notch,
@@ -708,6 +722,7 @@ fn select_provider(
 ) {
     let mut usages = lock_usages(usages);
     usages.shown = provider;
+    show_provider_rings(notch, &usages);
     notch.set_status(ui::Health::Unknown);
     // Fails only if the status thread is gone, which leaves the status unknown.
     let _ = status_switch.send(provider);
@@ -737,6 +752,29 @@ fn reset_text(at: Option<DateTime<Utc>>) -> Option<String> {
 /// "85%", or "-" when the share is unknown.
 fn percent_text(used: Option<f32>) -> String {
     used.map_or_else(|| "-".to_owned(), |used| format!("{:.0}%", used * 100.0))
+}
+
+/// Each tracked provider's ring for the hover panel, in their tracked order.
+fn provider_rings(usages: &Usages) -> Vec<ui::ProviderRing> {
+    usages
+        .tracked
+        .iter()
+        .map(|&provider| {
+            let used = usages.latest.get(&provider).and_then(|usage| usage.used);
+            ui::ProviderRing {
+                provider: provider.into(),
+                name: provider.name().into(),
+                fraction: used.unwrap_or(-1.0),
+                short: percent_text(used).into(),
+                selected: usages.shown == Some(provider),
+            }
+        })
+        .collect()
+}
+
+fn show_provider_rings(notch: &Notch, usages: &Usages) {
+    let rings = provider_rings(usages);
+    notch.set_provider_rings(ModelRc::new(VecModel::from(rings)));
 }
 
 /// The name of the one limit a source knows when it reports no list of them: Claude's
@@ -1224,6 +1262,16 @@ impl From<usage::Provider> for ui::Provider {
     }
 }
 
+impl From<ui::Provider> for usage::Provider {
+    fn from(provider: ui::Provider) -> Self {
+        match provider {
+            ui::Provider::Claude => Self::Claude,
+            ui::Provider::Chatgpt => Self::ChatGpt,
+            ui::Provider::Gemini => Self::Gemini,
+        }
+    }
+}
+
 impl From<Edge> for ui::NotchEdge {
     fn from(edge: Edge) -> Self {
         match edge {
@@ -1410,6 +1458,30 @@ mod tests {
             (String::new(), "No data".to_owned())
         );
         assert_eq!(panel_limits(Provider::Gemini, None)[0].name, "Today");
+    }
+
+    #[test]
+    fn provider_rings_follow_tracked_order_and_mark_selected() {
+        let mut usages = Usages::new(
+            Some(Provider::ChatGpt),
+            vec![Provider::Claude, Provider::ChatGpt],
+            Thresholds::new(&[]),
+        );
+        usages.latest.insert(
+            Provider::Claude,
+            Usage {
+                used: Some(0.42),
+                ..Usage::default()
+            },
+        );
+        let rings = provider_rings(&usages);
+        assert_eq!(rings.len(), 2);
+        assert_eq!(rings[0].name.as_str(), "Claude");
+        assert_eq!(rings[0].short.as_str(), "42%");
+        assert!(!rings[0].selected);
+        assert_eq!(rings[1].name.as_str(), "ChatGPT");
+        assert_eq!(rings[1].short.as_str(), "-");
+        assert!(rings[1].selected);
     }
 
     #[test]

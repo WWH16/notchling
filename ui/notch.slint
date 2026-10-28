@@ -579,24 +579,94 @@ component WorkingGlow inherits Rectangle {
     }
 }
 
-// The working agent's mark, sliding along a short track to the right and back while
-// motion is on, or sitting still when motion is off.
+// One flared, rounded-tip petal of Claude's starburst in a 100x100 viewbox, radiating
+// from the hub at `angle` out to `reach`.
+component ClaudeRay inherits Path {
+    in property <angle> angle;
+    in property <float> reach;
+    in property <float> tip-width: 4.0;
+    in property <color> ray-fill: Theme.claude;
+    private property <float> dx: cos(self.angle);
+    private property <float> dy: sin(self.angle);
+    private property <float> px: self.dy;
+    private property <float> py: -self.dx;
+    private property <float> root-dist: 7.0;
+    private property <float> root-width: 1.9;
+
+    width: 100%;
+    height: 100%;
+    viewbox-width: 100;
+    viewbox-height: 100;
+    fill: self.ray-fill;
+
+    MoveTo {
+        x: 50 + root.root-dist * root.dx + root.root-width * root.px;
+        y: 50 + root.root-dist * root.dy + root.root-width * root.py;
+    }
+    LineTo {
+        x: 50 + root.reach * root.dx + root.tip-width * root.px;
+        y: 50 + root.reach * root.dy + root.tip-width * root.py;
+    }
+    ArcTo {
+        x: 50 + root.reach * root.dx - root.tip-width * root.px;
+        y: 50 + root.reach * root.dy - root.tip-width * root.py;
+        radius-x: root.tip-width;
+        radius-y: root.tip-width;
+        large-arc: false;
+        sweep: true;
+    }
+    LineTo {
+        x: 50 + root.root-dist * root.dx - root.root-width * root.px;
+        y: 50 + root.root-dist * root.dy - root.root-width * root.py;
+    }
+    Close { }
+}
+
+// The working agent's mark: Claude's 12-ray starburst rotating in place while its rays
+// bloom in and out when motion is on, or the static mark when motion is off.
 component WorkingLogo inherits Rectangle {
     in property <bool> animate-slide: true;
-    private property <length> mark-size: 11px * Theme.text-scale;
-    private property <length> travel: 6px * Theme.text-scale;
-    private property <float> slide: self.animate-slide
-        ? 0.5 - 0.5 * cos(mod(animation-tick(), 1.8s) / 1.8s * 360deg) : 0;
-    width: self.mark-size + self.travel;
+    private property <length> mark-size: 13px * Theme.text-scale;
+    private property <float> cycle: self.animate-slide
+        ? mod(animation-tick(), 2.8s) / 2.8s : 0;
+    private property <angle> spin: self.cycle * 360deg
+        + 12deg * sin(self.cycle * 2 * 360deg);
+    private property <float> hub-breath: self.animate-slide
+        ? 0.5 - 0.5 * cos(self.cycle * 2 * 360deg) : 0;
+    width: self.mark-size;
     min-height: self.mark-size;
 
-    Logo {
-        x: root.travel * root.slide;
+    if !root.animate-slide: Logo {
+        x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         height: self.size;
         provider: Provider.claude;
         fill: Theme.claude;
         size: root.mark-size;
+    }
+
+    if root.animate-slide: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.mark-size;
+        height: root.mark-size;
+
+        Rectangle {
+            private property <length> hub: root.mark-size * (0.28 + 0.05 * root.hub-breath);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: self.hub;
+            height: self.hub;
+            border-radius: self.width / 2;
+            background: Theme.claude;
+        }
+
+        for i in 12: ClaudeRay {
+            private property <float> wave: 0.5 + 0.5 * sin(root.cycle * 3 * 360deg - i * 60deg);
+            angle: i * 30deg + (mod(i, 2) == 0 ? 2deg : -2deg) + root.spin;
+            reach: 27 + 17 * self.wave;
+            tip-width: 3.3 + 1.0 * self.wave;
+        }
     }
 }
 

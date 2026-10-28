@@ -583,15 +583,15 @@ component WorkingGlow inherits Rectangle {
 // from the hub at `angle` with fixed length and thickness.
 component ClaudeRay inherits Path {
     in property <angle> angle;
-    in property <float> reach: 45.0;
-    in property <float> tip-width: 3.3;
+    in property <float> reach: 45.5;
+    in property <float> tip-width: 3.1;
     in property <color> ray-fill: Theme.claude;
     private property <float> dx: cos(self.angle);
     private property <float> dy: sin(self.angle);
     private property <float> px: self.dy;
     private property <float> py: -self.dx;
-    private property <float> root-dist: 6.0;
-    private property <float> root-width: 1.6;
+    private property <float> root-dist: 4.0;
+    private property <float> root-width: 2.2;
 
     width: 100%;
     height: 100%;
@@ -622,18 +622,18 @@ component ClaudeRay inherits Path {
     Close { }
 }
 
-// The working agent's mark: Claude's 12 starburst lines at constant count and length,
-// shifting their angular locations while active, or sitting still when motion is off.
+// The working agent's mark: Claude's 12 starburst lines kept well-spaced at constant
+// count and length, with minimal continuous angular drift while active.
 component WorkingLogo inherits Rectangle {
     in property <bool> animate-slide: true;
     private property <length> mark-size: 14px * Theme.text-scale;
     // Driven only while `animate-slide` is on, so a still logo redraws once.
     private property <angle> phase: self.animate-slide
-        ? mod(animation-tick(), 4.8s) / 4.8s * 360deg : 0deg;
-    // Exact ray angles measured from the static Claude mark's 12 tips.
+        ? mod(animation-tick(), 3.6s) / 3.6s * 360deg : 0deg;
+    // 12 well-separated base angles (~30deg apart) so adjacent lines never crowd each other.
     private property <[angle]> base-angles: [
-        15deg, 43deg, 58deg, 93deg, 124deg, 148deg,
-        180deg, 213deg, 244deg, 280deg, 312deg, 352deg,
+        15deg, 45deg, 75deg, 105deg, 135deg, 165deg,
+        195deg, 225deg, 255deg, 285deg, 315deg, 345deg,
     ];
     width: self.mark-size;
     min-height: self.mark-size;
@@ -654,7 +654,7 @@ component WorkingLogo inherits Rectangle {
         height: root.mark-size;
 
         Rectangle {
-            private property <length> hub: root.mark-size * 0.24;
+            private property <length> hub: root.mark-size * 0.28;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             width: self.hub;
@@ -664,11 +664,11 @@ component WorkingLogo inherits Rectangle {
         }
 
         for base-angle[i] in root.base-angles: ClaudeRay {
-            // Each of the 12 lines keeps its full length and thickness and only shifts
-            // its angular location around the center while active.
-            private property <float> w1: sin(root.phase * 2 + i * 137.5deg);
-            private property <float> w2: cos(root.phase * 3 - i * 223deg);
-            angle: base-angle + 11deg * self.w1 + 6deg * self.w2;
+            // Minimal continuous drift (±5deg max inside a 30deg slot) so lines stay
+            // clearly separated and never bunch up or pause.
+            private property <float> w1: sin(root.phase + i * 137.5deg);
+            private property <float> w2: cos(root.phase * 2 - i * 223deg);
+            angle: base-angle + 3.5deg * self.w1 + 1.5deg * self.w2;
         }
     }
 }

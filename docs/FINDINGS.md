@@ -77,6 +77,35 @@ explicit timeout slightly above the notch's own wait, so the notch always gives 
   the menu now belongs to a hidden helper window, so opening it no longer activates
   the notch.
 
+### Permission updates (step 10.1, hooks docs read 2026-11-10)
+
+- An `allow` decision may carry `updatedPermissions`, a list of the same entries as
+  `permission_suggestions`: `addRules`, `replaceRules`, `removeRules` (`rules` of
+  `{toolName, ruleContent?}`, `behavior`, `destination`), `setMode` and
+  `addDirectories` / `removeDirectories`.
+- `destination` is `session` (in memory, gone when the session ends), `localSettings`
+  (`.claude/settings.local.json`), `projectSettings` or `userSettings`.
+- The docs say a hook can echo a suggestion it received as its own
+  `updatedPermissions`. That is "Always allow" without the notch holding any rule.
+- `permission_suggestions` is optional and is not the list of options the dialog shows:
+  the file-edit dialog builds its own. With no suggestion, offer only Allow and Deny.
+- Deny and ask rules still win over a hook's `allow`. A `deny` may set `interrupt: true`
+  to stop Claude.
+- The docs put the `permission_prompt` notification about six seconds into the wait,
+  not after the hook returns as V1 read it; the notch ignores that type either way.
+- Not tried live yet: step 10.3 checks that a `session` rule stops the next prompt.
+
+### Compared with CodeIsland (2026-11-10)
+
+CodeIsland (macOS, Swift, 30+ agents) is the same idea. For Claude Code it does what
+notchling does: hooks in `settings.json` forwarded over a local socket, approve and
+deny, answers to questions, usage limits, opt-in approve and deny shortcuts shown on
+the card, sounds, hiding in fullscreen. What it has for Claude that notchling lacks:
+always-allow (10.3), a hooks status and repair screen (10.21), a toggle shortcut
+(10.22), no ping for the session in front (10.23), a per-session list with the current
+tool (10.5) and the agent's checklist as progress. Its other agents are out of scope
+for now.
+
 ## V2: Codex CLI (confirmed, exact %)
 
 - Sessions: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl.zst`. The files are

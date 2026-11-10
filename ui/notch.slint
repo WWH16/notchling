@@ -625,10 +625,10 @@ component ClaudeRay inherits Path {
 // The working agent's mark: Claude's 12 starburst lines kept well-spaced at constant
 // count and length, with minimal continuous angular drift while active.
 component WorkingLogo inherits Rectangle {
-    in property <bool> animate-slide: true;
+    in property <bool> animate-rays: true;
     private property <length> mark-size: 14px * Theme.text-scale;
-    // Driven only while `animate-slide` is on, so a still logo redraws once.
-    private property <angle> phase: self.animate-slide
+    // Driven only while `animate-rays` is on, so a still logo redraws once.
+    private property <angle> phase: self.animate-rays
         ? mod(animation-tick(), 3.6s) / 3.6s * 360deg : 0deg;
     // 12 well-separated base angles (~30deg apart) so adjacent lines never crowd each other.
     private property <[angle]> base-angles: [
@@ -638,7 +638,7 @@ component WorkingLogo inherits Rectangle {
     width: self.mark-size;
     min-height: self.mark-size;
 
-    if !root.animate-slide: Logo {
+    if !root.animate-rays: Logo {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         height: self.size;
@@ -647,7 +647,7 @@ component WorkingLogo inherits Rectangle {
         size: root.mark-size;
     }
 
-    if root.animate-slide: Rectangle {
+    if root.animate-rays: Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         width: root.mark-size;
@@ -1427,7 +1427,7 @@ export component Notch inherits Window {
                 if root.working: HorizontalLayout {
                     spacing: 5px;
                     WorkingLogo {
-                        animate-slide: root.animate-agent;
+                        animate-rays: root.animate-agent;
                     }
                     Value {
                         text: root.activity;
@@ -1473,7 +1473,7 @@ export component Notch inherits Window {
                     HorizontalLayout {
                         alignment: center;
                         WorkingLogo {
-                            animate-slide: root.animate-agent;
+                            animate-rays: root.animate-agent;
                         }
                     }
                     Value {
@@ -1821,7 +1821,7 @@ export component Notch inherits Window {
                     horizontal-stretch: 1;
                 }
                 if root.question-multi: PillButton {
-                    label: "Done";
+                    label: "Send answers";
                     primary: true;
                     armed: root.request-armed;
                     progress: root.arming;

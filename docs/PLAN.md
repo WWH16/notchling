@@ -243,8 +243,9 @@ sessions (needs the user, since it changes the global settings).
   Commit `feat: show claude's working time on the notch`.
 - [ ] **8.7** Limit forecast in the hover panel.
 - [ ] **8.8** "Start at sign-in" toggle in Settings.
-- [ ] **8.9** Investigate "Always allow" through the hook API; build it if supported.
-- [ ] **8.10** All providers in the hover panel; double-click to reset placement.
+- [x] **8.9** Investigate "Always allow" through the hook API: supported, see 10.1 and
+  FINDINGS. Building it is 10.3.
+- [ ] **8.10** Double-click to reset placement. The providers half shipped as 10.18.
 - [x] **8.11** Redesign the notch, austere: a tinted near-black body that flows out of
   its edge in concave shoulders (14 px, folding away while dragged, included in the
   window region); the provider's logo inside the ring of its limit as the mark; usage
@@ -373,13 +374,19 @@ Later:
 
 Answering requests:
 
-- [ ] **10.1** Find out what the `PermissionRequest` hook can return: a session or
-  permanent allow rule, or only allow and deny. Notes in `docs/FINDINGS.md`. Settles
-  8.9 and decides 10.2 and 10.3. No commit unless findings change.
-- [ ] **10.2** "Allow the rest of this session" checkbox on the request card: matching
-  requests from that session are allowed without a card until it ends.
-- [ ] **10.3** Allow ▾ menu: Allow once, Allow this command for the session, Always allow
-  (a rule in Claude Code's `settings.json`, if the hook API allows it).
+- [x] **10.1** What the `PermissionRequest` hook can return: `allow` may carry
+  `updatedPermissions`, the same entries as the `permission_suggestions` it received,
+  with a `destination` of `session`, `localSettings`, `projectSettings` or
+  `userSettings`. From the hooks docs (see FINDINGS); a live check is part of 10.3.
+- [x] **10.2** Dropped, folded into 10.3. The notch must not keep its own list of
+  requests to allow without a card: SPEC says never auto-approve. A session rule is
+  Claude Code's to hold, through `updatedPermissions` with `destination: "session"`.
+- [ ] **10.3** "Always allow" beside Allow, shown only when the request carries
+  `permission_suggestions`: it echoes the first `addRules` suggestion back as
+  `updatedPermissions`, and the button names where the rule goes ("Allow for this
+  session", "Always allow in this project"). Claude Code keeps and applies the rule;
+  the notch never answers a request by itself. Same arming delay as Allow; an optional
+  shortcut. Check live that the rule lands and the next matching call asks nothing.
 - [ ] **10.4** Show the outcome: after Allow, Deny, a timeout or an answer in the
   terminal, the pill shows "Allowed" or "Denied" with a green or red mark for about
   1.5 s, then goes back to idle.
@@ -389,10 +396,18 @@ Answering requests:
   in their own colour.
 - [ ] **10.7** Diff preview for Edit and Write requests: the file and the changed lines,
   added and removed, in the code box.
-- [ ] **10.8** Rules: `always_allow` and `never_allow` patterns in the config, applied
-  before any card shows, editable in Settings.
-- [ ] **10.9** Research: do Codex CLI and Gemini CLI have approval hooks like Claude
-  Code's? If so, answer them on the same card.
+- [x] **10.8** Dropped: a second rule engine beside Claude Code's `permissions.allow`
+  and `permissions.deny` would match differently and approve without a card, against
+  SPEC. Rules live in Claude Code's settings; 10.3 writes them there.
+- [ ] **10.9** Deferred while the focus is Claude: approval hooks for Codex CLI and
+  Gemini CLI.
+- [ ] **10.21** "Add Claude Code hooks" in the right-click menu when they are missing
+  or name another exe, so a No on the start-up question is not final without the
+  command line.
+- [ ] **10.22** A global shortcut to open and pin the panel, opt-in like the request
+  shortcuts: the notch never takes the keyboard, so today the panel is mouse-only.
+- [ ] **10.23** No card sound and no done alert for a session whose Claude window is
+  already in front; subagent stops never alert.
 
 Motion (each follows Windows "Show animations", and the agent motion has its own
 `agent_motion` setting, on by default, as a checkbox in Settings):
@@ -404,6 +419,11 @@ Motion (each follows Windows "Show animations", and the agent motion has its own
 - [x] **10.11** Moving logo: while working, the agent's logo slides along the pill to the
   right and back, or nudges right on each new tool call; it settles when the agent
   stops. Commit `feat: slide the working agent logo along the pill`.
+  Changed after live use (five commits, `b760890` to `2e14189`): the logo stays in
+  place and its twelve rays drift a few degrees instead, since a mark that travels
+  reads as progress it does not measure. With motion off it is the publisher's mark,
+  still. Open: the drift moves a ray's tip under half a pixel at 14 px, and the drawn
+  rays are not Claude's own path, so the working mark and the ring's mark differ.
 - [x] **10.12** Request pulse: when Claude asks for something (a permission, a
   question, a reply), the pill gives two or three quick pulses, brighter outline and a
   slight swell, in under half a second, then grows into the card. Follows
@@ -412,6 +432,7 @@ Motion (each follows Windows "Show animations", and the agent motion has its own
 - [x] **10.13** Card transitions: the pill grows into the request card and shrinks back
   into the outcome pill (10.4) with one spring-like motion instead of a cut. Commit
   `feat: spring transitions for the request card`.
+  It shrinks back to the idle pill until 10.4 exists.
 
 Suggested UI polish:
 
@@ -447,6 +468,11 @@ Suggested UI polish:
 - One exe for app and `--hook` mode. If V1 shows stdin/stdout problems with the GUI
   subsystem, split the hook into a second binary in the same crate.
 - Start with Windows: not included; add later if wanted.
+- Motion beyond "~200 ms ease-out, no bounce" (Phase 10): the request card opens with
+  a light spring (`spring(0.2)`, 260 ms), the pill pulses before it, and a glow circles
+  the notch while Claude works. All of it stops with `agent_motion` off or Windows
+  "Show animations" off, and the 500 ms arming delay starts after the spring's start,
+  so the buttons have settled before they take a click.
 - Slint software renderer instead of OpenGL (femtovg): same look, a third of the RAM.
 - Right-click menu is a native Win32 popup: a Slint popup would be clipped by the
   window region.

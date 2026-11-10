@@ -44,11 +44,10 @@ export global Theme {
     in property <string> mono: "Consolas";
     // Windows' text size, 1 at 100%. Text and the shapes holding it grow with it.
     in property <float> text-scale: 1;
-    // Type sizes; nothing is smaller than 10px, which stays legible at 100% scaling.
-    out property <length> size-small: 10px * self.text-scale;
-    out property <length> size-label: 11px * self.text-scale;
-    out property <length> size-value: 12px * self.text-scale;
-    out property <length> size-large: 13px * self.text-scale;
+    // Type sizes; nothing is smaller than 12px, Windows' own caption size.
+    out property <length> size-label: 12px * self.text-scale;
+    out property <length> size-value: 13px * self.text-scale;
+    out property <length> size-large: 14px * self.text-scale;
     // Windows "Show animations" is off: shapes change at once and only fades remain.
     in property <bool> reduce-motion;
 }
@@ -476,60 +475,21 @@ component PillOutline inherits Rectangle {
     border-bottom-right-radius: self.radius-bottom-right;
 }
 
-// A window onto the pill's outline, so a soft highlight can travel along it.
-component OutlineSpot inherits Rectangle {
-    in property <length> center-x;
-    in property <length> center-y;
-    in property <length> size;
-    in property <length> pill-width;
-    in property <length> pill-height;
-    in property <length> radius-top-left;
-    in property <length> radius-top-right;
-    in property <length> radius-bottom-left;
-    in property <length> radius-bottom-right;
-    in property <color> fill;
-
-    x: self.center-x - self.size / 2;
-    y: self.center-y - self.size / 2;
-    width: self.size;
-    height: self.size;
-    clip: true;
-
-    PillOutline {
-        x: -parent.x;
-        y: -parent.y;
-        pill-width: root.pill-width;
-        pill-height: root.pill-height;
-        radius-top-left: root.radius-top-left;
-        radius-top-right: root.radius-top-right;
-        radius-bottom-left: root.radius-bottom-left;
-        radius-bottom-right: root.radius-bottom-right;
-        stroke: 2px;
-        fill: root.fill;
-    }
-}
-
-// While an agent works, a breathing outline in the provider's colour with a soft light
-// circling it over 2 s; a still outline when motion is off.
+// While an agent works, a quiet outline in the provider's colour that breathes over
+// 2 s; a still outline when motion is off. The side against the screen edge stays open.
 component WorkingGlow inherits Rectangle {
     in property <color> fill;
     in property <bool> animate-glow: true;
+    in property <bool> open-edge;
+    in property <NotchEdge> edge;
     in property <length> radius-top-left;
     in property <length> radius-top-right;
     in property <length> radius-bottom-left;
     in property <length> radius-bottom-right;
 
     // Only read while `animate-glow` is on, so a still outline redraws once.
-    private property <float> turn: self.animate-glow ? mod(animation-tick(), 2s) / 2s : 0;
-    private property <float> breath: self.animate-glow ? 0.5 - 0.5 * cos(self.turn * 360deg) : 0.5;
-    private property <length> perimeter: 2 * (self.width + self.height);
-    private property <length> along: self.turn * self.perimeter;
-    private property <length> spot-x: self.along < self.width ? self.along
-        : self.along < self.width + self.height ? self.width
-        : self.along < 2 * self.width + self.height ? 2 * self.width + self.height - self.along : 0;
-    private property <length> spot-y: self.along < self.width ? 0
-        : self.along < self.width + self.height ? self.along - self.width
-        : self.along < 2 * self.width + self.height ? self.height : self.perimeter - self.along;
+    private property <float> breath: self.animate-glow
+        ? 0.5 - 0.5 * cos(mod(animation-tick(), 2s) / 2s * 360deg) : 0.5;
 
     PillOutline {
         pill-width: root.width;
@@ -538,44 +498,10 @@ component WorkingGlow inherits Rectangle {
         radius-top-right: root.radius-top-right;
         radius-bottom-left: root.radius-bottom-left;
         radius-bottom-right: root.radius-bottom-right;
-        fill: root.fill.with-alpha(root.animate-glow ? 0.22 + 0.30 * root.breath : 0.55);
-    }
-
-    if root.animate-glow: OutlineSpot {
-        center-x: root.spot-x;
-        center-y: root.spot-y;
-        size: 88px * Theme.text-scale;
-        pill-width: root.width;
-        pill-height: root.height;
-        radius-top-left: root.radius-top-left;
-        radius-top-right: root.radius-top-right;
-        radius-bottom-left: root.radius-bottom-left;
-        radius-bottom-right: root.radius-bottom-right;
-        fill: root.fill.with-alpha(0.22 + 0.16 * root.breath);
-    }
-    if root.animate-glow: OutlineSpot {
-        center-x: root.spot-x;
-        center-y: root.spot-y;
-        size: 48px * Theme.text-scale;
-        pill-width: root.width;
-        pill-height: root.height;
-        radius-top-left: root.radius-top-left;
-        radius-top-right: root.radius-top-right;
-        radius-bottom-left: root.radius-bottom-left;
-        radius-bottom-right: root.radius-bottom-right;
-        fill: root.fill.with-alpha(0.32 + 0.20 * root.breath);
-    }
-    if root.animate-glow: OutlineSpot {
-        center-x: root.spot-x;
-        center-y: root.spot-y;
-        size: 22px * Theme.text-scale;
-        pill-width: root.width;
-        pill-height: root.height;
-        radius-top-left: root.radius-top-left;
-        radius-top-right: root.radius-top-right;
-        radius-bottom-left: root.radius-bottom-left;
-        radius-bottom-right: root.radius-bottom-right;
-        fill: root.fill.with-alpha(0.45 + 0.25 * root.breath);
+        stroke: 1px;
+        fill: root.fill.with-alpha(0.25 + 0.35 * root.breath);
+        open-edge: root.open-edge;
+        edge: root.edge;
     }
 }
 
@@ -781,7 +707,7 @@ component PillButton inherits Rectangle {
             text: root.shortcut;
             color: root.primary && root.armed ? Theme.surface.transparentize(0.35) : Theme.muted;
             font-family: Theme.font;
-            font-size: Theme.size-small;
+            font-size: Theme.size-label;
             font-weight: 500;
             vertical-alignment: center;
         }
@@ -1246,7 +1172,7 @@ export component Notch inherits Window {
     private property <length> request-height: self.request-kind == RequestKind.question
         ? min(question-view.preferred-height, self.card-room)
         : self.request-kind == RequestKind.reply ? min(reply-view.preferred-height, self.card-room)
-        : ((self.request-description != "" ? 222px : 196px) + (self.request-more > 0 ? 12px : 0))
+        : ((self.request-description != "" ? 230px : 202px) + (self.request-more > 0 ? 12px : 0))
             * Theme.text-scale;
     private property <length> drawn-request-height: self.request-height;
     animate drawn-request-height {
@@ -1659,7 +1585,7 @@ export component Notch inherits Window {
             }
 
             code-box := Rectangle {
-                height: 104px * Theme.text-scale;
+                height: 108px * Theme.text-scale;
                 background: Theme.code-surface;
                 border-radius: 10px;
                 clip: true;
@@ -1706,7 +1632,7 @@ export component Notch inherits Window {
                         text: code-box.hidden-lines == 1 ? "+1 line" : "+\{code-box.hidden-lines} lines";
                         color: Theme.muted;
                         font-family: Theme.font;
-                        font-size: Theme.size-small;
+                        font-size: Theme.size-label;
                         font-weight: 600;
                     }
                 }
@@ -2006,7 +1932,7 @@ export component Notch inherits Window {
             }
         }
 
-        if Theme.light-panel && !root.working && !root.request-pulsing: PillOutline {
+        if Theme.light-panel && !root.request-pulsing: PillOutline {
             pill-width: pill.width;
             pill-height: pill.height;
             radius-top-left: pill.border-top-left-radius;
@@ -2018,9 +1944,12 @@ export component Notch inherits Window {
             open-edge: !root.floating;
             edge: root.edge;
         }
-        if root.working: WorkingGlow {
+        // On the idle pill only: an open panel or a card keeps to its content.
+        if root.working && !root.expanded && !root.has-request && !root.alert-active: WorkingGlow {
             fill: root.accent;
             animate-glow: root.animate-agent;
+            open-edge: !root.floating;
+            edge: root.edge;
             radius-top-left: pill.border-top-left-radius;
             radius-top-right: pill.border-top-right-radius;
             radius-bottom-left: pill.border-bottom-left-radius;

@@ -401,6 +401,10 @@ Answering requests:
   SPEC. Rules live in Claude Code's settings; 10.3 writes them there.
 - [ ] **10.9** Deferred while the focus is Claude: approval hooks for Codex CLI and
   Gemini CLI.
+- [x] **10.24** Type sizes from the Phase 10 audit: nothing below 12 px (labels,
+  hints and the command 12, values 13, titles and questions 14), up from a 10 px floor.
+  The permission card is a few pixels taller to hold it. Checked offscreen in every
+  state, both edges, light mode and 150% text.
 - [ ] **10.21** "Add Claude Code hooks" in the right-click menu when they are missing
   or name another exe, so a No on the start-up question is not final without the
   command line.
@@ -416,6 +420,9 @@ Motion (each follows Windows "Show animations", and the agent motion has its own
   outline and breathes, brightening and fading over about 2 s, in the provider's
   colour. Stops when the agent stops; a still outline when motion is off. Checked
   offscreen with motion on and off. Commit `feat: working glow around the notch`.
+  Changed after the Phase 10 audit: the circling light is gone. A 1 px outline
+  breathes on the idle pill only, open on the side against the screen edge; an open
+  panel or a card shows no colour around it.
 - [x] **10.11** Moving logo: while working, the agent's logo slides along the pill to the
   right and back, or nudges right on each new tool call; it settles when the agent
   stops. Commit `feat: slide the working agent logo along the pill`.
@@ -469,8 +476,8 @@ Suggested UI polish:
   subsystem, split the hook into a second binary in the same crate.
 - Start with Windows: not included; add later if wanted.
 - Motion beyond "~200 ms ease-out, no bounce" (Phase 10): the request card opens with
-  a light spring (`spring(0.2)`, 260 ms), the pill pulses before it, and a glow circles
-  the notch while Claude works. All of it stops with `agent_motion` off or Windows
+  a light spring (`spring(0.2)`, 260 ms), the pill pulses before it, and an outline
+  breathes on the idle pill while Claude works. All of it stops with `agent_motion` off or Windows
   "Show animations" off, and the 500 ms arming delay starts after the spring's start,
   so the buttons have settled before they take a click.
 - Slint software renderer instead of OpenGL (femtovg): same look, a third of the RAM.

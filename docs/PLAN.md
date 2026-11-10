@@ -405,6 +405,11 @@ Answering requests:
   hints and the command 12, values 13, titles and questions 14), up from a 10 px floor.
   The permission card is a few pixels taller to hold it. Checked offscreen in every
   state, both edges, light mode and 150% text.
+- [x] **10.25** Cards that lead with their content, after CodeIsland: Deny in red
+  outline and Allow in green; a `$` prompt before a shell command; question options
+  as numbered, filled rows with the question in weight. Buttons fade in while arming
+  instead of the sweep, which drew a square block and hid the shortcut hint. Checked
+  offscreen: permission, both question kinds, reply.
 - [ ] **10.21** "Add Claude Code hooks" in the right-click menu when they are missing
   or name another exe, so a No on the start-up question is not final without the
   command line.

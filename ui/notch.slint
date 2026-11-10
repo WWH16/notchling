@@ -22,10 +22,10 @@ export global Theme {
     // The command box on a request card.
     out property <color> code-surface: #161618;
     out property <color> code-text: #e5e5ea;
-    // The primary button, contrasting with the surface, with its hover and pressed shades.
+    // The primary button, contrasting with the surface.
     out property <color> button: self.light-panel ? #1c1c1e : #ececee;
-    out property <color> button-hover: self.light-panel ? #2c2c2e : #f5f5f7;
-    out property <color> button-pressed: self.light-panel ? #3a3a3c : #d1d1d6;
+    // The Allow button: a green deep enough for white text at 5:1.
+    out property <color> allow: #1e7b34;
     out property <color> claude: #d97757;
     out property <color> chatgpt: #10a37f;
     out property <color> gemini: #4c8df6;
@@ -604,13 +604,15 @@ component WorkingLogo inherits Rectangle {
 component OptionButton inherits Rectangle {
     in property <OptionView> option;
     in property <bool> multi;
+    // The option's place in the list, from 1, shown when there is no tick box.
+    in property <int> number;
     in property <bool> armed: true;
     callback clicked();
     min-height: row.preferred-height;
-    border-radius: 10px;
+    border-radius: 8px;
     border-width: 1px;
-    border-color: self.option.picked ? Theme.text : Theme.outline;
-    background: touch.pressed ? Theme.outline : touch.has-hover && self.armed ? Theme.track : transparent;
+    border-color: self.option.picked ? Theme.text : transparent;
+    background: touch.pressed ? Theme.outline : touch.has-hover && self.armed ? Theme.track : Theme.code-surface;
     opacity: self.armed ? 1 : 0.6;
     accessible-role: button;
     accessible-label: self.option.picked ? "\{self.option.label}, ticked" : self.option.label;
@@ -638,9 +640,19 @@ component OptionButton inherits Rectangle {
                 background: root.option.picked ? Theme.text : transparent;
             }
         }
+        if !root.multi: Text {
+            text: "\{root.number}.";
+            color: Theme.claude;
+            font-family: Theme.font;
+            font-size: Theme.size-value;
+            font-weight: 600;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
         VerticalLayout {
             alignment: center;
             spacing: 2px;
+            horizontal-stretch: 1;
             Value {
                 text: root.option.label;
                 overflow: elide;
@@ -664,7 +676,11 @@ component PillButton inherits Rectangle {
     in property <string> label;
     in property <string> shortcut;
     in property <bool> primary;
-    // Until armed the button ignores clicks and fills up as `progress` runs from 0 to 1.
+    // A primary button's fill, an outline button's border, and the text on either.
+    in property <color> fill: Theme.button;
+    in property <color> line: Theme.outline;
+    in property <color> ink: self.primary ? Theme.surface : Theme.text;
+    // Until armed the button ignores clicks and fades in as `progress` runs from 0 to 1.
     in property <bool> armed: true;
     in property <float> progress: 1;
     callback clicked();
@@ -672,11 +688,10 @@ component PillButton inherits Rectangle {
     height: 28px * Theme.text-scale;
     border-radius: self.height / 2;
     border-width: self.primary ? 0 : 1px;
-    border-color: Theme.outline;
-    clip: true;
-    background: !self.armed ? (self.primary ? Theme.outline : transparent)
-        : self.primary
-        ? (touch.pressed ? Theme.button-pressed : touch.has-hover ? Theme.button-hover : Theme.button)
+    border-color: self.line;
+    opacity: self.armed ? 1 : 0.35 + 0.4 * clamp(self.progress, 0, 1);
+    background: self.primary
+        ? (touch.pressed ? self.fill.darker(0.15) : touch.has-hover ? self.fill.brighter(0.15) : self.fill)
         : (touch.pressed ? Theme.outline : touch.has-hover ? Theme.track : transparent);
     accessible-role: button;
     accessible-label: self.label;
@@ -686,18 +701,12 @@ component PillButton inherits Rectangle {
         root.clicked();
     }
 
-    if !root.armed: Rectangle {
-        x: 0;
-        width: parent.width * clamp(root.progress, 0, 1);
-        background: root.primary ? Theme.muted : Theme.track;
-    }
-
     content := HorizontalLayout {
         alignment: center;
         spacing: 6px;
         Text {
             text: root.label;
-            color: root.primary && root.armed ? Theme.surface : Theme.text;
+            color: root.ink;
             font-family: Theme.font;
             font-size: Theme.size-value;
             font-weight: 600;
@@ -705,7 +714,7 @@ component PillButton inherits Rectangle {
         }
         if root.shortcut != "": Text {
             text: root.shortcut;
-            color: root.primary && root.armed ? Theme.surface.transparentize(0.35) : Theme.muted;
+            color: root.ink.with-alpha(0.7);
             font-family: Theme.font;
             font-size: Theme.size-label;
             font-weight: 500;
@@ -1589,6 +1598,8 @@ export component Notch inherits Window {
                 background: Theme.code-surface;
                 border-radius: 10px;
                 clip: true;
+                // A shell command leads with a prompt; other tools show their input bare.
+                property <bool> shell: root.request-tool == "Bash" || root.request-tool == "PowerShell";
 
                 code := Flickable {
                     x: 10px;
@@ -1597,10 +1608,21 @@ export component Notch inherits Window {
                     height: parent.height - 16px;
                     content-height: max(self.height, command.preferred-height);
 
+                    prompt := Text {
+                        x: 0;
+                        y: 0;
+                        visible: code-box.shell;
+                        text: "$ ";
+                        color: Theme.good;
+                        font-family: command.font-family;
+                        font-size: command.font-size;
+                        accessible-role: none;
+                    }
                     command := Text {
                         // Slint centres a shorter child; a short command starts at the top.
+                        x: code-box.shell ? prompt.preferred-width : 0;
                         y: 0;
-                        width: parent.width;
+                        width: parent.width - self.x;
                         height: self.preferred-height;
                         vertical-alignment: top;
                         text: root.request-detail;
@@ -1651,6 +1673,8 @@ export component Notch inherits Window {
                 }
                 PillButton {
                     label: "Deny";
+                    line: Theme.bad.with-alpha(0.55);
+                    ink: Theme.bad;
                     shortcut: root.shortcuts ? "Ctrl+Alt+N" : "";
                     armed: root.request-armed;
                     progress: root.arming;
@@ -1662,6 +1686,8 @@ export component Notch inherits Window {
                     label: "Allow";
                     shortcut: root.shortcuts ? "Ctrl+Alt+Y" : "";
                     primary: true;
+                    fill: Theme.allow;
+                    ink: #ffffff;
                     armed: root.request-armed;
                     progress: root.arming;
                     clicked => {
@@ -1698,6 +1724,8 @@ export component Notch inherits Window {
                 }
                 if root.question-header != "": Label {
                     text: root.question-header;
+                    color: Theme.claude;
+                    font-weight: 600;
                     overflow: elide;
                 }
                 Rectangle {
@@ -1721,11 +1749,13 @@ export component Notch inherits Window {
                 color: Theme.text;
                 font-family: Theme.font;
                 font-size: Theme.size-large;
+                font-weight: 600;
                 wrap: word-wrap;
             }
 
             for option[index] in root.question-options: OptionButton {
                 option: option;
+                number: index + 1;
                 multi: root.question-multi;
                 armed: root.request-armed;
                 clicked => {

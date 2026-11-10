@@ -34,6 +34,11 @@ pub enum Event {
         description: String,
         /// The full command, or the full tool input for non-shell tools.
         detail: String,
+        /// What [`Decision::AllowAlways`] would grant, such as "Always allow
+        /// Bash(cargo build:*) in this project"; empty when Claude Code suggested no
+        /// allow rule.
+        #[serde(default)]
+        always: String,
     },
     /// Claude asks the user to pick among options, through its `AskUserQuestion` tool;
     /// the hook waits for a [`Decision::Answered`].
@@ -91,6 +96,8 @@ pub struct QuestionOption {
 #[serde(rename_all = "snake_case")]
 pub enum Decision {
     Allow,
+    /// Allow, and have Claude Code keep the allow rule it suggested for this request.
+    AllowAlways,
     Deny,
     /// Hand the request back to Claude Code's own dialog.
     AskInApp,
@@ -158,6 +165,7 @@ mod tests {
                 tool: "Bash".to_owned(),
                 description: "Build release binary".to_owned(),
                 detail: "cargo build\n--release".to_owned(),
+                always: "Always allow Bash(cargo build:*) in this project".to_owned(),
             },
             Event::Question {
                 origin: origin(),

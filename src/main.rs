@@ -1174,11 +1174,13 @@ fn show_requests(notch: &Notch, requests: &mut Requests) {
             tool,
             description,
             detail,
+            always,
         } => {
             notch.set_request_kind(RequestKind::Permission);
             notch.set_request_tool(tool.as_str().into());
             notch.set_request_description(description.as_str().into());
             notch.set_request_detail(detail.as_str().into());
+            notch.set_request_always(always.as_str().into());
             None
         }
         Ask::Questions(questions) => {
@@ -1329,6 +1331,7 @@ impl From<Choice> for Decision {
     fn from(choice: Choice) -> Self {
         match choice {
             Choice::Allow => Self::Allow,
+            Choice::AllowAlways => Self::AllowAlways,
             Choice::Deny => Self::Deny,
             Choice::AskInApp => Self::AskInApp,
         }

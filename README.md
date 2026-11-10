@@ -90,6 +90,10 @@ How a permission request works:
   above the command) and the **full** command or input, with Allow, Deny and
   "Open in app". A command too long for the card fades out at the bottom with
   "+N lines"; scroll to read the rest.
+- When Claude Code suggests an allow rule for the call, the card offers it by name,
+  such as "Always allow Bash(cargo build:*) in this project". Clicking it allows the
+  call and has Claude Code keep that rule; notchling keeps no rules and never answers
+  a request by itself.
 - Allow and Deny ignore clicks for half a second after a card appears, fading in
   meanwhile, so a click meant for the window behind cannot answer it.
 - With the shortcuts turned on in the settings, Ctrl+Alt+Y allows and Ctrl+Alt+N

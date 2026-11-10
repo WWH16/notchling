@@ -45,6 +45,8 @@ struct HookInput {
     notification_type: String,
     /// Claude's final reply of the turn, sent with Stop.
     last_assistant_message: String,
+    /// The permission updates Claude Code suggests for a request, such as an allow rule.
+    permission_suggestions: Vec<Value>,
 }
 
 /// Runs hook mode to completion. Prints the decision JSON when there is one.
@@ -114,6 +116,9 @@ fn to_event(input: &HookInput, ancestors: Vec<u32>) -> Option<Event> {
             tool: input.tool_name.clone(),
             description: tool_description(&input.tool_input),
             detail: tool_detail(&input.tool_input),
+            always: always_allow(&input.permission_suggestions)
+                .map(|(_, label)| label)
+                .unwrap_or_default(),
         }),
         // `permission_prompt` duplicates the PermissionRequest that came just before.
         "Notification" => match input.notification_type.as_str() {
@@ -186,6 +191,41 @@ fn tool_detail(tool_input: &Value) -> String {
     }
 }
 
+/// The first suggestion that adds allow rules, with the words the card puts on it:
+/// the rules as Claude Code writes them and where it keeps them, such as "Always allow
+/// Bash(cargo build:*) in this project". `None` when there is no such suggestion or it
+/// has a shape this does not know, so the card never offers a rule it cannot name.
+fn always_allow(suggestions: &[Value]) -> Option<(&Value, String)> {
+    suggestions.iter().find_map(|suggestion| {
+        if suggestion["type"] != "addRules" || suggestion["behavior"] != "allow" {
+            return None;
+        }
+        let rules: Vec<String> = suggestion["rules"]
+            .as_array()?
+            .iter()
+            .map(|rule| {
+                let tool = rule["toolName"].as_str()?;
+                Some(match rule["ruleContent"].as_str() {
+                    Some(content) => format!("{tool}({content})"),
+                    None => tool.to_owned(),
+                })
+            })
+            .collect::<Option<_>>()?;
+        let kept = match suggestion["destination"].as_str()? {
+            "session" => "for this session",
+            "localSettings" | "projectSettings" => "in this project",
+            "userSettings" => "in every project",
+            _ => return None,
+        };
+        (!rules.is_empty()).then(|| {
+            (
+                suggestion,
+                format!("Always allow {} {kept}", rules.join(", ")),
+            )
+        })
+    })
+}
+
 /// The last component of the session's working directory, e.g. `notchling`.
 fn project_name(cwd: &str) -> String {
     Path::new(cwd)
@@ -204,6 +244,17 @@ fn decision_output(input: &HookInput, decision: Decision) -> Option<String> {
                 "decision": { "behavior": "allow" },
             }
         }),
+        // Echoes Claude Code's own suggestion back, so Claude Code keeps the rule and
+        // the notch holds none. Without a suggestion its dialog takes the request.
+        ("PermissionRequest", Decision::AllowAlways) => {
+            let (rule, _) = always_allow(&input.permission_suggestions)?;
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": { "behavior": "allow", "updatedPermissions": [rule] },
+                }
+            })
+        }
         ("PermissionRequest", Decision::Deny) => json!({
             "hookSpecificOutput": {
                 "hookEventName": "PermissionRequest",
@@ -258,10 +309,12 @@ mod tests {
             tool,
             description,
             detail,
+            always,
         }) = event
         else {
             panic!("expected a permission request, got {event:?}");
         };
+        assert_eq!(always, "Always allow Bash(cargo build:*) in this project");
         assert_eq!(tool, "Bash");
         assert_eq!(description, "Build release binary");
         assert_eq!(detail, "cargo build --release");
@@ -341,6 +394,64 @@ mod tests {
                 (tool.as_str(), detail.as_str()),
                 (asked_tool.as_str(), asked_detail.as_str())
             );
+        }
+    }
+
+    #[test]
+    fn always_allow_echoes_claude_codes_own_suggestion() {
+        let permission = fixture(include_str!(
+            "../tests/fixtures/hooks/permission_request.json"
+        ));
+        let text = decision_output(&permission, Decision::AllowAlways).expect("allowed");
+        let output: Value = serde_json::from_str(&text).expect("valid JSON");
+        let decision = &output["hookSpecificOutput"]["decision"];
+        assert_eq!(decision["behavior"], "allow");
+        assert_eq!(
+            decision["updatedPermissions"],
+            json!(permission.permission_suggestions)
+        );
+
+        let mut bare = permission;
+        bare.permission_suggestions.clear();
+        assert_eq!(
+            decision_output(&bare, Decision::AllowAlways),
+            None,
+            "no suggestion leaves the request to Claude Code's dialog"
+        );
+    }
+
+    #[test]
+    fn only_nameable_allow_rules_are_offered() {
+        let label = |suggestions: Value| {
+            let suggestions: Vec<Value> = serde_json::from_value(suggestions).expect("a list");
+            always_allow(&suggestions).map(|(_, label)| label)
+        };
+        assert_eq!(
+            label(json!([
+                {"type": "setMode", "mode": "acceptEdits", "destination": "session"},
+                {"type": "addRules", "behavior": "allow", "destination": "session",
+                 "rules": [{"toolName": "Read"}, {"toolName": "Bash", "ruleContent": "ls:*"}]},
+            ])),
+            Some("Always allow Read, Bash(ls:*) for this session".to_owned())
+        );
+        assert_eq!(
+            label(json!([{"type": "addRules", "behavior": "allow",
+                "destination": "userSettings", "rules": [{"toolName": "WebFetch"}]}])),
+            Some("Always allow WebFetch in every project".to_owned())
+        );
+        for unknown in [
+            json!([]),
+            json!(["not an object"]),
+            json!([{"type": "addRules", "behavior": "deny", "destination": "session",
+                "rules": [{"toolName": "Bash"}]}]),
+            json!([{"type": "addRules", "behavior": "allow", "destination": "session",
+                "rules": []}]),
+            json!([{"type": "addRules", "behavior": "allow", "destination": "elsewhere",
+                "rules": [{"toolName": "Bash"}]}]),
+            json!([{"type": "addRules", "behavior": "allow", "destination": "session",
+                "rules": [{"ruleContent": "ls"}]}]),
+        ] {
+            assert_eq!(label(unknown.clone()), None, "{unknown}");
         }
     }
 

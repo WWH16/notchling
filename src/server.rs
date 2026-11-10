@@ -58,11 +58,13 @@ fn handle(connection: &File, requests: &Mutex<Requests>, notify: &impl Fn(Update
             tool,
             description,
             detail,
+            always,
         } => {
             let ask = Ask::Permission {
                 tool,
                 description,
                 detail,
+                always,
             };
             wait_for_answer(connection, requests, notify, origin, ask);
         }

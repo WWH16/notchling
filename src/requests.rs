@@ -44,6 +44,9 @@ pub enum Ask {
         description: String,
         /// The full command, or the full tool input for non-shell tools.
         detail: String,
+        /// What "always allow" would grant, as the card words it; empty when Claude
+        /// Code suggested no allow rule.
+        always: String,
     },
     /// Claude asks the user to pick among options, answered with
     /// [`Decision::Answered`].
@@ -341,6 +344,7 @@ mod tests {
                 tool: tool.to_owned(),
                 description: String::new(),
                 detail: detail.to_owned(),
+                always: String::new(),
             },
         }
     }

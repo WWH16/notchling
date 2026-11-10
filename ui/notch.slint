@@ -53,7 +53,7 @@ export global Theme {
 }
 
 // What the user picked on a permission request.
-export enum Choice { allow, deny, ask-in-app }
+export enum Choice { allow, allow-always, deny, ask-in-app }
 
 // Whose usage the notch shows.
 export enum Provider { claude, chatgpt, gemini }
@@ -885,6 +885,9 @@ export component Notch inherits Window {
     in property <string> request-description;
     in property <string> request-project;
     in property <string> request-detail;
+    // What "always allow" would grant, such as "Always allow Bash(cargo build:*) in this
+    // project"; empty when Claude Code suggested no allow rule.
+    in property <string> request-always;
     in property <int> request-more;
     // Whether Ctrl+Alt+Y and Ctrl+Alt+N answer the request; Rust claims the keys.
     in property <bool> shortcuts;
@@ -1181,7 +1184,8 @@ export component Notch inherits Window {
     private property <length> request-height: self.request-kind == RequestKind.question
         ? min(question-view.preferred-height, self.card-room)
         : self.request-kind == RequestKind.reply ? min(reply-view.preferred-height, self.card-room)
-        : ((self.request-description != "" ? 230px : 202px) + (self.request-more > 0 ? 12px : 0))
+        : ((self.request-description != "" ? 230px : 202px) + (self.request-always != "" ? 28px : 0)
+            + (self.request-more > 0 ? 12px : 0))
             * Theme.text-scale;
     private property <length> drawn-request-height: self.request-height;
     animate drawn-request-height {
@@ -1656,6 +1660,40 @@ export component Notch inherits Window {
                         font-family: Theme.font;
                         font-size: Theme.size-label;
                         font-weight: 600;
+                    }
+                }
+            }
+
+            // Allows the call and has Claude Code keep the rule it suggested, so the
+            // next matching call asks nothing. Armed like Allow.
+            if root.request-always != "": Rectangle {
+                height: 18px * Theme.text-scale;
+                opacity: root.request-armed ? 1 : 0.5;
+                accessible-role: button;
+                accessible-label: root.request-always;
+                accessible-enabled: root.request-armed;
+                accessible-action-default => {
+                    root.answer(Choice.allow-always);
+                }
+
+                always-text := Text {
+                    x: 0;
+                    width: parent.width;
+                    height: parent.height;
+                    text: root.request-always;
+                    color: always-touch.has-hover ? Theme.text : Theme.good;
+                    font-family: Theme.font;
+                    font-size: Theme.size-label;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                // Only the words take the click, not the whole row.
+                always-touch := TouchArea {
+                    x: 0;
+                    width: min(always-text.preferred-width, parent.width);
+                    enabled: root.request-armed;
+                    clicked => {
+                        root.answer(Choice.allow-always);
                     }
                 }
             }

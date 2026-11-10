@@ -381,12 +381,17 @@ Answering requests:
 - [x] **10.2** Dropped, folded into 10.3. The notch must not keep its own list of
   requests to allow without a card: SPEC says never auto-approve. A session rule is
   Claude Code's to hold, through `updatedPermissions` with `destination: "session"`.
-- [ ] **10.3** "Always allow" beside Allow, shown only when the request carries
+- [x] **10.3** "Always allow" beside Allow, shown only when the request carries
   `permission_suggestions`: it echoes the first `addRules` suggestion back as
   `updatedPermissions`, and the button names where the rule goes ("Allow for this
   session", "Always allow in this project"). Claude Code keeps and applies the rule;
   the notch never answers a request by itself. Same arming delay as Allow; an optional
   shortcut. Check live that the rule lands and the next matching call asks nothing.
+  Built as a green line under the command that names the rule and where it is kept
+  ("Always allow Bash(cargo build:*) in this project"). The hook words it and echoes
+  the suggestion; a suggestion of a shape it does not know offers nothing. No shortcut
+  yet. Checked with tests and offscreen; the live check is still open. Commit
+  `feat: always allow from the request card`.
 - [ ] **10.4** Show the outcome: after Allow, Deny, a timeout or an answer in the
   terminal, the pill shows "Allowed" or "Denied" with a green or red mark for about
   1.5 s, then goes back to idle.

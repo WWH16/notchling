@@ -934,6 +934,8 @@ fn show_usage(notch: &Notch, provider: Provider, usage: Option<&Usage>) {
 /// timer that releases keep-awake for silent sessions; it runs until dropped.
 fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> Timer {
     let requests = Arc::new(Mutex::new(Requests::default()));
+    // Only ever locked on the UI thread, which owns the Windows power request.
+    let awake = Arc::new(Mutex::new(KeepAwake::default()));
 
     let weak = notch.as_weak();
     let decided = Arc::clone(&requests);
@@ -963,16 +965,29 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
 
     let weak = notch.as_weak();
     let replied = Arc::clone(&requests);
+    let working = Arc::clone(&awake);
     notch.on_reply_sent(move |id, text| {
         let message = text.trim();
         let Some(notch) = weak.upgrade().filter(|_| !message.is_empty()) else {
             return;
         };
+        let id = RequestId::from_ui(id);
         let mut requests = replied.lock().expect("requests lock poisoned");
+        let session_id = requests
+            .front()
+            .filter(|front| front.id == id)
+            .map(|front| front.request.session_id.clone());
         let decision = Decision::Replied {
             message: message.to_owned(),
         };
-        requests.decide(RequestId::from_ui(id), decision);
+        if requests.decide(id, decision)
+            && let Some(session_id) = session_id
+        {
+            // Claude goes back to work on the reply, with no prompt event to say so.
+            let mut awake = lock_awake(&working);
+            awake.started(session_id, Instant::now());
+            show_activity(&notch, &awake);
+        }
         show_requests(&notch, &mut requests);
     });
     let weak = notch.as_weak();
@@ -1005,8 +1020,6 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
         process::focus_first_window(&ancestors);
     });
 
-    // Only ever locked on the UI thread, which owns the Windows power request.
-    let awake = Arc::new(Mutex::new(KeepAwake::default()));
     let awake_check = Timer::default();
     let expiring = Arc::clone(&awake);
     let weak = notch.as_weak();

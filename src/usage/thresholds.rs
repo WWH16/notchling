@@ -28,17 +28,24 @@ impl Thresholds {
     /// Alerts at each of `percents`; values outside 1..=100 are ignored.
     #[must_use]
     pub fn new(percents: &[u32]) -> Self {
-        let mut percents: Vec<u32> = percents
+        let mut thresholds = Self {
+            percents: Vec::new(),
+            alerted: HashMap::new(),
+        };
+        thresholds.set_percents(percents);
+        thresholds
+    }
+
+    /// Alerts at each of `percents` from now on. What already alerted in each window
+    /// is kept, so saving the settings does not repeat an alert.
+    pub fn set_percents(&mut self, percents: &[u32]) {
+        self.percents = percents
             .iter()
             .copied()
             .filter(|percent| (1..=100).contains(percent))
             .collect();
-        percents.sort_unstable();
-        percents.dedup();
-        Self {
-            percents,
-            alerted: HashMap::new(),
-        }
+        self.percents.sort_unstable();
+        self.percents.dedup();
     }
 
     /// The highest threshold `usage` has reached, if it has not alerted yet in this
@@ -122,6 +129,19 @@ mod tests {
 
         // The next window starts over, and a jump straight past both alerts once.
         assert_eq!(crossed(&mut thresholds, 0.96, "2026-10-27T10:00:00Z"), last);
+    }
+
+    #[test]
+    fn changed_percents_keep_what_already_alerted() {
+        let mut thresholds = Thresholds::new(&[80, 95]);
+        let window = "2026-10-27T05:00:00Z";
+        let at_85 = usage(0.85, window);
+        assert!(thresholds.crossed(Provider::Claude, &at_85).is_some());
+        thresholds.set_percents(&[80, 95]);
+        assert_eq!(thresholds.crossed(Provider::Claude, &at_85), None);
+        thresholds.set_percents(&[85, 99]);
+        let crossed = thresholds.crossed(Provider::Claude, &at_85);
+        assert_eq!(crossed.map(|crossing| crossing.percent), Some(85));
     }
 
     #[test]

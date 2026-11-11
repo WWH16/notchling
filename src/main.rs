@@ -538,7 +538,7 @@ fn apply_settings(
     move |config| {
         let shown = {
             let mut usages = lock_usages(&usages);
-            usages.thresholds = Thresholds::new(config.usage_alerts());
+            usages.thresholds.set_percents(config.usage_alerts());
             usages.tracked = config.providers();
             // An untracked provider's last numbers would go stale, so they go.
             usages.latest.retain(|&provider, _| config.tracks(provider));

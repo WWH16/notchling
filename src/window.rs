@@ -610,6 +610,13 @@ impl NotchWindow {
         let _ = unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
     }
 
+    /// Whether the window shows, which it does not after [`NotchWindow::hide`].
+    #[must_use]
+    pub fn is_visible(&self) -> bool {
+        // SAFETY: `hwnd` is a live window owned by this thread's Slint event loop.
+        unsafe { IsWindowVisible(self.hwnd) }.as_bool()
+    }
+
     /// Runs `handler` on the UI thread whenever a claimed [`Shortcut`] is pressed while the
     /// notch is visible. It runs inside the window procedure, so it should defer any work
     /// that changes the window.

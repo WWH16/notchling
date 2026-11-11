@@ -175,7 +175,12 @@ fn main() -> anyhow::Result<()> {
         move |notch, native| {
             native.apply_tool_styles();
             let native = Rc::new(native);
-            hide_during_fullscreen(&fullscreen_timer, Rc::clone(&native), fullscreen_alert);
+            hide_during_fullscreen(
+                &fullscreen_timer,
+                notch.as_weak(),
+                Rc::clone(&native),
+                fullscreen_alert,
+            );
 
             let clip = clip_to_shape(&notch, Rc::clone(&native));
             clip();
@@ -275,8 +280,14 @@ fn report_settings_change(verb: &str, outcome: anyhow::Result<install::Outcome>)
 }
 
 /// Hides the notch while a fullscreen app, game or presentation is in front, checking
-/// until `timer` is dropped. Meanwhile alerts become toasts.
-fn hide_during_fullscreen(timer: &Timer, native: Rc<NotchWindow>, alert: Arc<Mutex<Alert>>) {
+/// until `timer` is dropped. Meanwhile alerts become toasts, and the request shortcuts
+/// go back to the app in front.
+fn hide_during_fullscreen(
+    timer: &Timer,
+    notch: Weak<Notch>,
+    native: Rc<NotchWindow>,
+    alert: Arc<Mutex<Alert>>,
+) {
     let hidden = Cell::new(false);
     let check = move || {
         let hide = window::fullscreen_app_in_front();
@@ -286,6 +297,9 @@ fn hide_during_fullscreen(timer: &Timer, native: Rc<NotchWindow>, alert: Arc<Mut
                 native.hide();
             } else {
                 native.show();
+            }
+            if let Some(notch) = notch.upgrade() {
+                notch.invoke_request_shown_changed();
             }
         }
     };
@@ -346,7 +360,7 @@ fn clip_to_shape(notch: &Notch, native: Rc<NotchWindow>) -> Rc<dyn Fn()> {
 
 /// Lets Ctrl+Alt+Y and Ctrl+Alt+N answer the request on the notch, when the config allows
 /// it. The keys are claimed only while a permission request shows, the one card they
-/// answer.
+/// answer, and the notch is not hidden behind a fullscreen app.
 fn answer_with_shortcuts(notch: &Notch, native: &Rc<NotchWindow>) {
     let weak = notch.as_weak();
     native.on_shortcut(move |shortcut| {
@@ -365,7 +379,8 @@ fn answer_with_shortcuts(notch: &Notch, native: &Rc<NotchWindow>) {
         let Some(notch) = weak.upgrade() else {
             return;
         };
-        let enabled = notch.get_has_request()
+        let enabled = native.is_visible()
+            && notch.get_has_request()
             && notch.get_request_kind() == RequestKind::Permission
             && Config::load().request_shortcuts();
         if enabled {

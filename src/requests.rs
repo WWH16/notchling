@@ -148,6 +148,21 @@ impl Requests {
         self.release(|request| request.session_id == session_id)
     }
 
+    /// Hands back every question, for when nobody can answer on the notch, so Claude
+    /// Code's own dialog asks instead of Claude waiting out the hook. Returns the
+    /// project of each.
+    pub fn settle_questions(&mut self) -> Vec<String> {
+        let is_question = |request: &Request| matches!(request.ask, Ask::Questions(_));
+        let projects = self
+            .queue
+            .iter()
+            .filter(|pending| is_question(&pending.request))
+            .map(|pending| pending.request.project.clone())
+            .collect();
+        self.release(is_question);
+        projects
+    }
+
     fn release(&mut self, settled: impl Fn(&Request) -> bool) -> usize {
         let before = self.queue.len();
         self.queue.retain(|pending| {
@@ -414,6 +429,25 @@ mod tests {
             requests.front().map(|p| p.request.session_id.as_str()),
             Some("s2")
         );
+    }
+
+    #[test]
+    fn questions_are_handed_back_and_other_requests_stay() {
+        let mut requests = Requests::default();
+        let (asked, answer) = mpsc::channel();
+        let ask = Request {
+            session_id: "s2".to_owned(),
+            project: "site".to_owned(),
+            ask: Ask::Questions(vec![question("Framework?", &["React"], false)]),
+        };
+        let (permission, _decision) = push(&mut requests, "Bash");
+        requests.push(ask, asked);
+
+        assert_eq!(requests.settle_questions(), ["site"]);
+        assert_eq!(answer.try_recv(), Ok(Decision::AskInApp));
+        assert_eq!(requests.front().map(|p| p.id), Some(permission));
+        assert_eq!(requests.behind_front(), 0);
+        assert!(requests.settle_questions().is_empty());
     }
 
     #[test]

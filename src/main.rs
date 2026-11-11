@@ -1041,10 +1041,28 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
         // Fails only once the event loop has quit, when nothing needs drawing.
         let _ = weak.upgrade_in_event_loop(move |notch| match update {
             Update::Requests => {
-                show_requests(
-                    &notch,
-                    &mut requests.lock().expect("requests lock poisoned"),
-                );
+                let mut requests = requests.lock().expect("requests lock poisoned");
+                // A question holds Claude until its hook returns, and behind a
+                // fullscreen app nobody sees the card, so Claude Code's own dialog
+                // asks at once and a toast says so. A permission request needs no
+                // such care: Claude Code shows its dialog alongside the card.
+                // ponytail: only when the card arrives; one already showing when the
+                // notch hides waits out the hook. Hand it back on hide if that bites.
+                let hidden = alert.lock().expect("alert lock poisoned").hidden;
+                if hidden {
+                    for project in requests.settle_questions() {
+                        let text = session_alert_text(AlertKind::NeedsInput, &project);
+                        show_alert(
+                            &notch,
+                            &alert,
+                            AlertKind::NeedsInput,
+                            Provider::Claude,
+                            text,
+                            Vec::new(),
+                        );
+                    }
+                }
+                show_requests(&notch, &mut requests);
             }
             Update::Session(Event::TaskDone { origin, .. }) => {
                 let mut awake = lock_awake(&awake);

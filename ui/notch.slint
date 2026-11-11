@@ -932,7 +932,8 @@ export component Notch inherits Window {
         }
     }
     callback decide(int, Choice);
-    // Runs when a request card appears or goes, so Rust can claim or release the keys.
+    // Runs when a request card appears, goes or changes kind, so Rust can claim or
+    // release the keys.
     callback request-shown-changed();
     changed has-request => {
         if self.has-request {
@@ -951,6 +952,10 @@ export component Notch inherits Window {
             self.request-pulsing = false;
             pulse-timer.stop();
         }
+        self.request-shown-changed();
+    }
+    // The next card in the queue may be of another kind, which the keys do not answer.
+    changed request-kind => {
         self.request-shown-changed();
     }
     changed request-id => {
@@ -1003,7 +1008,9 @@ export component Notch inherits Window {
     // Answers the request on the card, once it is armed; the buttons and shortcuts
     // both come through here.
     public function answer(choice: Choice) {
-        if self.has-request && self.request-armed {
+        // Only a permission card takes Allow or Deny; a shortcut pressed while a
+        // question or a reply shows must not dismiss it.
+        if self.has-request && self.request-armed && self.request-kind == RequestKind.permission {
             self.decide(self.request-id, choice);
         }
     }

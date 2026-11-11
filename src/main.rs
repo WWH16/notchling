@@ -345,7 +345,8 @@ fn clip_to_shape(notch: &Notch, native: Rc<NotchWindow>) -> Rc<dyn Fn()> {
 }
 
 /// Lets Ctrl+Alt+Y and Ctrl+Alt+N answer the request on the notch, when the config allows
-/// it. The keys are claimed only while a request shows.
+/// it. The keys are claimed only while a permission request shows, the one card they
+/// answer.
 fn answer_with_shortcuts(notch: &Notch, native: &Rc<NotchWindow>) {
     let weak = notch.as_weak();
     native.on_shortcut(move |shortcut| {
@@ -364,7 +365,9 @@ fn answer_with_shortcuts(notch: &Notch, native: &Rc<NotchWindow>) {
         let Some(notch) = weak.upgrade() else {
             return;
         };
-        let enabled = notch.get_has_request() && Config::load().request_shortcuts();
+        let enabled = notch.get_has_request()
+            && notch.get_request_kind() == RequestKind::Permission
+            && Config::load().request_shortcuts();
         if enabled {
             native.claim_shortcuts();
         } else {

@@ -19,7 +19,7 @@ pub struct Crossing {
 pub struct Thresholds {
     /// Ascending, each in 1..=100.
     percents: Vec<u32>,
-    /// Per provider: the window, keyed by its reset minute, and the highest threshold
+    /// Per provider: the window, keyed by its nearest reset minute, and the highest threshold
     /// already alerted in it.
     alerted: HashMap<Provider, (Option<i64>, u32)>,
 }
@@ -45,8 +45,11 @@ impl Thresholds {
     /// window. A new reset time means a new window, so every threshold can fire again.
     pub fn crossed(&mut self, provider: Provider, usage: &Usage) -> Option<Crossing> {
         let used_percent = usage.used? * 100.0;
-        // Minutes, because the account's reset times jitter by fractions of a second.
-        let window = usage.resets_at.map(|at| at.timestamp() / 60);
+        // The nearest minute, because the account's reset times jitter by fractions of a
+        // second, to either side of the minute.
+        let window = usage
+            .resets_at
+            .map(|at| (at.timestamp_millis() + 30_000).div_euclid(60_000));
         let (alerted_window, alerted) = self.alerted.entry(provider).or_insert((window, 0));
         if *alerted_window != window {
             (*alerted_window, *alerted) = (window, 0);
@@ -103,6 +106,11 @@ mod tests {
         // Sub-second jitter in the reset time is the same window.
         assert_eq!(
             crossed(&mut thresholds, 0.9, "2026-10-27T05:00:00.120000Z"),
+            None
+        );
+        // So is a reset reported just short of the minute.
+        assert_eq!(
+            crossed(&mut thresholds, 0.9, "2026-10-27T04:59:59.904791Z"),
             None
         );
         let last = Some(Crossing {

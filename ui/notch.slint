@@ -257,7 +257,7 @@ component MarkRing inherits Rectangle {
 component Bar inherits Rectangle {
     in property <float> fraction;
     in property <color> fill: Theme.text;
-    height: 2px;
+    height: 3px;
     border-radius: self.height / 2;
     background: Theme.track;
 
@@ -333,7 +333,7 @@ component LimitBar inherits VerticalLayout {
         }
     }
     Bar {
-        height: 4px;
+        height: 6px;
         fraction: max(root.limit.used, 0);
         fill: Theme.level(root.limit.used);
     }
@@ -475,13 +475,11 @@ component PillOutline inherits Rectangle {
     border-bottom-right-radius: self.radius-bottom-right;
 }
 
-// While an agent works, a quiet outline in the provider's colour that breathes over
-// 2 s; a still outline when motion is off. The side against the screen edge stays open.
+// While an agent works, an outline in its colour that breathes over 2 s; a still
+// outline when motion is off. This one rings a notch that floats free of any edge.
 component WorkingGlow inherits Rectangle {
     in property <color> fill;
     in property <bool> animate-glow: true;
-    in property <bool> open-edge;
-    in property <NotchEdge> edge;
     in property <length> radius-top-left;
     in property <length> radius-top-right;
     in property <length> radius-bottom-left;
@@ -498,10 +496,98 @@ component WorkingGlow inherits Rectangle {
         radius-top-right: root.radius-top-right;
         radius-bottom-left: root.radius-bottom-left;
         radius-bottom-right: root.radius-bottom-right;
-        stroke: 1px;
-        fill: root.fill.with-alpha(0.25 + 0.35 * root.breath);
-        open-edge: root.open-edge;
-        edge: root.edge;
+        fill: root.fill.with-alpha(0.45 + 0.55 * root.breath);
+    }
+}
+
+// The same outline for a notch stuck to an edge: one line along the whole silhouette,
+// down one shoulder's curve, around the body and up the other shoulder, open against
+// the screen edge. Laid out along the edge: `u` runs along it, `v` away from it.
+component SilhouetteGlow inherits Path {
+    in property <NotchEdge> edge;
+    in property <color> glow;
+    in property <bool> animate-glow: true;
+    // The body's length along the edge and how far it reaches out from it.
+    in property <length> span;
+    in property <length> depth;
+    in property <length> corner;
+    // How far each shoulder reaches along the edge and out from it.
+    in property <length> shoulder-span;
+    in property <length> shoulder-depth;
+    in property <length> line: 1.5px;
+
+    private property <bool> upright: self.edge == NotchEdge.left || self.edge == NotchEdge.right;
+    // The bottom and left edges mirror the top one, which turns every arc the other way.
+    private property <bool> mirrored: self.edge == NotchEdge.bottom || self.edge == NotchEdge.left;
+    // Slint fits the viewbox inside the element less the line's width, so a viewbox
+    // that much smaller draws one unit per pixel, with the whole line inside the shape
+    // and the window's region.
+    private property <float> thick: self.line / 1px;
+    private property <float> su: self.shoulder-span / 1px;
+    private property <float> sv: self.shoulder-depth / 1px;
+    private property <float> near: self.su;
+    private property <float> far: self.su + self.span / 1px - self.thick;
+    private property <float> out: self.depth / 1px - self.thick;
+    private property <float> turn: max(self.corner / 1px - self.thick / 2, 0);
+    private property <float> breath: self.animate-glow
+        ? 0.5 - 0.5 * cos(mod(animation-tick(), 2s) / 2s * 360deg) : 0.5;
+    pure function px(u: float, v: float) -> float {
+        return !self.upright ? u : self.edge == NotchEdge.right ? self.out - v : v;
+    }
+    pure function py(u: float, v: float) -> float {
+        return self.upright ? u : self.edge == NotchEdge.bottom ? self.out - v : v;
+    }
+
+    width: self.upright ? self.depth : self.span + 2 * self.shoulder-span;
+    height: self.upright ? self.span + 2 * self.shoulder-span : self.depth;
+    viewbox-width: (self.width - self.line) / 1px;
+    viewbox-height: (self.height - self.line) / 1px;
+    stroke: self.glow.with-alpha(0.45 + 0.55 * self.breath);
+    stroke-width: self.line;
+
+    MoveTo {
+        x: root.px(0, 0);
+        y: root.py(0, 0);
+    }
+    ArcTo {
+        x: root.px(root.near, root.sv);
+        y: root.py(root.near, root.sv);
+        radius-x: root.upright ? root.sv : root.near;
+        radius-y: root.upright ? root.near : root.sv;
+        sweep: !root.mirrored;
+    }
+    LineTo {
+        x: root.px(root.near, root.out - root.turn);
+        y: root.py(root.near, root.out - root.turn);
+    }
+    ArcTo {
+        x: root.px(root.near + root.turn, root.out);
+        y: root.py(root.near + root.turn, root.out);
+        radius-x: root.turn;
+        radius-y: root.turn;
+        sweep: root.mirrored;
+    }
+    LineTo {
+        x: root.px(root.far - root.turn, root.out);
+        y: root.py(root.far - root.turn, root.out);
+    }
+    ArcTo {
+        x: root.px(root.far, root.out - root.turn);
+        y: root.py(root.far, root.out - root.turn);
+        radius-x: root.turn;
+        radius-y: root.turn;
+        sweep: root.mirrored;
+    }
+    LineTo {
+        x: root.px(root.far, root.sv);
+        y: root.py(root.far, root.sv);
+    }
+    ArcTo {
+        x: root.px(root.far + root.near, 0);
+        y: root.py(root.far + root.near, 0);
+        radius-x: root.upright ? root.sv : root.near;
+        radius-y: root.upright ? root.near : root.sv;
+        sweep: !root.mirrored;
     }
 }
 
@@ -923,12 +1009,20 @@ export component Notch inherits Window {
     // A reply card nobody touches closes after a few seconds and lets Claude stop; the
     // pointer reaching it keeps it.
     private property <bool> reply-touched;
+    // Seconds the reply card on screen has waited untouched. Counted here because a
+    // Timer that keeps running from one card to the next would not start over.
+    private property <int> reply-waited;
+    private property <int> reply-patience: 8;
     Timer {
-        interval: 8s;
+        interval: 1s;
         running: root.has-request && !root.request-pulsing && root.request-kind == RequestKind.reply
             && !root.reply-touched && root.reply-text == "" && !reply-input.has-focus;
         triggered => {
-            root.decide(root.request-id, Choice.ask-in-app);
+            root.reply-waited += 1;
+            if root.reply-waited >= root.reply-patience {
+                root.reply-waited = 0;
+                root.decide(root.request-id, Choice.ask-in-app);
+            }
         }
     }
     callback decide(int, Choice);
@@ -952,10 +1046,12 @@ export component Notch inherits Window {
             self.request-pulsing = false;
             pulse-timer.stop();
         }
+        self.reply-waited = 0;
         self.request-shown-changed();
     }
     // The next card in the queue may be of another kind, which the keys do not answer.
     changed request-kind => {
+        self.reply-waited = 0;
         self.request-shown-changed();
     }
     changed request-id => {
@@ -963,7 +1059,9 @@ export component Notch inherits Window {
             self.arm();
         }
         self.reply-text = "";
-        self.reply-touched = false;
+        // A card that arrives under the pointer is already being looked at.
+        self.reply-touched = self.hovered;
+        self.reply-waited = 0;
     }
 
     // Three quick pulses on the pill before it grows into a request card.
@@ -1161,6 +1259,11 @@ export component Notch inherits Window {
     private property <bool> tucked: self.tuck && self.vertical && !self.hovered && !self.expanded
         && !self.has-request && !self.alert-active && !self.floating;
     private property <bool> working: self.activity != "";
+    // The working outline shows on the idle pill only: an open panel or a card keeps to
+    // its content. It is Claude's colour, since the sessions timed are Claude's.
+    private property <bool> glowing: self.working && !self.expanded && !self.has-request && !self.alert-active;
+    // Stuck to its edge with its shoulders out, not picked up or gliding back.
+    private property <bool> attached: self.edge-round < 0.01;
     // The idle pill fits what it shows, so turning readings off shrinks it.
     private property <length> idle-width: self.tucked ? 6px
         : self.vertical ? 56px * Theme.text-scale
@@ -1191,7 +1294,7 @@ export component Notch inherits Window {
     private property <length> request-height: self.request-kind == RequestKind.question
         ? min(question-view.preferred-height, self.card-room)
         : self.request-kind == RequestKind.reply ? min(reply-view.preferred-height, self.card-room)
-        : ((self.request-description != "" ? 230px : 202px) + (self.request-always != "" ? 28px : 0)
+        : ((self.request-description != "" ? 230px : 202px) + (self.request-always != "" ? 34px : 0)
             + (self.request-more > 0 ? 12px : 0))
             * Theme.text-scale;
     private property <length> drawn-request-height: self.request-height;
@@ -1674,7 +1777,8 @@ export component Notch inherits Window {
             // Allows the call and has Claude Code keep the rule it suggested, so the
             // next matching call asks nothing. Armed like Allow.
             if root.request-always != "": Rectangle {
-                height: 18px * Theme.text-scale;
+                // 24 px, the smallest target WCAG 2.5.8 accepts.
+                height: 24px * Theme.text-scale;
                 opacity: root.request-armed ? 1 : 0.5;
                 accessible-role: button;
                 accessible-label: root.request-always;
@@ -1920,8 +2024,8 @@ export component Notch inherits Window {
                     horizontal-stretch: 1;
                     height: 30px * Theme.text-scale;
                     border-radius: self.height / 2;
-                    border-width: 1px;
-                    border-color: reply-input.has-focus ? Theme.muted : Theme.outline;
+                    border-width: reply-input.has-focus ? 1.5px : 1px;
+                    border-color: reply-input.has-focus ? Theme.text : Theme.muted;
 
                     if root.reply-text == "": Label {
                         x: 14px;
@@ -2019,12 +2123,10 @@ export component Notch inherits Window {
             open-edge: !root.floating;
             edge: root.edge;
         }
-        // On the idle pill only: an open panel or a card keeps to its content.
-        if root.working && !root.expanded && !root.has-request && !root.alert-active: WorkingGlow {
-            fill: root.accent;
+        // Picked up or gliding back, the notch has no shoulders and the glow rings it.
+        if root.glowing && !root.attached: WorkingGlow {
+            fill: Theme.claude;
             animate-glow: root.animate-agent;
-            open-edge: !root.floating;
-            edge: root.edge;
             radius-top-left: pill.border-top-left-radius;
             radius-top-right: pill.border-top-right-radius;
             radius-bottom-left: pill.border-bottom-left-radius;
@@ -2129,5 +2231,21 @@ export component Notch inherits Window {
                 }
             }
         ]
+    }
+
+    // Above the body and its shoulders, so the line runs along both without a break.
+    if root.glowing && root.attached: SilhouetteGlow {
+        x: !root.vertical ? pill.x - self.shoulder-span
+            : root.edge == NotchEdge.left ? 0 : parent.width - self.width;
+        y: root.vertical ? pill.y - self.shoulder-span
+            : root.edge == NotchEdge.top ? 0 : parent.height - self.height;
+        edge: root.edge;
+        glow: Theme.claude;
+        animate-glow: root.animate-agent;
+        span: root.vertical ? pill.height : pill.width;
+        depth: root.vertical ? pill.width : pill.height;
+        corner: pill.corner;
+        shoulder-span: root.shoulder - root.shoulder-overlap;
+        shoulder-depth: root.shoulder;
     }
 }

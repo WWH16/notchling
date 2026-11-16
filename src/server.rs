@@ -85,6 +85,12 @@ fn handle(connection: &File, requests: &Mutex<Requests>, notify: &impl Fn(Update
             if lock(requests).settle(&origin.session_id, &tool, &detail) > 0 {
                 notify(Update::Requests);
             }
+            // A tool that ran also says its session is at work.
+            notify(Update::Session(Event::ToolSettled {
+                origin,
+                tool,
+                detail,
+            }));
         }
         Event::TaskDone { origin, message } => {
             // The turn is over, so nothing else from it can still be waiting for an

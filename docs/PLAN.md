@@ -469,6 +469,18 @@ Suggested UI polish:
 - [x] **10.20** Light theme for the panel and Settings, following Windows' app mode.
   Commit `feat: follow windows light mode in the panel and settings`.
 
+## Phase 11: Fixes from live use
+
+- [x] **11.1** The working outline, missed requests and stale usage. The outline is one
+  1.5 px line along the whole silhouette, shoulders included, in Claude's colour, and
+  any tool call lights it, not only a typed prompt. A permission request that arrives
+  while the notch hides behind a fullscreen app raises a toast. A reply card's 8 s
+  countdown starts over for each card and holds for one that arrives under the pointer.
+  Claude's account limits are asked every minute while tokens are being spent. Limit
+  bars are 6 px and system bars 3 px, "always allow" is a 24 px target, and the reply
+  box shows its focus. Checked with tests and offscreen on all four edges; the live
+  check is still open. Commit `fix: working outline, missed requests and stale usage`.
+
 ## Deviations from SPEC.md
 
 - No `nvml-wrapper`: PDH provides VRAM, and the design shows no GPU temperature.

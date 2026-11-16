@@ -7,9 +7,13 @@ use super::claude_account::ClaudeAccount;
 use super::claude_local::ClaudeLocal;
 use super::{Provider, Source, Usage};
 
-/// How often the account endpoint is asked. It is unofficial, so it is asked rarely;
-/// the local logs keep the token details current in between.
+/// How often the account endpoint is asked while Claude Code rests. It is unofficial,
+/// so it is asked rarely; the local logs keep the token details current in between.
 const ACCOUNT_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// How often it is asked while the local logs show tokens being spent, so the share on
+/// the notch follows the work within about a minute.
+const ACTIVE_ACCOUNT_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Reads the local logs on every poll and the account endpoint every
 /// [`ACCOUNT_INTERVAL`], or at once after the user switches accounts.
@@ -26,8 +30,23 @@ struct AccountCheck {
     at: Instant,
     /// Who was signed in then, per [`ClaudeAccount::signed_in`].
     signed_in: Option<String>,
+    /// The local logs' token count then.
+    tokens: Option<u64>,
     /// The answer, if the request worked.
     usage: Option<Usage>,
+}
+
+impl AccountCheck {
+    /// Whether to ask again `elapsed` after this check: once [`ACCOUNT_INTERVAL`] has
+    /// passed, someone else has signed in, or tokens were spent since an answer that is
+    /// [`ACTIVE_ACCOUNT_INTERVAL`] old. A failed request waits the full interval, so a
+    /// broken endpoint is not hammered.
+    fn is_stale(&self, elapsed: Duration, signed_in: Option<&str>, tokens: Option<u64>) -> bool {
+        let spent_since = self.usage.is_some() && self.tokens != tokens;
+        elapsed >= ACCOUNT_INTERVAL
+            || self.signed_in.as_deref() != signed_in
+            || (spent_since && elapsed >= ACTIVE_ACCOUNT_INTERVAL)
+    }
 }
 
 impl Claude {
@@ -44,18 +63,18 @@ impl Claude {
         })
     }
 
-    /// The account's latest limits, asking again once [`ACCOUNT_INTERVAL`] has passed
-    /// or someone else has signed in. A failed request counts as asked, so a broken
-    /// endpoint is not hammered.
-    fn account(&mut self) -> Option<&Usage> {
+    /// The account's latest limits, asked again when [`AccountCheck::is_stale`] says
+    /// so. `tokens` is what the local logs count now.
+    fn account(&mut self, tokens: Option<u64>) -> Option<&Usage> {
         let signed_in = self.account.signed_in();
         let due = self.account_checked.as_ref().is_none_or(|checked| {
-            checked.at.elapsed() >= ACCOUNT_INTERVAL || checked.signed_in != signed_in
+            checked.is_stale(checked.at.elapsed(), signed_in.as_deref(), tokens)
         });
         if due {
             self.account_checked = Some(AccountCheck {
                 at: Instant::now(),
                 signed_in,
+                tokens,
                 usage: self.account.fetch().ok(),
             });
         }
@@ -70,7 +89,8 @@ impl Source for Claude {
 
     fn read(&mut self) -> anyhow::Result<Usage> {
         let local = self.local.read();
-        merge(self.account(), local)
+        let tokens = local.as_ref().ok().and_then(|usage| usage.tokens);
+        merge(self.account(tokens), local)
     }
 }
 
@@ -133,6 +153,30 @@ mod tests {
             limits: vec![weekly()],
             ..Usage::default()
         }
+    }
+
+    #[test]
+    fn the_account_is_asked_sooner_while_tokens_are_spent() {
+        let check = |usage: Option<Usage>| AccountCheck {
+            at: Instant::now(),
+            signed_in: Some("me".to_owned()),
+            tokens: Some(100),
+            usage,
+        };
+        let answered = check(Some(account()));
+        let minute = ACTIVE_ACCOUNT_INTERVAL;
+        assert!(!answered.is_stale(minute, Some("me"), Some(100)), "resting");
+        assert!(answered.is_stale(minute, Some("me"), Some(250)), "working");
+        assert!(
+            !answered.is_stale(minute / 2, Some("me"), Some(250)),
+            "asked half a minute ago"
+        );
+        assert!(answered.is_stale(ACCOUNT_INTERVAL, Some("me"), Some(100)));
+        assert!(answered.is_stale(Duration::ZERO, Some("you"), Some(100)));
+        assert!(
+            !check(None).is_stale(minute, Some("me"), Some(250)),
+            "a failed request waits the full interval"
+        );
     }
 
     #[test]

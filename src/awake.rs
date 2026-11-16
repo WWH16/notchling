@@ -9,28 +9,70 @@ use std::time::{Duration, Instant};
 
 use windows::Win32::System::Power::{ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState};
 
-/// A session that started work but never reported back is dropped after this long.
-/// Tool calls that need no permission send no events, so a long autonomous run is
-/// silent until it stops; this has to outlast such runs.
+/// A working session that has been silent for this long is dropped. Every tool call
+/// reports once it has run, so this has to outlast the longest single call.
 pub const SAFETY_RELEASE: Duration = Duration::from_secs(2 * 60 * 60);
+
+/// How long after a session stops a tool call's report is taken as a straggler from the
+/// turn that just ended. Those reports run in the background, so one can arrive late.
+const STRAGGLER_WINDOW: Duration = Duration::from_secs(5);
+
+/// When a working session started its turn and when it was last heard from.
+#[derive(Debug, Clone, Copy)]
+struct Work {
+    since: Instant,
+    heard: Instant,
+}
 
 /// Sessions currently working, and whether sleep is being blocked for them.
 #[derive(Debug, Default)]
 pub struct KeepAwake {
-    working: HashMap<String, Instant>,
+    working: HashMap<String, Work>,
+    /// When each session last stopped, kept for [`STRAGGLER_WINDOW`].
+    stopped: HashMap<String, Instant>,
     holding: bool,
 }
 
 impl KeepAwake {
     /// A session started working, e.g. the user sent a prompt.
     pub fn started(&mut self, session_id: String, now: Instant) {
-        self.working.insert(session_id, now);
+        self.stopped.remove(&session_id);
+        let work = Work {
+            since: now,
+            heard: now,
+        };
+        self.working.insert(session_id, work);
         self.apply();
     }
 
-    /// A session stopped working: it finished or is waiting for the user.
-    pub fn stopped(&mut self, session_id: &str) {
+    /// A session ran a tool, so it is working even if no prompt was seen: the notch
+    /// started mid-turn, or Claude went on after the user answered it. Its working time
+    /// keeps counting from where it began.
+    pub fn active(&mut self, session_id: &str, now: Instant) {
+        let straggler = self
+            .stopped
+            .get(session_id)
+            .is_some_and(|at| now.saturating_duration_since(*at) < STRAGGLER_WINDOW);
+        if straggler {
+            return;
+        }
+        match self.working.get_mut(session_id) {
+            Some(work) => work.heard = now,
+            None => {
+                let work = Work {
+                    since: now,
+                    heard: now,
+                };
+                self.working.insert(session_id.to_owned(), work);
+            }
+        }
+        self.apply();
+    }
+
+    /// A session stopped working at `now`: it finished or is waiting for the user.
+    pub fn stopped(&mut self, session_id: &str, now: Instant) {
         self.working.remove(session_id);
+        self.stopped.insert(session_id.to_owned(), now);
         self.apply();
     }
 
@@ -41,15 +83,17 @@ impl KeepAwake {
         let longest = self
             .working
             .values()
-            .map(|since| now.saturating_duration_since(*since))
+            .map(|work| now.saturating_duration_since(work.since))
             .max()?;
         Some((self.working.len(), longest))
     }
 
-    /// Forgets sessions that have been silent for longer than [`SAFETY_RELEASE`].
+    /// Forgets sessions not heard from for longer than [`SAFETY_RELEASE`].
     pub fn expire(&mut self, now: Instant) {
         self.working
-            .retain(|_, since| now.saturating_duration_since(*since) < SAFETY_RELEASE);
+            .retain(|_, work| now.saturating_duration_since(work.heard) < SAFETY_RELEASE);
+        self.stopped
+            .retain(|_, at| now.saturating_duration_since(*at) < STRAGGLER_WINDOW);
         self.apply();
     }
 
@@ -87,10 +131,39 @@ mod tests {
         awake.started("a".to_owned(), now);
         awake.started("b".to_owned(), now);
         assert!(awake.holding);
-        awake.stopped("a");
+        awake.stopped("a", now);
         assert!(awake.holding, "b is still working");
-        awake.stopped("b");
+        awake.stopped("b", now);
         assert!(!awake.holding);
+    }
+
+    #[test]
+    fn a_tool_call_marks_its_session_working_and_keeps_its_start() {
+        let start = Instant::now();
+        let mut awake = KeepAwake::default();
+        awake.active("a", start);
+        assert!(awake.holding, "seen mid-turn, with no prompt");
+        let later = start + Duration::from_secs(120);
+        awake.active("a", later);
+        assert_eq!(awake.activity(later), Some((1, Duration::from_secs(120))));
+
+        // Heard from at `later`, so the safety window runs from there.
+        awake.expire(start + SAFETY_RELEASE);
+        assert!(awake.holding);
+        awake.expire(later + SAFETY_RELEASE);
+        assert!(!awake.holding);
+    }
+
+    #[test]
+    fn a_late_report_from_a_finished_turn_does_not_restart_it() {
+        let start = Instant::now();
+        let mut awake = KeepAwake::default();
+        awake.started("a".to_owned(), start);
+        awake.stopped("a", start);
+        awake.active("a", start + Duration::from_secs(1));
+        assert!(!awake.holding, "a straggler");
+        awake.active("a", start + STRAGGLER_WINDOW);
+        assert!(awake.holding, "a new turn's tool call");
     }
 
     #[test]
@@ -102,7 +175,7 @@ mod tests {
         awake.started("b".to_owned(), start + Duration::from_secs(60));
         let later = start + Duration::from_secs(300);
         assert_eq!(awake.activity(later), Some((2, Duration::from_secs(300))));
-        awake.stopped("a");
+        awake.stopped("a", later);
         assert_eq!(awake.activity(later), Some((1, Duration::from_secs(240))));
     }
 
@@ -120,7 +193,7 @@ mod tests {
     #[test]
     fn stopping_an_unknown_session_is_harmless() {
         let mut awake = KeepAwake::default();
-        awake.stopped("never-started");
+        awake.stopped("never-started", Instant::now());
         assert!(!awake.holding);
     }
 }

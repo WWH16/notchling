@@ -1050,6 +1050,12 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
                 // notch hides waits out the hook. Hand it back on hide if that bites.
                 let hidden = alert.lock().expect("alert lock poisoned").hidden;
                 if hidden {
+                    // Nobody sees a permission card there either, so a toast says
+                    // Claude Code is asking, once per request.
+                    if let Some(text) = unseen_permission_text(&notch, &requests) {
+                        // A toast that fails to show is lost; the card still waits.
+                        let _ = toast::show(&text);
+                    }
                     for project in requests.settle_questions() {
                         let text = session_alert_text(AlertKind::NeedsInput, &project);
                         show_alert(
@@ -1066,7 +1072,7 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
             }
             Update::Session(Event::TaskDone { origin, .. }) => {
                 let mut awake = lock_awake(&awake);
-                awake.stopped(&origin.session_id);
+                awake.stopped(&origin.session_id, Instant::now());
                 show_activity(&notch, &awake);
                 // The reply card says it is done; behind a fullscreen app nobody can
                 // reply, so Claude stops at once and a toast says so instead.
@@ -1088,7 +1094,7 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
             }
             Update::Session(Event::NeedsInput { origin, .. }) => {
                 let mut awake = lock_awake(&awake);
-                awake.stopped(&origin.session_id);
+                awake.stopped(&origin.session_id, Instant::now());
                 show_activity(&notch, &awake);
                 let text = session_alert_text(AlertKind::NeedsInput, &origin.project);
                 show_alert(
@@ -1105,12 +1111,13 @@ fn serve_hooks(notch: &Notch, listener: Listener, alert: &Arc<Mutex<Alert>>) -> 
                 awake.started(origin.session_id, Instant::now());
                 show_activity(&notch, &awake);
             }
+            Update::Session(Event::ToolSettled { origin, .. }) => {
+                let mut awake = lock_awake(&awake);
+                awake.active(&origin.session_id, Instant::now());
+                show_activity(&notch, &awake);
+            }
             // The server turns these into `Update::Requests`.
-            Update::Session(
-                Event::PermissionRequest { .. }
-                | Event::Question { .. }
-                | Event::ToolSettled { .. },
-            ) => {}
+            Update::Session(Event::PermissionRequest { .. } | Event::Question { .. }) => {}
         });
     });
     awake_check
@@ -1202,6 +1209,25 @@ fn show_alert(
             notch.set_alert_active(false);
         }
     });
+}
+
+/// "Claude wants to use Bash in notchling", when the front request is a permission the
+/// notch has not put on its card yet; `None` otherwise.
+fn unseen_permission_text(notch: &Notch, requests: &Requests) -> Option<String> {
+    let front = requests.front()?;
+    let Ask::Permission { tool, .. } = &front.request.ask else {
+        return None;
+    };
+    let shown = notch.get_has_request() && notch.get_request_id() == front.id.to_ui();
+    (!shown).then(|| permission_toast_text(tool, &front.request.project))
+}
+
+fn permission_toast_text(tool: &str, project: &str) -> String {
+    if project.is_empty() {
+        format!("Claude wants to use {tool}")
+    } else {
+        format!("Claude wants to use {tool} in {project}")
+    }
 }
 
 /// Puts the front request on the notch, or hides the request card when none is left.
@@ -1546,6 +1572,18 @@ mod tests {
         assert_eq!(rings[1].name.as_str(), "ChatGPT");
         assert_eq!(rings[1].short.as_str(), "-");
         assert!(rings[1].selected);
+    }
+
+    #[test]
+    fn permission_toasts_name_the_tool_and_project() {
+        assert_eq!(
+            permission_toast_text("Bash", "notchling"),
+            "Claude wants to use Bash in notchling"
+        );
+        assert_eq!(
+            permission_toast_text("Edit", ""),
+            "Claude wants to use Edit"
+        );
     }
 
     #[test]

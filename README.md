@@ -1,23 +1,57 @@
-# Notchling
+<div align="center">
 
-A "Dynamic Island" style notch for Windows 11. A small black pill sits against an
-edge of the screen, the top one to start with, and shows:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo/notchling-horizontal-white.svg">
+  <img alt="notchling" src="assets/logo/notchling-horizontal.svg" width="360">
+</picture>
 
-- CPU and GPU load, plus RAM and VRAM on hover;
-- how much of your Claude, ChatGPT (Codex) or Gemini usage limit is used, when it
-  resets, and the provider's status;
-- Claude Code permission requests, which you can allow or deny without switching
-  windows;
-- a short alert when Claude finishes a task or needs your input.
+**A Dynamic Island for Windows that watches your AI agents.**
+Answer Claude Code's requests, follow your usage limits and see your system load from
+a small notch at the edge of the screen.
 
-One `.exe`, no installer and no background service. Written in Rust with
-[Slint](https://slint.dev).
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Windows 11](https://img.shields.io/badge/Windows-11-0078d4)
+![Rust](https://img.shields.io/badge/Rust-2024-b7410e)
+[![Slint](https://img.shields.io/badge/UI-Slint-2379f4)](https://slint.dev)
 
-## Build
+[Features](#features) · [Install](#install) · [Use](#use) ·
+[Claude Code hooks](#claude-code-hooks) · [Settings](#settings) ·
+[Privacy](#network-and-files) · [Uninstall](#uninstall)
 
-You need the Rust toolchain for Windows (`stable-x86_64-pc-windows-msvc`).
+</div>
+
+## Features
+
+A small black pill sits against an edge of the screen, the top one to start with,
+and shows:
+
+- **Claude Code requests.** Allow or deny a tool call, answer Claude's
+  multiple-choice questions, or reply to Claude when it finishes a turn, without
+  switching windows. The full command is always shown, and nothing is ever approved
+  for you.
+- **AI usage limits.** How much of your Claude, ChatGPT (Codex) or Gemini limit is
+  used, when it resets, tokens, burn rate and the provider's status.
+- **Agent activity.** How long Claude has been working, and a short alert when it
+  finishes or needs your input.
+- **System load.** CPU and GPU load, plus RAM and VRAM on hover.
+
+One `.exe`: no installer, no background service, no telemetry. About 35 MB of RAM and
+under 0.2% CPU when idle. Written in Rust with [Slint](https://slint.dev).
+
+## Requirements
+
+- Windows 11 (Windows 10 is untested).
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) for requests and
+  alerts; the usage readings work without it.
+- To build: the Rust toolchain for Windows (`stable-x86_64-pc-windows-msvc`).
+
+## Install
+
+There are no prebuilt releases yet, so build it from source:
 
 ```powershell
+git clone https://github.com/WWH16/notchling.git
+cd notchling
 cargo build --release
 ```
 
@@ -25,7 +59,7 @@ The program is `target\release\notchling.exe`. Copy it to a folder where it will
 for example `%LOCALAPPDATA%\Programs\notchling\`. The Claude Code hooks point at the
 exe's path, so moving it later means installing the hooks again.
 
-## Run
+## Use
 
 Start `notchling.exe`. Only one copy runs at a time.
 
@@ -204,13 +238,15 @@ It writes:
 - the registry key `HKCU\Software\Classes\AppUserModelId\notchling`, the first time it
   shows a Windows notification. Windows only shows notifications from apps it knows.
 
-## Logos
+## Credits
 
 The provider logos are their publishers' own paths, unchanged: Claude and Google
 Gemini from [Simple Icons](https://simpleicons.org) 16.36.0 (CC0), OpenAI from
 [LobeHub Icons](https://github.com/lobehub/lobe-icons) 1.101.0 (MIT), since Simple
 Icons no longer carries it. The marks are trademarks of Anthropic, OpenAI and Google,
 shown only to name whose usage is on the notch.
+
+notchling's own logo and icons are in [assets/logo](assets/logo), with how to use them.
 
 ## Uninstall
 
@@ -243,7 +279,10 @@ Release build on the development machine: a 13 MB exe, about 35 MB of RAM (14 MB
 private) and under 0.2% CPU when idle, startup included. Slint's software renderer is
 used, since the OpenGL renderer took three times the memory for the same look.
 
-## Development
+## Contributing
+
+Bug reports and pull requests are welcome. Before you open a pull request, make sure
+these pass:
 
 ```powershell
 cargo fmt
@@ -251,7 +290,14 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org).
+Never commit real logs, tokens, prompts or hook payloads; test fixtures in
+`tests/fixtures/` are synthetic.
+
 Design notes live in `docs/`: [SPEC.md](docs/SPEC.md) is the original brief,
-[PLAN.md](docs/PLAN.md) the build plan and deviations, and
+[PLAN.md](docs/PLAN.md) the build plan, progress and deviations, and
 [FINDINGS.md](docs/FINDINGS.md) what the data sources and hooks actually look like.
-Test fixtures in `tests/fixtures/` are synthetic.
+
+## License
+
+[MIT](LICENSE) © 2026 John Ansley Rocel

@@ -50,6 +50,14 @@ export global Theme {
     out property <length> size-large: 14px * self.text-scale;
     // Windows "Show animations" is off: shapes change at once and only fades remain.
     in property <bool> reduce-motion;
+    // Motion: what leaves fades for `quick`; what arrives waits that long and fades for
+    // `fade`, inside a morph that takes a third longer on the way in than on the way out.
+    out property <duration> quick: 80ms;
+    out property <duration> fade: 140ms;
+    out property <duration> morph: self.reduce-motion ? 0ms : 240ms;
+    out property <duration> morph-out: self.reduce-motion ? 0ms : 180ms;
+    // A ring or a bar easing to a new reading.
+    out property <duration> reading: self.reduce-motion ? 0ms : 300ms;
 }
 
 // What the user picked on a permission request.
@@ -180,7 +188,7 @@ component Ring inherits Rectangle {
     // Eases to each new reading instead of jumping; 0 when the share is unknown.
     private property <float> drawn: clamp(root.fraction, 0, 1);
     animate drawn {
-        duration: Theme.reduce-motion ? 0ms : 300ms;
+        duration: Theme.reading;
         easing: ease-out;
     }
 
@@ -227,7 +235,8 @@ component MarkRing inherits Rectangle {
     min-height: self.size;
 
     if root.pulse > 0.01: Rectangle {
-        private property <length> halo: root.size + 6px * Theme.text-scale * root.pulse;
+        // Eased out: the halo leaves the ring fast and slows as it fades.
+        private property <length> halo: root.size + 6px * Theme.text-scale * (1 - pow(1 - root.pulse, 3));
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         width: self.halo;
@@ -268,7 +277,7 @@ component Bar inherits Rectangle {
         height: parent.height;
         border-radius: parent.border-radius;
         background: root.fill;
-        animate width { duration: Theme.reduce-motion ? 0ms : 300ms; easing: ease-out; }
+        animate width { duration: Theme.reading; easing: ease-out; }
     }
 }
 
@@ -418,7 +427,7 @@ component Shoulder inherits Path {
     in property <color> surface: Theme.surface;
     fill: self.surface;
     animate fill {
-        duration: Theme.reduce-motion ? 0ms : 200ms;
+        duration: Theme.morph-out;
         easing: ease-out;
     }
     viewbox-width: 100;
@@ -693,13 +702,16 @@ component OptionButton inherits Rectangle {
     // The option's place in the list, from 1, shown when there is no tick box.
     in property <int> number;
     in property <bool> armed: true;
+    // Fades in as `progress` runs from 0 to 1, like the card's buttons.
+    in property <float> progress: 1;
     callback clicked();
     min-height: row.preferred-height;
     border-radius: 8px;
     border-width: 1px;
     border-color: self.option.picked ? Theme.text : transparent;
     background: touch.pressed ? Theme.outline : touch.has-hover && self.armed ? Theme.track : Theme.code-surface;
-    opacity: self.armed ? 1 : 0.6;
+    animate background { duration: Theme.quick; }
+    opacity: self.armed ? 1 : 0.35 + 0.65 * clamp(self.progress, 0, 1);
     accessible-role: button;
     accessible-label: self.option.picked ? "\{self.option.label}, ticked" : self.option.label;
     accessible-description: self.option.description;
@@ -766,19 +778,21 @@ component PillButton inherits Rectangle {
     in property <color> fill: Theme.button;
     in property <color> line: Theme.outline;
     in property <color> ink: self.primary ? Theme.surface : Theme.text;
-    // Until armed the button ignores clicks and fades in as `progress` runs from 0 to 1.
+    // Until armed the button ignores clicks and fades in as `progress` runs from 0 to 1,
+    // reaching full strength as it arms. One that waits on something else rests dimmed.
     in property <bool> armed: true;
-    in property <float> progress: 1;
+    in property <float> progress: 0.6;
     callback clicked();
     width: max(68px * Theme.text-scale, content.preferred-width + 28px);
     height: 28px * Theme.text-scale;
     border-radius: self.height / 2;
     border-width: self.primary ? 0 : 1px;
     border-color: self.line;
-    opacity: self.armed ? 1 : 0.35 + 0.4 * clamp(self.progress, 0, 1);
+    opacity: self.armed ? 1 : 0.35 + 0.65 * clamp(self.progress, 0, 1);
     background: self.primary
         ? (touch.pressed ? self.fill.darker(0.15) : touch.has-hover ? self.fill.brighter(0.15) : self.fill)
         : (touch.pressed ? Theme.outline : touch.has-hover ? Theme.track : transparent);
+    animate background { duration: Theme.quick; }
     accessible-role: button;
     accessible-label: self.label;
     accessible-description: self.shortcut;
@@ -831,6 +845,7 @@ component LinkButton inherits Rectangle {
         height: parent.height;
         text: root.label;
         color: touch.has-hover ? Theme.text : Theme.muted;
+        animate color { duration: Theme.quick; }
         font-family: Theme.font;
         font-size: Theme.size-label;
         vertical-alignment: center;
@@ -880,6 +895,7 @@ component ProviderRingChip inherits Rectangle {
     border-color: self.ring.selected ? self.mark.with-alpha(0.6) : transparent;
     background: touch.pressed ? Theme.outline
         : (touch.has-hover || self.ring.selected) ? Theme.track : transparent;
+    animate background { duration: Theme.quick; }
     accessible-role: button;
     accessible-label: "\{self.ring.name} \{self.ring.short}";
     accessible-checkable: true;
@@ -1013,10 +1029,12 @@ export component Notch inherits Window {
     // Timer that keeps running from one card to the next would not start over.
     private property <int> reply-waited;
     private property <int> reply-patience: 8;
+    private property <bool> reply-counting: self.has-request && !self.request-pulsing
+        && self.request-kind == RequestKind.reply
+        && !self.reply-touched && self.reply-text == "" && !reply-input.has-focus;
     Timer {
         interval: 1s;
-        running: root.has-request && !root.request-pulsing && root.request-kind == RequestKind.reply
-            && !root.reply-touched && root.reply-text == "" && !reply-input.has-focus;
+        running: root.reply-counting;
         triggered => {
             root.reply-waited += 1;
             if root.reply-waited >= root.reply-patience {
@@ -1045,16 +1063,26 @@ export component Notch inherits Window {
         } else {
             self.request-pulsing = false;
             pulse-timer.stop();
+            self.card-settled = false;
+            self.swapping = false;
         }
         self.reply-waited = 0;
         self.request-shown-changed();
     }
+    // A card that takes the place of an armed one fades in, so the next request in the
+    // queue does not pass for the one just answered. `card-settled` is set once a card
+    // arms, which is after both handlers of a first card have run.
+    private property <bool> card-settled;
+    private property <bool> swapping;
+    private property <float> card-fresh: self.swapping && !self.request-armed
+        ? clamp((animation-tick() - self.armed-from) / Theme.fade, 0, 1) : 1;
     // The next card in the queue may be of another kind, which the keys do not answer.
     changed request-kind => {
         self.reply-waited = 0;
         self.request-shown-changed();
     }
     changed request-id => {
+        self.swapping = self.card-settled;
         if !self.request-pulsing {
             self.arm();
         }
@@ -1099,6 +1127,7 @@ export component Notch inherits Window {
         running: false;
         triggered => {
             root.request-armed = true;
+            root.card-settled = true;
             self.stop();
         }
     }
@@ -1190,13 +1219,16 @@ export component Notch inherits Window {
     callback dragged();
     callback drag-ended();
 
-    // Opens the moment the pointer arrives and closes after a short absence, so slipping
-    // off the edge for an instant does not shut it. A click keeps it open until the next
-    // click, which closes it until the pointer leaves.
+    // Opens once the pointer has rested on it for a moment, so one only passing over the
+    // screen edge does not, and closes after a short absence, so slipping off the edge
+    // for an instant does not shut it. A click keeps it open until the next click, which
+    // closes it until the pointer leaves.
     private property <bool> expanded;
-    private property <bool> panel-open: self.expanded && !self.has-request && !self.alert-active;
+    // An open panel keeps its palette through a request's pulse, since it is still shown.
+    private property <bool> panel-open: self.expanded && (!self.has-request || self.request-pulsing)
+        && !self.alert-active;
     private property <color> pill-surface: self.panel-open && Theme.light ? #f5f5f7 : #0b0b0d;
-    // Switches `Theme.panel-open` 80 ms into the open/close transition, right when both
+    // Switches `Theme.panel-open` `quick` into the open/close transition, right when both
     // `idle-row` and `detail` are at 0 opacity, so neither flashes the other's palette.
     changed panel-open => {
         panel-light-timer.stop();
@@ -1207,7 +1239,7 @@ export component Notch inherits Window {
         }
     }
     panel-light-timer := Timer {
-        interval: 80ms;
+        interval: Theme.quick;
         running: false;
         triggered => {
             Theme.panel-open = root.panel-open;
@@ -1220,11 +1252,19 @@ export component Notch inherits Window {
     changed hovered => {
         if !self.hovered {
             self.dismissed = false;
-        } else if !self.dismissed {
+        } else if !self.dismissed && self.tuck && self.vertical {
+            // A tucked sliver is aimed at, and opens in one move.
             self.expanded = true;
         }
         if self.hovered && self.has-request && self.request-kind == RequestKind.reply {
             self.reply-touched = true;
+        }
+    }
+    Timer {
+        interval: 90ms;
+        running: root.hovered && !root.expanded && !root.dismissed;
+        triggered => {
+            root.expanded = true;
         }
     }
     Timer {
@@ -1284,8 +1324,18 @@ export component Notch inherits Window {
     private property <length> drawn-open-width: self.open-width;
     private property <length> drawn-open-height: self.open-height;
     animate drawn-idle-width, drawn-idle-height, drawn-open-width, drawn-open-height {
-        duration: Theme.reduce-motion ? 0ms : 260ms;
+        duration: Theme.morph;
         easing: ease-out;
+    }
+    // Each view keeps its final size and its place against the screen edge while the pill
+    // morphs around it, so its content is revealed, not reflowed.
+    pure function pinned-x(width: length) -> length {
+        return self.edge == NotchEdge.left ? 0px
+            : self.edge == NotchEdge.right ? pill.width - width : (pill.width - width) / 2;
+    }
+    pure function pinned-y(height: length) -> length {
+        return self.edge == NotchEdge.top ? 0px
+            : self.edge == NotchEdge.bottom ? pill.height - height : (pill.height - height) / 2;
     }
     private property <length> request-width: 460px * Theme.text-scale;
     // Taller by a line when Claude explains the call; a question is as tall as its
@@ -1299,7 +1349,7 @@ export component Notch inherits Window {
             * Theme.text-scale;
     private property <length> drawn-request-height: self.request-height;
     animate drawn-request-height {
-        duration: root.animate-agent ? 260ms : 0ms;
+        duration: root.animate-agent ? Theme.morph : 0ms;
         easing: spring(0.2);
     }
     private property <length> alert-width: 290px * Theme.text-scale;
@@ -1374,7 +1424,7 @@ export component Notch inherits Window {
         height: root.drawn-idle-height + (root.vertical ? 10px : 4px) * Theme.text-scale * root.pulse-wave;
         background: root.pill-surface;
         animate background {
-            duration: Theme.reduce-motion ? 0ms : 200ms;
+            duration: Theme.morph-out;
             easing: ease-out;
         }
         // The side against the screen edge stays square, where the shoulders join it;
@@ -1386,7 +1436,7 @@ export component Notch inherits Window {
         property <float> round-left: !root.floating && root.edge == NotchEdge.left ? 0 : 1;
         property <float> round-right: !root.floating && root.edge == NotchEdge.right ? 0 : 1;
         animate round-top, round-bottom, round-left, round-right {
-            duration: Theme.reduce-motion ? 0ms : 260ms;
+            duration: Theme.morph;
             easing: ease-out;
         }
         border-top-left-radius: self.corner * min(self.round-top, self.round-left);
@@ -1425,19 +1475,25 @@ export component Notch inherits Window {
         }
 
         // The tucked sliver's mark, in the colour of the usage ring.
-        if root.tucked: Rectangle {
+        Rectangle {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             width: 2px;
             height: 24px;
             border-radius: 1px;
+            opacity: root.tucked ? 1 : 0;
+            animate opacity { duration: Theme.fade; }
             background: root.show-usage && root.usage-fraction >= 0 ? Theme.level(root.usage-fraction) : Theme.muted;
         }
 
         idle-row := Rectangle {
             // The provider leads; the system readings follow, quieter. Both layouts
-            // always exist, so the pill can size itself to the one that shows.
+            // always exist, so the pill can size itself to the one that shows. Each
+            // keeps its own size and its distance from the pill's leading end, so when
+            // a reading arrives the others stay put and the growing pill reveals it.
             idle-wide := HorizontalLayout {
+                x: (parent.width - self.width) / 2 - (root.drawn-idle-width - root.idle-width) / 2;
+                width: self.preferred-width;
                 visible: !root.vertical;
                 alignment: center;
                 spacing: 16px;
@@ -1487,6 +1543,8 @@ export component Notch inherits Window {
                 }
             }
             idle-tall := VerticalLayout {
+                y: (parent.height - self.height) / 2 - (root.drawn-idle-height - root.idle-height) / 2;
+                height: self.preferred-height;
                 visible: root.vertical;
                 alignment: center;
                 spacing: 12px;
@@ -1540,6 +1598,12 @@ export component Notch inherits Window {
 
         detail := Rectangle {
             opacity: 0;
+            // Unseen, its provider chips must not take the idle pill's clicks.
+            visible: self.opacity > 0;
+            x: root.pinned-x(self.width);
+            y: root.pinned-y(self.height);
+            width: root.open-width;
+            height: root.open-height;
 
             // The provider and its limits first, then the system readings under a hairline.
             // Its height sets the open panel's, so each provider gets the room it needs.
@@ -1668,6 +1732,10 @@ export component Notch inherits Window {
         request-view := VerticalLayout {
             opacity: 0;
             visible: self.opacity > 0;
+            x: root.pinned-x(self.width);
+            y: root.pinned-y(self.height);
+            width: root.request-width;
+            height: root.request-height;
             padding-left: 18px;
             padding-right: 18px;
             padding-top: 13px;
@@ -1779,7 +1847,7 @@ export component Notch inherits Window {
             if root.request-always != "": Rectangle {
                 // 24 px, the smallest target WCAG 2.5.8 accepts.
                 height: 24px * Theme.text-scale;
-                opacity: root.request-armed ? 1 : 0.5;
+                opacity: 0.35 + 0.65 * root.arming;
                 accessible-role: button;
                 accessible-label: root.request-always;
                 accessible-enabled: root.request-armed;
@@ -1793,6 +1861,7 @@ export component Notch inherits Window {
                     height: parent.height;
                     text: root.request-always;
                     color: always-touch.has-hover ? Theme.text : Theme.good;
+                    animate color { duration: Theme.quick; }
                     font-family: Theme.font;
                     font-size: Theme.size-label;
                     vertical-alignment: center;
@@ -1853,6 +1922,10 @@ export component Notch inherits Window {
         question-view := VerticalLayout {
             opacity: 0;
             visible: self.opacity > 0;
+            x: root.pinned-x(self.width);
+            y: root.pinned-y(self.height);
+            width: root.request-width;
+            height: root.request-height;
             alignment: start;
             padding-left: 18px;
             padding-right: 18px;
@@ -1907,6 +1980,7 @@ export component Notch inherits Window {
                 number: index + 1;
                 multi: root.question-multi;
                 armed: root.request-armed;
+                progress: root.arming;
                 clicked => {
                     if root.request-armed {
                         root.option-picked(root.request-id, index);
@@ -1946,6 +2020,10 @@ export component Notch inherits Window {
         reply-view := VerticalLayout {
             opacity: 0;
             visible: self.opacity > 0;
+            x: root.pinned-x(self.width);
+            y: root.pinned-y(self.height);
+            width: root.request-width;
+            height: root.request-height;
             alignment: start;
             padding-left: 18px;
             padding-right: 18px;
@@ -2075,6 +2153,10 @@ export component Notch inherits Window {
         alert-view := HorizontalLayout {
             opacity: 0;
             visible: self.opacity > 0;
+            x: root.pinned-x(self.width);
+            y: root.pinned-y(self.height);
+            width: root.alert-width;
+            height: root.alert-height;
             alignment: center;
             spacing: 9px;
             padding-left: 18px;
@@ -2109,6 +2191,18 @@ export component Notch inherits Window {
             clicked => {
                 root.alert-clicked();
             }
+        }
+
+        // What is left of an untouched reply card's wait, draining along its foot.
+        if root.reply-counting: Rectangle {
+            x: 18px;
+            y: parent.height - 7px;
+            width: (parent.width - 36px)
+                * max(root.reply-patience - root.reply-waited - 1, 0) / (root.reply-patience - 1);
+            height: 2px;
+            border-radius: 1px;
+            background: Theme.muted;
+            animate width { duration: Theme.reduce-motion ? 0ms : 1s; easing: linear; }
         }
 
         if Theme.light-panel && !root.request-pulsing: PillOutline {
@@ -2149,24 +2243,25 @@ export component Notch inherits Window {
                 pill.height: root.drawn-request-height;
                 idle-row.opacity: 0;
                 detail.opacity: 0;
-                request-view.opacity: root.request-kind == RequestKind.permission ? 1 : 0;
-                question-view.opacity: root.request-kind == RequestKind.question ? 1 : 0;
-                reply-view.opacity: root.request-kind == RequestKind.reply ? 1 : 0;
+                request-view.opacity: root.request-kind == RequestKind.permission ? root.card-fresh : 0;
+                question-view.opacity: root.request-kind == RequestKind.question ? root.card-fresh : 0;
+                reply-view.opacity: root.request-kind == RequestKind.reply ? root.card-fresh : 0;
                 in {
                     animate pill.width, pill.height {
-                        duration: 260ms;
+                        duration: Theme.morph;
                         easing: spring(0.2);
                     }
-                    animate idle-row.opacity, detail.opacity { duration: 80ms; }
-                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: 140ms; delay: 140ms; }
+                    animate idle-row.opacity, detail.opacity { duration: Theme.quick; }
+                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: Theme.fade; delay: Theme.quick; }
                 }
                 out {
                     animate pill.width, pill.height {
-                        duration: 240ms;
-                        easing: spring(0.15);
+                        // The way out does not bounce.
+                        duration: Theme.morph-out;
+                        easing: ease-out;
                     }
-                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: 80ms; }
-                    animate idle-row.opacity { duration: 140ms; delay: 120ms; }
+                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: Theme.quick; }
+                    animate idle-row.opacity { duration: Theme.fade; delay: Theme.quick; }
                 }
             }
             request when root.has-request && !root.request-pulsing: {
@@ -2174,18 +2269,18 @@ export component Notch inherits Window {
                 pill.height: root.request-height;
                 idle-row.opacity: 0;
                 detail.opacity: 0;
-                request-view.opacity: root.request-kind == RequestKind.permission ? 1 : 0;
-                question-view.opacity: root.request-kind == RequestKind.question ? 1 : 0;
-                reply-view.opacity: root.request-kind == RequestKind.reply ? 1 : 0;
+                request-view.opacity: root.request-kind == RequestKind.permission ? root.card-fresh : 0;
+                question-view.opacity: root.request-kind == RequestKind.question ? root.card-fresh : 0;
+                reply-view.opacity: root.request-kind == RequestKind.reply ? root.card-fresh : 0;
                 in {
-                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 220ms; easing: ease-out; }
-                    animate idle-row.opacity, detail.opacity { duration: 80ms; }
-                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: 140ms; delay: 140ms; }
+                    animate pill.width, pill.height { duration: Theme.morph; easing: ease-out; }
+                    animate idle-row.opacity, detail.opacity { duration: Theme.quick; }
+                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: Theme.fade; delay: Theme.quick; }
                 }
                 out {
-                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
-                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: 80ms; }
-                    animate idle-row.opacity { duration: 140ms; delay: 120ms; }
+                    animate pill.width, pill.height { duration: Theme.morph-out; easing: ease-out; }
+                    animate request-view.opacity, question-view.opacity, reply-view.opacity { duration: Theme.quick; }
+                    animate idle-row.opacity { duration: Theme.fade; delay: Theme.quick; }
                 }
             }
             alert when root.alert-active: {
@@ -2195,23 +2290,23 @@ export component Notch inherits Window {
                 detail.opacity: 0;
                 alert-view.opacity: 1;
                 in {
-                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 220ms; easing: ease-out; }
-                    animate idle-row.opacity, detail.opacity { duration: 80ms; }
-                    animate alert-view.opacity { duration: 140ms; delay: 140ms; }
+                    animate pill.width, pill.height { duration: Theme.morph; easing: ease-out; }
+                    animate idle-row.opacity, detail.opacity { duration: Theme.quick; }
+                    animate alert-view.opacity { duration: Theme.fade; delay: Theme.quick; }
                 }
                 out {
-                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
-                    animate alert-view.opacity { duration: 80ms; }
-                    animate idle-row.opacity { duration: 140ms; delay: 120ms; }
+                    animate pill.width, pill.height { duration: Theme.morph-out; easing: ease-out; }
+                    animate alert-view.opacity { duration: Theme.quick; }
+                    animate idle-row.opacity { duration: Theme.fade; delay: Theme.quick; }
                 }
             }
             tucked when root.tucked: {
                 idle-row.opacity: 0;
                 in {
-                    animate idle-row.opacity { duration: 80ms; }
+                    animate idle-row.opacity { duration: Theme.quick; }
                 }
                 out {
-                    animate idle-row.opacity { duration: 140ms; delay: 120ms; }
+                    animate idle-row.opacity { duration: Theme.fade; delay: Theme.quick; }
                 }
             }
             open when root.expanded: {
@@ -2220,14 +2315,14 @@ export component Notch inherits Window {
                 idle-row.opacity: 0;
                 detail.opacity: 1;
                 in {
-                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
-                    animate idle-row.opacity { duration: 80ms; }
-                    animate detail.opacity { duration: 140ms; delay: 100ms; }
+                    animate pill.width, pill.height { duration: Theme.morph; easing: ease-out; }
+                    animate idle-row.opacity { duration: Theme.quick; }
+                    animate detail.opacity { duration: Theme.fade; delay: Theme.quick; }
                 }
                 out {
-                    animate pill.width, pill.height { duration: Theme.reduce-motion ? 0ms : 200ms; easing: ease-out; }
-                    animate detail.opacity { duration: 80ms; }
-                    animate idle-row.opacity { duration: 140ms; delay: 120ms; }
+                    animate pill.width, pill.height { duration: Theme.morph-out; easing: ease-out; }
+                    animate detail.opacity { duration: Theme.quick; }
+                    animate idle-row.opacity { duration: Theme.fade; delay: Theme.quick; }
                 }
             }
         ]

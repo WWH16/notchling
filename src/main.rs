@@ -67,8 +67,14 @@ const SHRINK_DELAY: Duration = Duration::from_millis(350);
 /// Windows has applied that display's scale.
 const MONITOR_MOVE_SETTLE: Duration = Duration::from_millis(200);
 
-/// How long the notch takes to glide onto an edge once let go; as long as its morph.
-const GLIDE: Duration = Duration::from_millis(260);
+/// How long the notch takes to glide a short way onto an edge once let go.
+const GLIDE: Duration = Duration::from_millis(200);
+
+/// The longest a glide takes, however far the edge is.
+const GLIDE_MAX: Duration = Duration::from_millis(400);
+
+/// Extra glide time for each physical pixel travelled; 800 px reach `GLIDE_MAX`.
+const GLIDE_PER_PIXEL: Duration = Duration::from_micros(250);
 
 /// How often the notch checks for a fullscreen app to hide from.
 const FULLSCREEN_CHECK: Duration = Duration::from_secs(1);
@@ -475,7 +481,7 @@ fn drag_and_stick(notch: &Notch, placement: &Rc<RefCell<Placement>>, clip: &Rc<d
         glide_window(&notch, &glide, from, target);
         // A move to a display with another scale resizes the window a moment later.
         let settled = Rc::clone(&clip);
-        Timer::single_shot(GLIDE + MONITOR_MOVE_SETTLE, move || settled());
+        Timer::single_shot(GLIDE_MAX + MONITOR_MOVE_SETTLE, move || settled());
         let spot = placement.clone();
         // On failure the spot only lasts until the notch restarts.
         let _ = Config::update(|config| {
@@ -486,8 +492,15 @@ fn drag_and_stick(notch: &Notch, placement: &Rc<RefCell<Placement>>, clip: &Rc<d
     });
 }
 
-/// Moves the notch window from `from` to `to` over `GLIDE`, easing out, unless `timer`
-/// is stopped or restarted first. With Windows' animations off it jumps there.
+/// How long a glide from `from` to `to` takes: longer the farther it goes, so a long one
+/// does not flash across the screen.
+fn glide_duration(from: slint::PhysicalPosition, to: slint::PhysicalPosition) -> Duration {
+    let distance = f64::from(to.x - from.x).hypot(f64::from(to.y - from.y));
+    (GLIDE + GLIDE_PER_PIXEL.mul_f64(distance)).min(GLIDE_MAX)
+}
+
+/// Moves the notch window from `from` to `to`, easing out, unless `timer` is stopped or
+/// restarted first. With Windows' animations off it jumps there.
 fn glide_window(
     notch: &Notch,
     timer: &Rc<Timer>,
@@ -502,8 +515,9 @@ fn glide_window(
     let weak = notch.as_weak();
     let own = Rc::downgrade(timer);
     let started = Instant::now();
+    let duration = glide_duration(from, to);
     timer.start(TimerMode::Repeated, FRAME, move || {
-        let progress = (started.elapsed().as_secs_f32() / GLIDE.as_secs_f32()).min(1.0);
+        let progress = (started.elapsed().as_secs_f32() / duration.as_secs_f32()).min(1.0);
         // Cubic ease-out: quick off the hand, settling softly onto the edge.
         let eased = 1.0 - (1.0 - progress).powi(3);
         // Screen pixels are far inside f32's exact range; rounding to whole ones is intended.
@@ -1448,6 +1462,19 @@ mod tests {
         ];
         for (secs, want) in cases {
             assert_eq!(working_time(Duration::from_secs(secs)), want, "{secs} s");
+        }
+    }
+
+    #[test]
+    fn glide_takes_longer_the_farther_it_goes() {
+        let at = |x, y| slint::PhysicalPosition::new(x, y);
+        let cases = [
+            (at(0, 0), GLIDE),
+            (at(300, 400), Duration::from_millis(325)),
+            (at(-3000, 0), GLIDE_MAX),
+        ];
+        for (to, want) in cases {
+            assert_eq!(glide_duration(at(0, 0), to), want, "to {to:?}");
         }
     }
 

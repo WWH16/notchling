@@ -1362,8 +1362,9 @@ export component Notch inherits Window {
     private property <float> edge-round: self.edge == NotchEdge.top ? pill.round-top
         : self.edge == NotchEdge.bottom ? pill.round-bottom
         : self.edge == NotchEdge.left ? pill.round-left : pill.round-right;
-    private property <length> shoulder: self.shoulder-radius * (1 - self.edge-round);
-    private property <length> target-shoulder: self.floating ? 0 : self.shoulder-radius;
+    // Out, so Rust can keep the window region off the empty space beside the body.
+    out property <length> shoulder: self.shoulder-radius * (1 - self.edge-round);
+    out property <length> target-shoulder: self.floating ? 0 : self.shoulder-radius;
     // Each shoulder tucks this far under the body, so no seam shows between them.
     private property <length> shoulder-overlap: 1px;
 
@@ -1472,88 +1473,35 @@ export component Notch inherits Window {
                     root.drag-ended();
                 }
             }
-        }
+            // The panel sits inside, so pointing at one of its chips still counts as
+            // pointing at the notch and does not close it.
 
-        // The tucked sliver's mark, in the colour of the usage ring.
-        Rectangle {
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            width: 2px;
-            height: 24px;
-            border-radius: 1px;
-            opacity: root.tucked ? 1 : 0;
-            animate opacity { duration: Theme.fade; }
-            background: root.show-usage && root.usage-fraction >= 0 ? Theme.level(root.usage-fraction) : Theme.muted;
-        }
-
-        idle-row := Rectangle {
-            // The provider leads; the system readings follow, quieter. Both layouts
-            // always exist, so the pill can size itself to the one that shows. Each
-            // keeps its own size and its distance from the pill's leading end, so when
-            // a reading arrives the others stay put and the growing pill reveals it.
-            idle-wide := HorizontalLayout {
-                x: (parent.width - self.width) / 2 - (root.drawn-idle-width - root.idle-width) / 2;
-                width: self.preferred-width;
-                visible: !root.vertical;
-                alignment: center;
-                spacing: 16px;
-                if root.show-usage: HorizontalLayout {
-                    spacing: 7px;
-                    MarkRing {
-                        provider: root.usage-provider;
-                        fraction: root.usage-fraction;
-                        level: Theme.level(root.usage-fraction);
-                        mark: root.accent;
-                        pulse: root.ring-pulse;
-                        pulse-color: root.ring-pulse-color;
-                    }
-                    Value {
-                        text: root.usage-short;
-                    }
-                }
-                if root.show-cpu: HorizontalLayout {
-                    spacing: 5px;
-                    Label {
-                        text: "CPU";
-                    }
-                    Value {
-                        text: "\{round(root.cpu * 100)}%";
-                    }
-                }
-                if root.show-gpu: HorizontalLayout {
-                    spacing: 5px;
-                    Label {
-                        text: "GPU";
-                    }
-                    Value {
-                        text: "\{round(root.gpu * 100)}%";
-                    }
-                }
-                if root.working: HorizontalLayout {
-                    spacing: 5px;
-                    WorkingLogo {
-                        animate-rays: root.animate-agent;
-                    }
-                    Value {
-                        text: root.activity;
-                    }
-                    if root.activity-sessions > 1: Label {
-                        text: "×\{root.activity-sessions}";
-                    }
-                }
+            // The tucked sliver's mark, in the colour of the usage ring.
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: 2px;
+                height: 24px;
+                border-radius: 1px;
+                opacity: root.tucked ? 1 : 0;
+                animate opacity { duration: Theme.fade; }
+                background: root.show-usage && root.usage-fraction >= 0 ? Theme.level(root.usage-fraction) : Theme.muted;
             }
-            idle-tall := VerticalLayout {
-                y: (parent.height - self.height) / 2 - (root.drawn-idle-height - root.idle-height) / 2;
-                height: self.preferred-height;
-                visible: root.vertical;
-                alignment: center;
-                spacing: 12px;
-                if root.show-usage: VerticalLayout {
-                    spacing: 4px;
-                    HorizontalLayout {
-                        alignment: center;
+
+            idle-row := Rectangle {
+                // The provider leads; the system readings follow, quieter. Both layouts
+                // always exist, so the pill can size itself to the one that shows. Each
+                // keeps its own size and its distance from the pill's leading end, so when
+                // a reading arrives the others stay put and the growing pill reveals it.
+                idle-wide := HorizontalLayout {
+                    x: (parent.width - self.width) / 2 - (root.drawn-idle-width - root.idle-width) / 2;
+                    width: self.preferred-width;
+                    visible: !root.vertical;
+                    alignment: center;
+                    spacing: 16px;
+                    if root.show-usage: HorizontalLayout {
+                        spacing: 7px;
                         MarkRing {
-                            size: 26px * Theme.text-scale;
                             provider: root.usage-provider;
                             fraction: root.usage-fraction;
                             level: Theme.level(root.usage-fraction);
@@ -1561,169 +1509,224 @@ export component Notch inherits Window {
                             pulse: root.ring-pulse;
                             pulse-color: root.ring-pulse-color;
                         }
+                        Value {
+                            text: root.usage-short;
+                        }
                     }
-                    Value {
-                        text: root.usage-short;
-                        horizontal-alignment: center;
+                    if root.show-cpu: HorizontalLayout {
+                        spacing: 5px;
+                        Label {
+                            text: "CPU";
+                        }
+                        Value {
+                            text: "\{round(root.cpu * 100)}%";
+                        }
                     }
-                }
-                if root.show-cpu: StackedPair {
-                    label: "CPU";
-                    value: "\{round(root.cpu * 100)}%";
-                }
-                if root.show-gpu: StackedPair {
-                    label: "GPU";
-                    value: "\{round(root.gpu * 100)}%";
-                }
-                if root.working: VerticalLayout {
-                    spacing: 3px;
-                    HorizontalLayout {
-                        alignment: center;
+                    if root.show-gpu: HorizontalLayout {
+                        spacing: 5px;
+                        Label {
+                            text: "GPU";
+                        }
+                        Value {
+                            text: "\{round(root.gpu * 100)}%";
+                        }
+                    }
+                    if root.working: HorizontalLayout {
+                        spacing: 5px;
                         WorkingLogo {
                             animate-rays: root.animate-agent;
                         }
+                        Value {
+                            text: root.activity;
+                        }
+                        if root.activity-sessions > 1: Label {
+                            text: "×\{root.activity-sessions}";
+                        }
                     }
-                    Value {
-                        text: root.activity;
-                        font-size: Theme.size-label;
-                        horizontal-alignment: center;
+                }
+                idle-tall := VerticalLayout {
+                    y: (parent.height - self.height) / 2 - (root.drawn-idle-height - root.idle-height) / 2;
+                    height: self.preferred-height;
+                    visible: root.vertical;
+                    alignment: center;
+                    spacing: 12px;
+                    if root.show-usage: VerticalLayout {
+                        spacing: 4px;
+                        HorizontalLayout {
+                            alignment: center;
+                            MarkRing {
+                                size: 26px * Theme.text-scale;
+                                provider: root.usage-provider;
+                                fraction: root.usage-fraction;
+                                level: Theme.level(root.usage-fraction);
+                                mark: root.accent;
+                                pulse: root.ring-pulse;
+                                pulse-color: root.ring-pulse-color;
+                            }
+                        }
+                        Value {
+                            text: root.usage-short;
+                            horizontal-alignment: center;
+                        }
                     }
-                    if root.activity-sessions > 1: Label {
-                        text: "×\{root.activity-sessions}";
-                        horizontal-alignment: center;
+                    if root.show-cpu: StackedPair {
+                        label: "CPU";
+                        value: "\{round(root.cpu * 100)}%";
+                    }
+                    if root.show-gpu: StackedPair {
+                        label: "GPU";
+                        value: "\{round(root.gpu * 100)}%";
+                    }
+                    if root.working: VerticalLayout {
+                        spacing: 3px;
+                        HorizontalLayout {
+                            alignment: center;
+                            WorkingLogo {
+                                animate-rays: root.animate-agent;
+                            }
+                        }
+                        Value {
+                            text: root.activity;
+                            font-size: Theme.size-label;
+                            horizontal-alignment: center;
+                        }
+                        if root.activity-sessions > 1: Label {
+                            text: "×\{root.activity-sessions}";
+                            horizontal-alignment: center;
+                        }
                     }
                 }
             }
-        }
 
-        detail := Rectangle {
-            opacity: 0;
-            // Unseen, its provider chips must not take the idle pill's clicks.
-            visible: self.opacity > 0;
-            x: root.pinned-x(self.width);
-            y: root.pinned-y(self.height);
-            width: root.open-width;
-            height: root.open-height;
+            detail := Rectangle {
+                opacity: 0;
+                // Unseen, its provider chips must not take the idle pill's clicks.
+                visible: self.opacity > 0;
+                x: root.pinned-x(self.width);
+                y: root.pinned-y(self.height);
+                width: root.open-width;
+                height: root.open-height;
 
-            // The provider and its limits first, then the system readings under a hairline.
-            // Its height sets the open panel's, so each provider gets the room it needs.
-            panel := VerticalLayout {
-                alignment: start;
-                padding-left: root.vertical ? 18px : 20px;
-                padding-right: root.vertical ? 18px : 20px;
-                padding-top: 16px;
-                padding-bottom: 18px;
-                spacing: root.vertical ? 12px : 14px;
-
-                if root.show-usage: VerticalLayout {
+                // The provider and its limits first, then the system readings under a hairline.
+                // Its height sets the open panel's, so each provider gets the room it needs.
+                panel := VerticalLayout {
+                    alignment: start;
+                    padding-left: root.vertical ? 18px : 20px;
+                    padding-right: root.vertical ? 18px : 20px;
+                    padding-top: 16px;
+                    padding-bottom: 18px;
                     spacing: root.vertical ? 12px : 14px;
 
-                    if root.provider-rings.length > 1: HorizontalLayout {
-                        alignment: start;
-                        spacing: root.vertical ? 4px : 6px;
-                        for ring in root.provider-rings: ProviderRingChip {
-                            ring: ring;
-                            compact: root.vertical;
-                            clicked => {
-                                root.provider-picked(ring.provider);
+                    if root.show-usage: VerticalLayout {
+                        spacing: root.vertical ? 12px : 14px;
+
+                        if root.provider-rings.length > 1: HorizontalLayout {
+                            alignment: start;
+                            spacing: root.vertical ? 4px : 6px;
+                            for ring in root.provider-rings: ProviderRingChip {
+                                ring: ring;
+                                compact: root.vertical;
+                                clicked => {
+                                    root.provider-picked(ring.provider);
+                                }
                             }
                         }
+
+                        HorizontalLayout {
+                            spacing: 12px;
+                            ProviderName {
+                                provider: root.usage-provider;
+                                accent: root.accent;
+                                name: root.provider-name;
+                                status: root.status;
+                                estimated: root.usage-estimated;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                            }
+                            if !root.vertical && root.usage-tokens != "": Label {
+                                text: root.usage-tokens;
+                            }
+                            if !root.vertical && root.usage-rate != "": Label {
+                                text: root.usage-rate;
+                            }
+                            if !root.vertical && root.usage-via != "": Label {
+                                text: root.usage-via;
+                            }
+                        }
+                        if root.vertical && (root.usage-tokens != "" || root.usage-rate != "" || root.usage-via != ""): HorizontalLayout {
+                            alignment: start;
+                            spacing: 12px;
+                            if root.usage-tokens != "": Label {
+                                text: root.usage-tokens;
+                            }
+                            if root.usage-rate != "": Label {
+                                text: root.usage-rate;
+                            }
+                            if root.usage-via != "": Label {
+                                text: root.usage-via;
+                            }
+                        }
+
+                        for limit-line in root.vertical ? root.tall-lines : root.wide-lines: LimitRow {
+                            line: limit-line;
+                        }
                     }
 
-                    HorizontalLayout {
-                        spacing: 12px;
-                        ProviderName {
-                            provider: root.usage-provider;
-                            accent: root.accent;
-                            name: root.provider-name;
-                            status: root.status;
-                            estimated: root.usage-estimated;
-                        }
-                        Rectangle {
-                            horizontal-stretch: 1;
-                        }
-                        if !root.vertical && root.usage-tokens != "": Label {
-                            text: root.usage-tokens;
-                        }
-                        if !root.vertical && root.usage-rate != "": Label {
-                            text: root.usage-rate;
-                        }
-                        if !root.vertical && root.usage-via != "": Label {
-                            text: root.usage-via;
-                        }
-                    }
-                    if root.vertical && (root.usage-tokens != "" || root.usage-rate != "" || root.usage-via != ""): HorizontalLayout {
-                        alignment: start;
-                        spacing: 12px;
-                        if root.usage-tokens != "": Label {
-                            text: root.usage-tokens;
-                        }
-                        if root.usage-rate != "": Label {
-                            text: root.usage-rate;
-                        }
-                        if root.usage-via != "": Label {
-                            text: root.usage-via;
-                        }
+                    if root.show-usage && (root.show-cpu || root.show-gpu): Rectangle {
+                        height: 1px;
+                        background: Theme.rule;
                     }
 
-                    for limit-line in root.vertical ? root.tall-lines : root.wide-lines: LimitRow {
-                        line: limit-line;
+                    if !root.vertical && (root.show-cpu || root.show-gpu): HorizontalLayout {
+                        spacing: 18px;
+                        if root.show-cpu: Stat {
+                            label: "CPU";
+                            value: "\{round(root.cpu * 100)}%";
+                            fraction: root.cpu;
+                        }
+                        if root.show-gpu: Stat {
+                            label: "GPU";
+                            value: "\{round(root.gpu * 100)}%";
+                            fraction: root.gpu;
+                        }
+                        if root.show-cpu: Stat {
+                            label: "RAM";
+                            value: root.ram-text;
+                            fraction: root.ram;
+                        }
+                        if root.show-gpu: Stat {
+                            label: "VRAM";
+                            value: root.vram-text;
+                            fraction: root.vram;
+                        }
                     }
-                }
-
-                if root.show-usage && (root.show-cpu || root.show-gpu): Rectangle {
-                    height: 1px;
-                    background: Theme.rule;
-                }
-
-                if !root.vertical && (root.show-cpu || root.show-gpu): HorizontalLayout {
-                    spacing: 18px;
-                    if root.show-cpu: Stat {
-                        label: "CPU";
-                        value: "\{round(root.cpu * 100)}%";
-                        fraction: root.cpu;
+                    // Upright, each device's readings pair up so the panel stays short.
+                    if root.vertical && root.show-cpu: HorizontalLayout {
+                        spacing: 16px;
+                        Stat {
+                            label: "CPU";
+                            value: "\{round(root.cpu * 100)}%";
+                            fraction: root.cpu;
+                        }
+                        Stat {
+                            label: "RAM";
+                            value: root.ram-text;
+                            fraction: root.ram;
+                        }
                     }
-                    if root.show-gpu: Stat {
-                        label: "GPU";
-                        value: "\{round(root.gpu * 100)}%";
-                        fraction: root.gpu;
-                    }
-                    if root.show-cpu: Stat {
-                        label: "RAM";
-                        value: root.ram-text;
-                        fraction: root.ram;
-                    }
-                    if root.show-gpu: Stat {
-                        label: "VRAM";
-                        value: root.vram-text;
-                        fraction: root.vram;
-                    }
-                }
-                // Upright, each device's readings pair up so the panel stays short.
-                if root.vertical && root.show-cpu: HorizontalLayout {
-                    spacing: 16px;
-                    Stat {
-                        label: "CPU";
-                        value: "\{round(root.cpu * 100)}%";
-                        fraction: root.cpu;
-                    }
-                    Stat {
-                        label: "RAM";
-                        value: root.ram-text;
-                        fraction: root.ram;
-                    }
-                }
-                if root.vertical && root.show-gpu: HorizontalLayout {
-                    spacing: 16px;
-                    Stat {
-                        label: "GPU";
-                        value: "\{round(root.gpu * 100)}%";
-                        fraction: root.gpu;
-                    }
-                    Stat {
-                        label: "VRAM";
-                        value: root.vram-text;
-                        fraction: root.vram;
+                    if root.vertical && root.show-gpu: HorizontalLayout {
+                        spacing: 16px;
+                        Stat {
+                            label: "GPU";
+                            value: "\{round(root.gpu * 100)}%";
+                            fraction: root.gpu;
+                        }
+                        Stat {
+                            label: "VRAM";
+                            value: root.vram-text;
+                            fraction: root.vram;
+                        }
                     }
                 }
             }

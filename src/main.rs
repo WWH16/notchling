@@ -47,7 +47,7 @@ use status::Health;
 use system::SystemLoad;
 use ui::{AlertKind, Choice, Notch, RequestKind};
 use usage::{Claude, Codex, Crossing, Gemini, Provider, Reading, Thresholds, Usage};
-use window::{Edge, MenuChoice, MessageKind, NotchWindow, Placement, Shortcut};
+use window::{Edge, MenuChoice, MessageKind, NotchWindow, Outline, Placement, Shortcut};
 use windows::Win32::Foundation::POINT;
 
 /// One frame at 60 Hz; how often to check whether the native window exists yet.
@@ -59,9 +59,10 @@ const NATIVE_WINDOW_ATTEMPTS: u32 = 60;
 /// How often the CPU, GPU and RAM readings refresh, matching Task Manager's default.
 const STATS_INTERVAL: Duration = Duration::from_secs(1);
 
-/// How long a shrinking shape keeps its old window region: the longest morph animation.
+/// How long a shrinking shape keeps its old window region: just past the longest morph
+/// animation, 240 ms, since the region left behind takes clicks while nothing shows there.
 /// Updating the region on every animation frame made the notch flicker.
-const SHRINK_DELAY: Duration = Duration::from_millis(350);
+const SHRINK_DELAY: Duration = Duration::from_millis(260);
 
 /// How long after a move to another display the notch re-clips its window, once
 /// Windows has applied that display's scale.
@@ -323,18 +324,26 @@ fn clip_to_shape(notch: &Notch, native: Rc<NotchWindow>) -> Rc<dyn Fn()> {
     // the notch sticks to another edge, the morph starts from the old size.
     let target = Rc::new(move || {
         let notch = weak.upgrade()?;
-        let rect = |width, height| {
-            window::shape_rect(
+        let outline = |width, height, shoulder| {
+            Outline::new(
                 window_size(&notch),
                 slint::LogicalSize::new(width, height),
+                shoulder,
                 notch.window().scale_factor(),
                 Edge::from(notch.get_edge()),
             )
         };
-        Some(window::union(
-            rect(notch.get_shape_width(), notch.get_shape_height()),
-            rect(notch.get_drawn_width(), notch.get_drawn_height()),
-        ))
+        let heading = outline(
+            notch.get_shape_width(),
+            notch.get_shape_height(),
+            notch.get_target_shoulder(),
+        );
+        let drawn = outline(
+            notch.get_drawn_width(),
+            notch.get_drawn_height(),
+            notch.get_shoulder(),
+        );
+        Some(heading.union(drawn))
     });
     let applied = Rc::new(Cell::new(None));
     let shrink = Rc::new(Timer::default());
@@ -344,7 +353,7 @@ fn clip_to_shape(notch: &Notch, native: Rc<NotchWindow>) -> Rc<dyn Fn()> {
         };
         let room = applied
             .get()
-            .map_or(wanted, |current| window::union(current, wanted));
+            .map_or(wanted, |current: Outline| current.union(wanted));
         if applied.get() != Some(room) {
             native.clip_to(room);
             applied.set(Some(room));

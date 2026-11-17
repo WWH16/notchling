@@ -11,8 +11,8 @@ use anyhow::{Context, bail};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR,
-    MONITOR_DEFAULTTONEAREST, MONITORINFO, MONITORINFOEXW, MonitorFromPoint, SetWindowRgn,
+    CombineRgn, CreateRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR,
+    MONITOR_DEFAULTTONEAREST, MONITORINFO, MONITORINFOEXW, MonitorFromPoint, RGN_OR, SetWindowRgn,
 };
 use windows::Win32::System::Diagnostics::Debug::MessageBeep;
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
@@ -660,12 +660,22 @@ impl NotchWindow {
         }
     }
 
-    /// Limits drawing and mouse input to `rect`; clicks outside it reach the windows below.
-    pub fn clip_to(&self, rect: RECT) {
-        // SAFETY: `hwnd` is live. On success the system owns the region; on failure we
-        // still own it and delete it.
+    /// Limits drawing and mouse input to `outline`; clicks outside it reach the windows
+    /// below.
+    pub fn clip_to(&self, outline: Outline) {
+        let Outline { body, shoulders } = outline;
+        // SAFETY: `hwnd` is live. CombineRgn copies `strip`, which we then delete. On
+        // success the system owns `region`; on failure we still own it and delete it.
         unsafe {
-            let region = CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom);
+            let region = CreateRectRgn(body.left, body.top, body.right, body.bottom);
+            let strip = CreateRectRgn(
+                shoulders.left,
+                shoulders.top,
+                shoulders.right,
+                shoulders.bottom,
+            );
+            CombineRgn(Some(region), Some(region), Some(strip), RGN_OR);
+            let _ = DeleteObject(strip.into());
             if SetWindowRgn(self.hwnd, Some(region), true) == 0 {
                 let _ = DeleteObject(region.into());
             }
@@ -856,9 +866,104 @@ pub fn shape_rect(
     }
 }
 
+/// The notch's outline in physical pixels: its body, and the strip along its screen edge
+/// that holds the shoulders. The space beside the body, past the shoulders, is left out,
+/// so clicks there reach the windows below.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Outline {
+    pub body: RECT,
+    pub shoulders: RECT,
+}
+
+impl Outline {
+    /// The outline of a shape as [`shape_rect`] places it, whose shoulders reach
+    /// `shoulder` logical pixels along the edge and out from it.
+    #[must_use]
+    pub fn new(
+        window: slint::LogicalSize,
+        shape: slint::LogicalSize,
+        shoulder: f32,
+        scale: f32,
+        edge: Edge,
+    ) -> Self {
+        let outer = shape_rect(window, shape, scale, edge);
+        // Rounded so both parts err outward. Truncation after floor/ceil is intended.
+        let inset = (shoulder * scale).floor() as i32;
+        let depth = (shoulder * scale).ceil() as i32;
+        let (body, shoulders) = match edge {
+            Edge::Top | Edge::Bottom => (
+                RECT {
+                    left: outer.left + inset,
+                    right: outer.right - inset,
+                    ..outer
+                },
+                if edge == Edge::Top {
+                    RECT {
+                        bottom: outer.top + depth,
+                        ..outer
+                    }
+                } else {
+                    RECT {
+                        top: outer.bottom - depth,
+                        ..outer
+                    }
+                },
+            ),
+            Edge::Left | Edge::Right => (
+                RECT {
+                    top: outer.top + inset,
+                    bottom: outer.bottom - inset,
+                    ..outer
+                },
+                if edge == Edge::Left {
+                    RECT {
+                        right: outer.left + depth,
+                        ..outer
+                    }
+                } else {
+                    RECT {
+                        left: outer.right - depth,
+                        ..outer
+                    }
+                },
+            ),
+        };
+        Self { body, shoulders }
+    }
+
+    /// An outline holding both `self` and `other`.
+    #[must_use]
+    pub fn union(self, other: Self) -> Self {
+        Self {
+            body: union(self.body, other.body),
+            shoulders: union(self.shoulders, other.shoulders),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outline_leaves_out_the_space_beside_the_body() {
+        let window = slint::LogicalSize::new(520.0, 280.0);
+        let shape = slint::LogicalSize::new(190.0, 30.0);
+        let parts = |edge| {
+            let Outline { body, shoulders } = Outline::new(window, shape, 14.0, 1.0, edge);
+            let sides = |rect: RECT| (rect.left, rect.top, rect.right, rect.bottom);
+            (sides(body), sides(shoulders))
+        };
+        assert_eq!(parts(Edge::Top), ((179, 0, 341, 30), (165, 0, 355, 14)));
+        assert_eq!(
+            parts(Edge::Bottom),
+            ((179, 250, 341, 280), (165, 266, 355, 280))
+        );
+        let tall = slint::LogicalSize::new(30.0, 190.0);
+        let Outline { body, shoulders } = Outline::new(window, tall, 14.0, 1.0, Edge::Right);
+        assert_eq!((body.top, body.bottom), (59, 221));
+        assert_eq!((shoulders.left, shoulders.right), (506, 520));
+    }
 
     #[test]
     fn union_holds_both_rectangles() {

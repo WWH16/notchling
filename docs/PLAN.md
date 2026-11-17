@@ -326,7 +326,7 @@ Local setup after the rename:
 
 The exe:
 
-- [ ] **9.2** Icon and file details: a `notchling.ico` (256×256), embedded with
+- [x] **9.2** Icon and file details: a `notchling.ico` (256×256), embedded with
   `winresource` in `build.rs` along with product name, version and copyright. Commit
   `feat: app icon and file details`.
 - [ ] **9.3** Link the C runtime statically (`.cargo/config.toml`,

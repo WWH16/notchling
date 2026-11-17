@@ -26,6 +26,7 @@ windows = { version = "0.62", features = ["Data_Xml_Dom", "UI_Notifications", "W
 
 [build-dependencies]
 slint-build = "1.18.1"
+winresource = "0.1.34"
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

@@ -343,12 +343,12 @@ fn clip_to_shape(notch: &Notch, native: Rc<NotchWindow>) -> Rc<dyn Fn()> {
             notch.get_drawn_height(),
             notch.get_shoulder(),
         );
-        Some(heading.union(drawn))
+        Some((heading, heading.union(drawn)))
     });
     let applied = Rc::new(Cell::new(None));
     let shrink = Rc::new(Timer::default());
     Rc::new(move || {
-        let Some(wanted) = target() else {
+        let Some((heading, wanted)) = target() else {
             return;
         };
         let room = applied
@@ -358,16 +358,28 @@ fn clip_to_shape(notch: &Notch, native: Rc<NotchWindow>) -> Rc<dyn Fn()> {
             native.clip_to(room);
             applied.set(Some(room));
         }
-        if room == wanted {
+        // Compared with where the shape is heading, not with where it is: a morph that
+        // has not moved yet still fills its old room, which must shrink all the same.
+        if room == heading {
             shrink.stop();
             return;
         }
         let (native, applied, target) =
             (Rc::clone(&native), Rc::clone(&applied), Rc::clone(&target));
-        shrink.start(TimerMode::SingleShot, SHRINK_DELAY, move || {
-            if let Some(wanted) = target() {
+        let own = Rc::downgrade(&shrink);
+        // Repeats until the morph has ended, however long it takes.
+        shrink.start(TimerMode::Repeated, SHRINK_DELAY, move || {
+            let Some((heading, wanted)) = target() else {
+                return;
+            };
+            if applied.get() != Some(wanted) {
                 native.clip_to(wanted);
                 applied.set(Some(wanted));
+            }
+            if wanted == heading
+                && let Some(timer) = own.upgrade()
+            {
+                timer.stop();
             }
         });
     })

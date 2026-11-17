@@ -67,11 +67,13 @@ The notch flows out of its screen edge in concave curves. It shows the selected
 provider's logo inside a ring with the share of its limit, then CPU and GPU. The ring
 is green, turns amber at 80% and red at 95%. While Claude Code is working, Claude's
 mark shows how long, such as "12m", with "×2" when two sessions are, and a soft light
-circles the notch's outline in the provider's colour.
+circles the notch's outline in Claude's colour.
 
-- **Hover** the pill and the panel opens at once with every limit the provider has,
-  each as a bar in the same green, amber and red, with how much is used and left and
-  the clock time it resets ("Resets at 10:59 PM", "Resets Fri 6:59 AM"). Claude shows
+- **Hover** the pill and, after a moment's rest, the panel opens with every limit the
+  provider has, each as a bar in the same green, amber and red, with how much is used
+  and left and the clock time it resets ("Resets at 10:59 PM", "Resets Fri 6:59 AM").
+  With more than one provider tracked, a ring for each sits at the top; click one to
+  switch. Claude shows
   its current session and weekly limits; ChatGPT its Codex windows (5-hour, weekly or
   monthly, as your plan has them); Gemini, through Antigravity, each model group's
   5-hour and weekly limits. Below them: tokens, burn rate, any incident on the status
@@ -133,16 +135,17 @@ How a permission request works:
 - With the shortcuts turned on in the settings, Ctrl+Alt+Y allows and Ctrl+Alt+N
   denies the request on the notch. The keys are only taken while a card shows.
 - When Claude asks you to pick among options, the notch shows the question with its
-  options as buttons, one question at a time; tick several and press Done where Claude
-  allows more than one. "Open in app" hands the question back to Claude Code, which is
+  options as buttons, one question at a time; tick several and press Send answers
+  where Claude allows more than one. "Open in app" hands the question back to Claude Code, which is
   also where you type an answer of your own.
 - When Claude finishes a turn, the notch shows its last message with a reply box.
   Type and press Enter, and Claude carries on with your reply as its next message,
   without you switching to Claude Code. Start the reply with a slash command, such as
   `/simplify` or `/beautiful-rust:rust-best-practices tidy main.rs`, and Claude loads
   that skill first. Built-in commands such as `/clear` only work in the app. Leave the
-  card alone and it closes after 8 seconds; "Open in app" brings that Claude window to
-  the front instead.
+  card alone and it closes after 8 seconds, as a thin line along its foot runs out;
+  pointing at the card keeps it. "Open in app" brings that Claude window to the front
+  instead, and "Dismiss" closes the card.
 - notchling never approves anything by itself. If the notch is not running, if you do
   not answer within the permission wait (120 s by default), or if anything goes wrong,
   Claude Code shows its normal dialog.
@@ -275,7 +278,7 @@ notchling's own logo and icons are in [assets/logo](assets/logo), with how to us
 
 ## Footprint
 
-Release build on the development machine: a 13 MB exe, about 35 MB of RAM (14 MB
+Release build on the development machine: a 16 MB exe, about 35 MB of RAM (14 MB
 private) and under 0.2% CPU when idle, startup included. Slint's software renderer is
 used, since the OpenGL renderer took three times the memory for the same look.
 
